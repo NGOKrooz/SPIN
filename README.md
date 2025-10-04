@@ -1,4 +1,4 @@
-# SPIN - Student Physiotherapy Internship Network
+# SPIN - Smart Physiotherapy Internship Network
 
 A comprehensive system for managing intern rotation schedules at the University of Nigeria Teaching Hospital (UNTH), Ituku Ozalla, Enugu State, Nigeria.
 
