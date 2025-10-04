@@ -1,4 +1,4 @@
-# SPIN Deployment Guide
+# SPIN - Smart Physiotherapy Internship Network Deployment Guide
 
 ## 🚀 Production Deployment
 

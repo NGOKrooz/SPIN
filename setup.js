@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-console.log('🏥 SPIN - Student Physiotherapy Internship Network Setup');
+console.log('🏥 SPIN - Smart Physiotherapy Internship Network Setup');
 console.log('=====================================================\n');
 
 // Check if Node.js is installed
@@ -85,6 +85,6 @@ console.log('\n📋 Next steps:');
 console.log('1. Start the development server: npm run dev');
 console.log('2. Open your browser to: http://localhost:3000');
 console.log('3. The backend API will be available at: http://localhost:5000');
-console.log('\n🏥 Welcome to SPIN - Student Physiotherapy Internship Network!');
+console.log('\n🏥 Welcome to SPIN - Smart Physiotherapy Internship Network!');
 console.log('   University of Nigeria Teaching Hospital, Ituku Ozalla');
 console.log('   Physiotherapy Department\n');

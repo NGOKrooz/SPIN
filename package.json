@@ -1,7 +1,7 @@
 {
   "name": "spin-internship-scheduler",
   "version": "1.0.0",
-  "description": "SPIN - Student Physiotherapy Internship Network for UNTH rotation management",
+  "description": "SPIN - Smart Physiotherapy Internship Network for UNTH rotation management",
   "main": "server/index.js",
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
