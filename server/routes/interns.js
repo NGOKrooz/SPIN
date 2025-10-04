@@ -1,0 +1,275 @@
+const express = require('express');
+const { body, validationResult } = require('express-validator');
+const { getDatabase } = require('../database/init');
+const { addDays, format, parseISO, differenceInDays } = require('date-fns');
+
+const router = express.Router();
+const db = getDatabase();
+
+// Validation middleware
+const validateIntern = [
+  body('name').trim().isLength({ min: 2, max: 100 }).withMessage('Name must be 2-100 characters'),
+  body('gender').isIn(['Male', 'Female']).withMessage('Gender must be Male or Female'),
+  body('batch').isIn(['A', 'B']).withMessage('Batch must be A or B'),
+  body('start_date').isISO8601().withMessage('Start date must be a valid date'),
+  body('phone_number').optional().isMobilePhone().withMessage('Phone number must be valid')
+];
+
+// GET /api/interns - Get all interns
+router.get('/', (req, res) => {
+  const { batch, status, unit_id } = req.query;
+  
+  let query = `
+    SELECT 
+      i.*,
+      COUNT(r.id) as total_rotations,
+      GROUP_CONCAT(u.name, '|') as current_units
+    FROM interns i
+    LEFT JOIN rotations r ON i.id = r.intern_id 
+      AND r.start_date <= date('now') 
+      AND r.end_date >= date('now')
+    LEFT JOIN units u ON r.unit_id = u.id
+  `;
+  
+  const conditions = [];
+  const params = [];
+  
+  if (batch) {
+    conditions.push('i.batch = ?');
+    params.push(batch);
+  }
+  
+  if (status) {
+    conditions.push('i.status = ?');
+    params.push(status);
+  }
+  
+  if (unit_id) {
+    conditions.push('r.unit_id = ?');
+    params.push(unit_id);
+  }
+  
+  if (conditions.length > 0) {
+    query += ' WHERE ' + conditions.join(' AND ');
+  }
+  
+  query += ' GROUP BY i.id ORDER BY i.start_date DESC';
+  
+  db.all(query, params, (err, rows) => {
+    if (err) {
+      console.error('Error fetching interns:', err);
+      return res.status(500).json({ error: 'Failed to fetch interns' });
+    }
+    
+    const interns = rows.map(row => ({
+      ...row,
+      current_units: row.current_units ? row.current_units.split('|') : [],
+      days_since_start: differenceInDays(new Date(), parseISO(row.start_date)),
+      total_duration_days: row.status === 'Extended' 
+        ? 365 + (row.extension_days || 0) 
+        : 365
+    }));
+    
+    res.json(interns);
+  });
+});
+
+// GET /api/interns/:id - Get specific intern
+router.get('/:id', (req, res) => {
+  const { id } = req.params;
+  
+  const query = `
+    SELECT 
+      i.*,
+      r.id as rotation_id,
+      r.start_date as rotation_start,
+      r.end_date as rotation_end,
+      r.is_manual_assignment,
+      u.name as unit_name,
+      u.id as unit_id
+    FROM interns i
+    LEFT JOIN rotations r ON i.id = r.intern_id
+    LEFT JOIN units u ON r.unit_id = u.id
+    WHERE i.id = ?
+    ORDER BY r.start_date DESC
+  `;
+  
+  db.all(query, [id], (err, rows) => {
+    if (err) {
+      console.error('Error fetching intern:', err);
+      return res.status(500).json({ error: 'Failed to fetch intern' });
+    }
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Intern not found' });
+    }
+    
+    const intern = {
+      ...rows[0],
+      rotations: rows
+        .filter(row => row.rotation_id)
+        .map(row => ({
+          id: row.rotation_id,
+          unit_id: row.unit_id,
+          unit_name: row.unit_name,
+          start_date: row.rotation_start,
+          end_date: row.rotation_end,
+          is_manual_assignment: row.is_manual_assignment
+        }))
+    };
+    
+    // Remove rotation fields from main intern object
+    delete intern.rotation_id;
+    delete intern.rotation_start;
+    delete intern.rotation_end;
+    delete intern.is_manual_assignment;
+    delete intern.unit_name;
+    delete intern.unit_id;
+    
+    res.json(intern);
+  });
+});
+
+// POST /api/interns - Create new intern
+router.post('/', validateIntern, (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+  
+  const { name, gender, batch, start_date, phone_number } = req.body;
+  
+  const query = `
+    INSERT INTO interns (name, gender, batch, start_date, phone_number)
+    VALUES (?, ?, ?, ?, ?)
+  `;
+  
+  db.run(query, [name, gender, batch, start_date, phone_number], function(err) {
+    if (err) {
+      console.error('Error creating intern:', err);
+      return res.status(500).json({ error: 'Failed to create intern' });
+    }
+    
+    res.status(201).json({
+      id: this.lastID,
+      name,
+      gender,
+      batch,
+      start_date,
+      phone_number,
+      status: 'Active',
+      extension_days: 0
+    });
+  });
+});
+
+// PUT /api/interns/:id - Update intern
+router.put('/:id', validateIntern, (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+  
+  const { id } = req.params;
+  const { name, gender, batch, start_date, phone_number, status, extension_days } = req.body;
+  
+  const query = `
+    UPDATE interns 
+    SET name = ?, gender = ?, batch = ?, start_date = ?, phone_number = ?, 
+        status = ?, extension_days = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `;
+  
+  db.run(query, [name, gender, batch, start_date, phone_number, status, extension_days, id], function(err) {
+    if (err) {
+      console.error('Error updating intern:', err);
+      return res.status(500).json({ error: 'Failed to update intern' });
+    }
+    
+    if (this.changes === 0) {
+      return res.status(404).json({ error: 'Intern not found' });
+    }
+    
+    res.json({ message: 'Intern updated successfully' });
+  });
+});
+
+// POST /api/interns/:id/extend - Extend internship
+router.post('/:id/extend', [
+  body('extension_days').isInt({ min: 1, max: 365 }).withMessage('Extension must be 1-365 days')
+], (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+  
+  const { id } = req.params;
+  const { extension_days } = req.body;
+  
+  const query = `
+    UPDATE interns 
+    SET status = 'Extended', extension_days = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `;
+  
+  db.run(query, [extension_days, id], function(err) {
+    if (err) {
+      console.error('Error extending internship:', err);
+      return res.status(500).json({ error: 'Failed to extend internship' });
+    }
+    
+    if (this.changes === 0) {
+      return res.status(404).json({ error: 'Intern not found' });
+    }
+    
+    res.json({ message: 'Internship extended successfully' });
+  });
+});
+
+// DELETE /api/interns/:id - Delete intern
+router.delete('/:id', (req, res) => {
+  const { id } = req.params;
+  
+  const query = 'DELETE FROM interns WHERE id = ?';
+  
+  db.run(query, [id], function(err) {
+    if (err) {
+      console.error('Error deleting intern:', err);
+      return res.status(500).json({ error: 'Failed to delete intern' });
+    }
+    
+    if (this.changes === 0) {
+      return res.status(404).json({ error: 'Intern not found' });
+    }
+    
+    res.json({ message: 'Intern deleted successfully' });
+  });
+});
+
+// GET /api/interns/:id/schedule - Get intern's rotation schedule
+router.get('/:id/schedule', (req, res) => {
+  const { id } = req.params;
+  
+  const query = `
+    SELECT 
+      r.*,
+      u.name as unit_name,
+      u.duration_days,
+      u.workload
+    FROM rotations r
+    JOIN units u ON r.unit_id = u.id
+    WHERE r.intern_id = ?
+    ORDER BY r.start_date
+  `;
+  
+  db.all(query, [id], (err, rows) => {
+    if (err) {
+      console.error('Error fetching schedule:', err);
+      return res.status(500).json({ error: 'Failed to fetch schedule' });
+    }
+    
+    res.json(rows);
+  });
+});
+
+module.exports = router;
