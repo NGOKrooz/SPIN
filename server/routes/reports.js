@@ -454,12 +454,17 @@ async function generateScheduleHTML(startDate, endDate) {
 function getCoverageStatus(internCount, workload) {
   const count = parseInt(internCount) || 0;
   
+  // Units with 0 interns require immediate attention - should be critical
+  if (count === 0) {
+    return 'critical';
+  }
+  
   if (workload === 'High' && count < 2) {
     return 'critical';
-  } else if (workload === 'Medium' && count < 1) {
-    return 'warning';
-  } else if (count < 1) {
+  } else if (workload === 'Medium' && count < 2) {
     return 'critical';
+  } else if (workload === 'Low' && count < 1) {
+    return 'warning';
   } else {
     return 'good';
   }

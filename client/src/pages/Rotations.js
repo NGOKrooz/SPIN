@@ -12,9 +12,9 @@ import { useToast } from '../hooks/use-toast';
 
 export default function Rotations() {
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [filterBatch, setFilterBatch] = useState('');
-  const [filterUnit, setFilterUnit] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
+  const [filterBatch, setFilterBatch] = useState('ALL');
+  const [filterUnit, setFilterUnit] = useState('ALL');
+  const [filterStatus, setFilterStatus] = useState('ALL');
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -25,7 +25,11 @@ export default function Rotations() {
 
   const { data: allRotations, isLoading: allLoading } = useQuery({
     queryKey: ['rotations', { batch: filterBatch, unit_id: filterUnit, status: filterStatus }],
-    queryFn: () => api.getRotations({ batch: filterBatch, unit_id: filterUnit, status: filterStatus }),
+    queryFn: () => api.getRotations({
+      batch: filterBatch === 'ALL' ? undefined : filterBatch,
+      unit_id: filterUnit === 'ALL' ? undefined : filterUnit,
+      status: filterStatus === 'ALL' ? undefined : filterStatus,
+    }),
   });
 
   const { data: interns } = useQuery({
@@ -195,7 +199,7 @@ export default function Rotations() {
       </div>
 
       {/* Filters */}
-      <Card>
+      <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
         <CardHeader>
           <CardTitle>Filters</CardTitle>
         </CardHeader>
@@ -208,7 +212,7 @@ export default function Rotations() {
                   <SelectValue placeholder="All batches" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All batches</SelectItem>
+                  <SelectItem value="ALL">All batches</SelectItem>
                   <SelectItem value="A">Batch A</SelectItem>
                   <SelectItem value="B">Batch B</SelectItem>
                 </SelectContent>
@@ -221,7 +225,7 @@ export default function Rotations() {
                   <SelectValue placeholder="All units" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All units</SelectItem>
+                  <SelectItem value="ALL">All units</SelectItem>
                   {units?.map((unit) => (
                     <SelectItem key={unit.id} value={unit.id.toString()}>
                       {unit.name}
@@ -237,7 +241,7 @@ export default function Rotations() {
                   <SelectValue placeholder="All statuses" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All statuses</SelectItem>
+                  <SelectItem value="ALL">All statuses</SelectItem>
                   <SelectItem value="Active">Active</SelectItem>
                   <SelectItem value="Extended">Extended</SelectItem>
                   <SelectItem value="Completed">Completed</SelectItem>
@@ -248,9 +252,9 @@ export default function Rotations() {
               <Button 
                 variant="outline" 
                 onClick={() => {
-                  setFilterBatch('');
-                  setFilterUnit('');
-                  setFilterStatus('');
+                  setFilterBatch('ALL');
+                  setFilterUnit('ALL');
+                  setFilterStatus('ALL');
                 }}
               >
                 Clear Filters
@@ -261,7 +265,7 @@ export default function Rotations() {
       </Card>
 
       {/* Current Rotations */}
-      <Card>
+      <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
         <CardHeader>
           <CardTitle>Current Rotations</CardTitle>
           <CardDescription>
@@ -320,7 +324,7 @@ export default function Rotations() {
       </Card>
 
       {/* All Rotations */}
-      <Card>
+      <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
         <CardHeader>
           <CardTitle>All Rotations</CardTitle>
           <CardDescription>

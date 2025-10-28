@@ -1,9 +1,36 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { getDatabase } = require('../database/init');
+const { parseISO, differenceInDays } = require('date-fns');
 
 const router = express.Router();
 const db = getDatabase();
+
+// Helper function to get batch off day for a specific date
+function getBatchOffDay(batch, date, scheduleSettings) {
+  const scheduleStartDate = parseISO(scheduleSettings.schedule_start_date || '2024-01-01');
+  const daysSinceStart = differenceInDays(parseISO(date), scheduleStartDate);
+  const weekNumber = Math.floor(daysSinceStart / 7) + 1;
+  
+  // Determine if it's weeks 1&2 or weeks 3&4 (cycles every 4 weeks)
+  const cycleWeek = ((weekNumber - 1) % 4) + 1;
+  const isWeek1Or2 = cycleWeek <= 2;
+  
+  if (batch === 'A') {
+    return isWeek1Or2 ? scheduleSettings.batch_a_off_day_week1 : scheduleSettings.batch_a_off_day_week3;
+  } else if (batch === 'B') {
+    return isWeek1Or2 ? scheduleSettings.batch_b_off_day_week1 : scheduleSettings.batch_b_off_day_week3;
+  }
+  
+  return null;
+}
+
+// Helper function to check if a batch is off on a specific date
+function isBatchOffOnDate(batch, date, scheduleSettings) {
+  const offDay = getBatchOffDay(batch, date, scheduleSettings);
+  const dayOfWeek = new Date(date).toLocaleDateString('en-US', { weekday: 'long' });
+  return offDay === dayOfWeek;
+}
 
 // Validation middleware
 const validateSetting = [
@@ -130,8 +157,11 @@ router.delete('/:key', (req, res) => {
   
   // Prevent deletion of critical settings
   const criticalSettings = [
-    'batch_a_off_day',
-    'batch_b_off_day',
+    'batch_a_off_day_week1',
+    'batch_b_off_day_week1',
+    'batch_a_off_day_week3',
+    'batch_b_off_day_week3',
+    'schedule_start_date',
     'internship_duration_months',
     'rotation_buffer_days'
   ];
@@ -160,7 +190,7 @@ router.delete('/:key', (req, res) => {
 router.get('/batch-schedule', (req, res) => {
   const query = `
     SELECT key, value FROM settings 
-    WHERE key IN ('batch_a_off_day', 'batch_b_off_day', 'internship_duration_months', 'rotation_buffer_days')
+    WHERE key IN ('batch_a_off_day_week1', 'batch_b_off_day_week1', 'batch_a_off_day_week3', 'batch_b_off_day_week3', 'schedule_start_date', 'internship_duration_months', 'rotation_buffer_days')
   `;
   
   db.all(query, [], (err, rows) => {
@@ -175,8 +205,11 @@ router.get('/batch-schedule', (req, res) => {
     }, {});
     
     res.json({
-      batch_a_off_day: schedule.batch_a_off_day || 'Monday',
-      batch_b_off_day: schedule.batch_b_off_day || 'Wednesday',
+      batch_a_off_day_week1: schedule.batch_a_off_day_week1 || 'Monday',
+      batch_b_off_day_week1: schedule.batch_b_off_day_week1 || 'Wednesday',
+      batch_a_off_day_week3: schedule.batch_a_off_day_week3 || 'Wednesday',
+      batch_b_off_day_week3: schedule.batch_b_off_day_week3 || 'Monday',
+      schedule_start_date: schedule.schedule_start_date || '2024-01-01',
       internship_duration_months: parseInt(schedule.internship_duration_months) || 12,
       rotation_buffer_days: parseInt(schedule.rotation_buffer_days) || 2
     });
@@ -185,8 +218,11 @@ router.get('/batch-schedule', (req, res) => {
 
 // PUT /api/settings/batch-schedule - Update batch schedule configuration
 router.put('/batch-schedule', [
-  body('batch_a_off_day').isIn(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']).withMessage('Invalid day for Batch A'),
-  body('batch_b_off_day').isIn(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']).withMessage('Invalid day for Batch B'),
+  body('batch_a_off_day_week1').isIn(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']).withMessage('Invalid day for Batch A in weeks 1&2'),
+  body('batch_b_off_day_week1').isIn(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']).withMessage('Invalid day for Batch B in weeks 1&2'),
+  body('batch_a_off_day_week3').isIn(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']).withMessage('Invalid day for Batch A in weeks 3&4'),
+  body('batch_b_off_day_week3').isIn(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']).withMessage('Invalid day for Batch B in weeks 3&4'),
+  body('schedule_start_date').isISO8601().withMessage('Schedule start date must be a valid date'),
   body('internship_duration_months').isInt({ min: 6, max: 24 }).withMessage('Internship duration must be 6-24 months'),
   body('rotation_buffer_days').isInt({ min: 0, max: 7 }).withMessage('Buffer days must be 0-7')
 ], (req, res) => {
@@ -195,15 +231,31 @@ router.put('/batch-schedule', [
     return res.status(400).json({ errors: errors.array() });
   }
   
-  const { batch_a_off_day, batch_b_off_day, internship_duration_months, rotation_buffer_days } = req.body;
+  const { 
+    batch_a_off_day_week1, 
+    batch_b_off_day_week1, 
+    batch_a_off_day_week3, 
+    batch_b_off_day_week3, 
+    schedule_start_date,
+    internship_duration_months, 
+    rotation_buffer_days 
+  } = req.body;
   
-  if (batch_a_off_day === batch_b_off_day) {
-    return res.status(400).json({ error: 'Batch A and Batch B cannot have the same off day' });
+  // Validate that batches don't have the same off day in the same week
+  if (batch_a_off_day_week1 === batch_b_off_day_week1) {
+    return res.status(400).json({ error: 'Batch A and Batch B cannot have the same off day in weeks 1&2' });
+  }
+  
+  if (batch_a_off_day_week3 === batch_b_off_day_week3) {
+    return res.status(400).json({ error: 'Batch A and Batch B cannot have the same off day in weeks 3&4' });
   }
   
   const updates = [
-    { key: 'batch_a_off_day', value: batch_a_off_day },
-    { key: 'batch_b_off_day', value: batch_b_off_day },
+    { key: 'batch_a_off_day_week1', value: batch_a_off_day_week1 },
+    { key: 'batch_b_off_day_week1', value: batch_b_off_day_week1 },
+    { key: 'batch_a_off_day_week3', value: batch_a_off_day_week3 },
+    { key: 'batch_b_off_day_week3', value: batch_b_off_day_week3 },
+    { key: 'schedule_start_date', value: schedule_start_date },
     { key: 'internship_duration_months', value: internship_duration_months.toString() },
     { key: 'rotation_buffer_days', value: rotation_buffer_days.toString() }
   ];
@@ -292,4 +344,4 @@ router.get('/system-info', (req, res) => {
   });
 });
 
-module.exports = router;
+module.exports = { router, getBatchOffDay, isBatchOffOnDate };

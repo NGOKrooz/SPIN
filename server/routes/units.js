@@ -9,8 +9,51 @@ const db = getDatabase();
 const validateUnit = [
   body('name').trim().isLength({ min: 2, max: 100 }).withMessage('Name must be 2-100 characters'),
   body('duration_days').isInt({ min: 1, max: 365 }).withMessage('Duration must be 1-365 days'),
-  body('workload').isIn(['Low', 'Medium', 'High']).withMessage('Workload must be Low, Medium, or High')
+  body('workload').isIn(['Low', 'Medium', 'High']).withMessage('Workload must be Low, Medium, or High'),
+  body('patient_count').optional().isInt({ min: 0 }).withMessage('Patient count must be a non-negative integer')
 ];
+
+// GET /api/units/schema - Check database schema
+router.get('/schema', (req, res) => {
+  const query = "PRAGMA table_info(units)";
+  db.all(query, [], (err, rows) => {
+    if (err) {
+      console.error('Error checking schema:', err);
+      return res.status(500).json({ error: 'Failed to check schema' });
+    }
+    console.log('Units table schema:', rows);
+    res.json(rows);
+  });
+});
+
+// POST /api/units/:id/test-patient-count - Test patient count update
+router.post('/:id/test-patient-count', (req, res) => {
+  const { id } = req.params;
+  const { patient_count } = req.body;
+  
+  console.log('Testing patient count update:', { id, patient_count });
+  
+  const query = `UPDATE units SET patient_count = ? WHERE id = ?`;
+  db.run(query, [patient_count, id], function(err) {
+    if (err) {
+      console.error('Error updating patient count:', err);
+      return res.status(500).json({ error: 'Failed to update patient count' });
+    }
+    
+    console.log('Patient count updated successfully:', this.changes);
+    
+    // Fetch the updated unit to verify
+    db.get('SELECT id, name, patient_count, workload FROM units WHERE id = ?', [id], (err, row) => {
+      if (err) {
+        console.error('Error fetching updated unit:', err);
+        return res.status(500).json({ error: 'Failed to fetch updated unit' });
+      }
+      
+      console.log('Updated unit data:', row);
+      res.json({ message: 'Patient count updated successfully', unit: row });
+    });
+  });
+});
 
 // GET /api/units - Get all units
 router.get('/', (req, res) => {
@@ -40,12 +83,37 @@ router.get('/', (req, res) => {
       return res.status(500).json({ error: 'Failed to fetch units' });
     }
     
-    const units = rows.map(row => ({
-      ...row,
-      current_interns: parseInt(row.current_interns) || 0,
-      intern_names: row.intern_names ? row.intern_names.split(', ') : [],
-      coverage_status: getCoverageStatus(row.current_interns, row.workload)
-    }));
+    console.log('Fetched units data:', rows.map(row => ({ 
+      id: row.id, 
+      name: row.name, 
+      patient_count: row.patient_count,
+      workload: row.workload 
+    })));
+    
+    const units = rows.map(row => {
+      // Auto-calculate workload based on patient count if available
+      let workload = row.workload;
+      if (row.patient_count && row.patient_count > 0) {
+        if (row.patient_count <= 4) {
+          workload = 'Low';
+        } else if (row.patient_count <= 8) {
+          workload = 'Medium';
+        } else {
+          workload = 'High';
+        }
+      } else {
+        // Default to Low if no patient count is set
+        workload = 'Low';
+      }
+      
+      return {
+        ...row,
+        workload: workload,
+        current_interns: parseInt(row.current_interns) || 0,
+        intern_names: row.intern_names ? row.intern_names.split(', ') : [],
+        coverage_status: getCoverageStatus(row.current_interns, workload)
+      };
+    });
     
     res.json(units);
   });
@@ -117,14 +185,14 @@ router.post('/', validateUnit, (req, res) => {
     return res.status(400).json({ errors: errors.array() });
   }
   
-  const { name, duration_days, workload, description } = req.body;
+  const { name, duration_days, workload, description, patient_count } = req.body;
   
   const query = `
-    INSERT INTO units (name, duration_days, workload, description)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO units (name, duration_days, workload, description, patient_count)
+    VALUES (?, ?, ?, ?, ?)
   `;
   
-  db.run(query, [name, duration_days, workload, description], function(err) {
+  db.run(query, [name, duration_days, workload, description, patient_count || 0], function(err) {
     if (err) {
       console.error('Error creating unit:', err);
       if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
@@ -138,7 +206,8 @@ router.post('/', validateUnit, (req, res) => {
       name,
       duration_days,
       workload,
-      description
+      description,
+      patient_count: patient_count || 0
     });
   });
 });
@@ -151,15 +220,17 @@ router.put('/:id', validateUnit, (req, res) => {
   }
   
   const { id } = req.params;
-  const { name, duration_days, workload, description } = req.body;
+  const { name, duration_days, workload, description, patient_count } = req.body;
+  
+  console.log('Updating unit:', { id, name, duration_days, workload, description, patient_count });
   
   const query = `
     UPDATE units 
-    SET name = ?, duration_days = ?, workload = ?, description = ?, updated_at = CURRENT_TIMESTAMP
+    SET name = ?, duration_days = ?, workload = ?, description = ?, patient_count = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `;
   
-  db.run(query, [name, duration_days, workload, description, id], function(err) {
+  db.run(query, [name, duration_days, workload, description, patient_count || 0, id], function(err) {
     if (err) {
       console.error('Error updating unit:', err);
       if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
@@ -222,6 +293,72 @@ router.post('/:id/workload', [
         }
         
         res.json({ message: 'Workload updated successfully' });
+      });
+    });
+  });
+});
+
+// POST /api/units/:id/patient-count - Update patient count and auto-calculate workload
+router.post('/:id/patient-count', [
+  body('patient_count').isInt({ min: 0 }).withMessage('Patient count must be a non-negative integer')
+], (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+  
+  const { id } = req.params;
+  const { patient_count } = req.body;
+  
+  // Auto-calculate workload based on patient count
+  let workload;
+  if (patient_count <= 4) {
+    workload = 'Low';
+  } else if (patient_count <= 8) {
+    workload = 'Medium';
+  } else {
+    workload = 'High';
+  }
+  
+  // Update patient count and workload
+  const updateQuery = `
+    UPDATE units 
+    SET patient_count = ?, workload = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `;
+  
+  // Insert workload history
+  const historyQuery = `
+    INSERT INTO workload_history (unit_id, workload, week_start_date, notes)
+    VALUES (?, ?, ?, ?)
+  `;
+  
+  const weekStartDate = new Date().toISOString().split('T')[0];
+  const notes = `Auto-calculated from ${patient_count} patients`;
+  
+  db.serialize(() => {
+    db.run(updateQuery, [patient_count, workload, id], function(err) {
+      if (err) {
+        console.error('Error updating patient count:', err);
+        return res.status(500).json({ error: 'Failed to update patient count' });
+      }
+      
+      if (this.changes === 0) {
+        return res.status(404).json({ error: 'Unit not found' });
+      }
+      
+      // Insert into history
+      db.run(historyQuery, [id, workload, weekStartDate, notes], function(err) {
+        if (err) {
+          console.error('Error saving workload history:', err);
+          return res.status(500).json({ error: 'Failed to save workload history' });
+        }
+        
+        res.json({ 
+          message: 'Patient count and workload updated successfully',
+          workload: workload,
+          patient_count: patient_count
+        });
       });
     });
   });
@@ -292,10 +429,16 @@ router.delete('/:id', (req, res) => {
 function getCoverageStatus(currentInterns, workload) {
   const internCount = parseInt(currentInterns) || 0;
   
+  // Units with 0 interns require immediate attention - should be critical
+  if (internCount === 0) {
+    return 'critical';
+  }
+  
+  // Updated coverage requirements based on workload
   if (workload === 'High' && internCount < 2) {
     return 'critical';
-  } else if (workload === 'Medium' && internCount < 1) {
-    return 'warning';
+  } else if (workload === 'Medium' && internCount < 2) {
+    return 'critical';
   } else if (workload === 'Low' && internCount < 1) {
     return 'warning';
   } else {

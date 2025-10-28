@@ -40,6 +40,8 @@ export default function ManualAssignment() {
     mutationFn: api.createRotation,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rotations'] });
+      queryClient.invalidateQueries({ queryKey: ['units'] });
+      queryClient.invalidateQueries({ queryKey: ['interns'] });
       toast({
         title: 'Success',
         description: 'Manual assignment created successfully',

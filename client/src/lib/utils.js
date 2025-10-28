@@ -6,7 +6,10 @@ export function cn(...inputs) {
 }
 
 export function formatDate(date) {
-  return new Date(date).toLocaleDateString('en-US', {
+  if (!date) return '';
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'short',
     day: 'numeric'
@@ -14,7 +17,10 @@ export function formatDate(date) {
 }
 
 export function formatDateTime(date) {
-  return new Date(date).toLocaleString('en-US', {
+  if (!date) return '';
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleString('en-US', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -48,6 +54,8 @@ export function getCoverageColor(status) {
       return 'bg-coverage-warning';
     case 'critical':
       return 'bg-coverage-critical';
+    case 'low':
+      return 'bg-coverage-low';
     default:
       return 'bg-gray-500';
   }

@@ -1,28 +1,35 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Edit, Trash2, Calendar, Phone, User, Clock } from 'lucide-react';
+import { Plus, Edit, Trash2, Calendar, Phone, User, Clock, Eye } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { api } from '../services/api';
-import { formatDate, getBatchColor, getStatusColor, calculateDaysBetween } from '../lib/utils';
+import { formatDate, getBatchColor, getStatusColor } from '../lib/utils';
 import { useToast } from '../hooks/use-toast';
 import InternForm from '../components/InternForm';
+import ExtensionModal from '../components/ExtensionModal';
+import InternDashboard from '../components/InternDashboard';
 
 export default function Interns() {
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterBatch, setFilterBatch] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
+  const [filterBatch, setFilterBatch] = useState('ALL');
+  const [filterStatus, setFilterStatus] = useState('ALL');
   const [showForm, setShowForm] = useState(false);
   const [editingIntern, setEditingIntern] = useState(null);
+  const [viewingIntern, setViewingIntern] = useState(null);
+  const [extendingIntern, setExtendingIntern] = useState(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const { data: interns, isLoading } = useQuery({
     queryKey: ['interns', { batch: filterBatch, status: filterStatus }],
-    queryFn: () => api.getInterns({ batch: filterBatch, status: filterStatus }),
+    queryFn: () => api.getInterns({
+      batch: filterBatch === 'ALL' ? undefined : filterBatch,
+      status: ['ALL', 'Inactive'].includes(filterStatus) ? undefined : filterStatus,
+    }),
   });
 
   const deleteMutation = useMutation({
@@ -61,10 +68,25 @@ export default function Interns() {
     },
   });
 
-  const filteredInterns = interns?.filter(intern => 
+  // derive status on client: Completed if past planned duration (365 + extension_days), Extended if extension applied
+  const mapWithDerivedStatus = (list) => (list || []).map((i) => {
+    const total = i.total_duration_days ?? (365 + (i.extension_days || 0));
+    const days = i.days_since_start ?? 0;
+    let derived = 'Active';
+    if ((i.extension_days || 0) > 0 && i.status === 'Extended') derived = 'Extended';
+    if (days >= total) derived = 'Completed';
+    return { ...i, derivedStatus: derived };
+  });
+
+  let derivedInterns = mapWithDerivedStatus(interns);
+  // apply client-side filters for search and special Inactive keyword
+  if (filterStatus === 'Inactive') {
+    derivedInterns = derivedInterns.filter((i) => i.derivedStatus !== 'Active');
+  }
+  const filteredInterns = (derivedInterns || []).filter(intern => 
     intern.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     intern.phone_number?.includes(searchTerm)
-  ) || [];
+  );
 
   const handleDelete = (id, name) => {
     if (window.confirm(`Are you sure you want to delete ${name}?`)) {
@@ -72,11 +94,8 @@ export default function Interns() {
     }
   };
 
-  const handleExtend = (id, name) => {
-    const days = prompt(`Enter extension days for ${name}:`);
-    if (days && !isNaN(days) && parseInt(days) > 0) {
-      extendMutation.mutate({ id, days: parseInt(days) });
-    }
+  const handleExtend = (intern) => {
+    setExtendingIntern(intern);
   };
 
   const handleEdit = (intern) => {
@@ -87,6 +106,10 @@ export default function Interns() {
   const handleFormClose = () => {
     setShowForm(false);
     setEditingIntern(null);
+  };
+
+  const handleExtensionClose = () => {
+    setExtendingIntern(null);
   };
 
   if (isLoading) {
@@ -112,7 +135,7 @@ export default function Interns() {
       </div>
 
       {/* Filters */}
-      <Card>
+      <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
         <CardHeader>
           <CardTitle>Filters</CardTitle>
         </CardHeader>
@@ -134,7 +157,7 @@ export default function Interns() {
                   <SelectValue placeholder="All batches" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All batches</SelectItem>
+                  <SelectItem value="ALL">All batches</SelectItem>
                   <SelectItem value="A">Batch A</SelectItem>
                   <SelectItem value="B">Batch B</SelectItem>
                 </SelectContent>
@@ -147,10 +170,11 @@ export default function Interns() {
                   <SelectValue placeholder="All statuses" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All statuses</SelectItem>
+                  <SelectItem value="ALL">All statuses</SelectItem>
                   <SelectItem value="Active">Active</SelectItem>
                   <SelectItem value="Extended">Extended</SelectItem>
                   <SelectItem value="Completed">Completed</SelectItem>
+                  <SelectItem value="Inactive">Not Active (Inactive)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -159,8 +183,8 @@ export default function Interns() {
                 variant="outline" 
                 onClick={() => {
                   setSearchTerm('');
-                  setFilterBatch('');
-                  setFilterStatus('');
+                  setFilterBatch('ALL');
+                  setFilterStatus('ALL');
                 }}
               >
                 Clear Filters
@@ -265,10 +289,10 @@ export default function Interns() {
                           )}
                         </div>
                         <div className="mt-1">
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(intern.status)}`}>
-                            {intern.status}
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(intern.derivedStatus || intern.status)}`}>
+                            {intern.derivedStatus || intern.status}
                           </span>
-                          {intern.status === 'Extended' && intern.extension_days > 0 && (
+                          {(intern.derivedStatus === 'Extended' || intern.status === 'Extended') && intern.extension_days > 0 && (
                             <span className="ml-2 text-xs text-yellow-600">
                               +{intern.extension_days} days
                             </span>
@@ -280,6 +304,14 @@ export default function Interns() {
                       <Button
                         variant="outline"
                         size="sm"
+                        onClick={() => setViewingIntern(intern)}
+                        title="View Dashboard"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={() => handleEdit(intern)}
                       >
                         <Edit className="h-4 w-4" />
@@ -288,7 +320,7 @@ export default function Interns() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleExtend(intern.id, intern.name)}
+                          onClick={() => handleExtend(intern)}
                         >
                           <Clock className="h-4 w-4" />
                         </Button>
@@ -308,6 +340,14 @@ export default function Interns() {
                       <div>
                         <span className="text-gray-500">Days in internship:</span>
                         <span className="ml-2 font-medium">{intern.days_since_start || 0}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Batch:</span>
+                        <span className="ml-2 font-medium">{intern.batch}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Start date:</span>
+                        <span className="ml-2 font-medium">{formatDate(intern.start_date)}</span>
                       </div>
                       <div>
                         <span className="text-gray-500">Current units:</span>
@@ -333,6 +373,26 @@ export default function Interns() {
             queryClient.invalidateQueries({ queryKey: ['interns'] });
             handleFormClose();
           }}
+        />
+      )}
+
+      {/* Extension Modal */}
+      {extendingIntern && (
+        <ExtensionModal
+          intern={extendingIntern}
+          onClose={handleExtensionClose}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ['interns'] });
+            handleExtensionClose();
+          }}
+        />
+      )}
+
+      {/* Intern Dashboard Modal */}
+      {viewingIntern && (
+        <InternDashboard
+          intern={viewingIntern}
+          onClose={() => setViewingIntern(null)}
         />
       )}
     </div>

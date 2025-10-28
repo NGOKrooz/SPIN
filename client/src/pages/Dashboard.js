@@ -4,17 +4,14 @@ import { Link } from 'react-router-dom';
 import { 
   Users, 
   Building2, 
-  Calendar, 
   AlertTriangle,
-  TrendingUp,
-  Clock,
   UserCheck,
-  UserX
+  UserPlus,
+  FileText
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { Button } from '../components/ui/button';
 import { api } from '../services/api';
-import { formatDate, getBatchColor, getWorkloadColor, getCoverageColor } from '../lib/utils';
+import { formatDate } from '../lib/utils';
 
 export default function Dashboard() {
   const { data: interns, isLoading: internsLoading } = useQuery({
@@ -32,10 +29,7 @@ export default function Dashboard() {
     queryFn: api.getCurrentRotations,
   });
 
-  const { data: systemInfo } = useQuery({
-    queryKey: ['settings', 'system-info'],
-    queryFn: api.getSystemInfo,
-  });
+  // removed unused systemInfo
 
   if (internsLoading || unitsLoading || rotationsLoading) {
     return (
@@ -47,13 +41,42 @@ export default function Dashboard() {
 
   const activeInterns = interns?.filter(intern => intern.status === 'Active') || [];
   const extendedInterns = interns?.filter(intern => intern.status === 'Extended') || [];
-  const completedInterns = interns?.filter(intern => intern.status === 'Completed') || [];
+  // removed unused completedInterns
   
   const batchAInterns = activeInterns.filter(intern => intern.batch === 'A');
   const batchBInterns = activeInterns.filter(intern => intern.batch === 'B');
 
-  const criticalUnits = units?.filter(unit => unit.coverage_status === 'critical') || [];
-  const warningUnits = units?.filter(unit => unit.coverage_status === 'warning') || [];
+  // Compute coverage issues from current rotations by unit and batch
+  const rotationList = currentRotations?.rotations || [];
+  const unitCoverageData = currentRotations?.unit_coverage || {};
+  
+  const criticalUnits = [];
+  const warningUnits = [];
+  
+  // Process coverage data from the API
+  Object.values(unitCoverageData).forEach(unit => {
+    const hasBatchA = unit.batch_a.length > 0;
+    const hasBatchB = unit.batch_b.length > 0;
+    const totalInterns = unit.batch_a.length + unit.batch_b.length;
+    
+    if (unit.coverage_status === 'critical') {
+      criticalUnits.push({ 
+        id: unit.unit_name, 
+        name: unit.unit_name, 
+        byBatch: { A: unit.batch_a.length, B: unit.batch_b.length }, 
+        total: totalInterns,
+        reason: !hasBatchA && !hasBatchB ? 'No interns assigned' : 'Insufficient coverage'
+      });
+    } else if (unit.coverage_status === 'warning') {
+      warningUnits.push({ 
+        id: unit.unit_name, 
+        name: unit.unit_name, 
+        byBatch: { A: unit.batch_a.length, B: unit.batch_b.length }, 
+        total: totalInterns,
+        reason: 'Imbalanced coverage'
+      });
+    }
+  });
 
   const stats = [
     {
@@ -72,14 +95,7 @@ export default function Dashboard() {
       color: 'text-green-600',
       bgColor: 'bg-green-100',
     },
-    {
-      title: 'Current Rotations',
-      value: currentRotations?.rotations?.length || 0,
-      description: 'Active assignments',
-      icon: Calendar,
-      color: 'text-purple-600',
-      bgColor: 'bg-purple-100',
-    },
+    // Removed Current Rotations stat per requirements
     {
       title: 'Coverage Issues',
       value: criticalUnits.length + warningUnits.length,
@@ -98,13 +114,7 @@ export default function Dashboard() {
       icon: UserCheck,
       color: 'hospital',
     },
-    {
-      title: 'Generate Rotations',
-      description: 'Create automatic rotation schedule',
-      href: '/rotations',
-      icon: Calendar,
-      color: 'batchA',
-    },
+    // Removed Generate Rotations quick action per requirements
     {
       title: 'Manual Assignment',
       description: 'Manually assign intern to unit',
@@ -135,14 +145,14 @@ export default function Dashboard() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
         {stats.map((stat) => (
-          <Card key={stat.title}>
+          <Card key={stat.title} className="border-0 shadow-sm bg-white/70 backdrop-blur">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-gray-600">
                 {stat.title}
               </CardTitle>
-              <div className={`rounded-lg p-2 ${stat.bgColor}`}>
+              <div className={`rounded-lg p-2 ${stat.bgColor} shadow-inner`}> 
                 <stat.icon className={`h-4 w-4 ${stat.color}`} />
               </div>
             </CardHeader>
@@ -155,7 +165,7 @@ export default function Dashboard() {
       </div>
 
       {/* Batch Distribution */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center space-x-2">
@@ -163,7 +173,7 @@ export default function Dashboard() {
               <span>Batch Distribution</span>
             </CardTitle>
             <CardDescription>
-              Current distribution of active interns by batch
+              Current distribution of active interns by batch and on/off cycle
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -171,16 +181,19 @@ export default function Dashboard() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <div className="w-3 h-3 rounded-full bg-batch-a"></div>
-                  <span className="text-sm font-medium">Batch A (Monday off)</span>
+                  <span className="text-sm font-medium">Batch A (Weeks 1-2: Monday off, Weeks 3-4: Wednesday off)</span>
                 </div>
                 <span className="text-lg font-bold">{batchAInterns.length}</span>
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <div className="w-3 h-3 rounded-full bg-batch-b"></div>
-                  <span className="text-sm font-medium">Batch B (Wednesday off)</span>
+                  <span className="text-sm font-medium">Batch B (Weeks 1-2: Wednesday off, Weeks 3-4: Monday off)</span>
                 </div>
                 <span className="text-lg font-bold">{batchBInterns.length}</span>
+              </div>
+              <div className="text-xs text-gray-500 pt-2 border-t">
+                Cycle: Two weeks each, then switch off-days.
               </div>
             </div>
           </CardContent>
@@ -205,13 +218,23 @@ export default function Dashboard() {
               <div className="space-y-2">
                 {criticalUnits.map((unit) => (
                   <div key={unit.id} className="flex items-center justify-between p-2 bg-red-50 rounded-lg">
-                    <span className="text-sm font-medium text-red-800">{unit.name}</span>
+                    <div className="flex-1">
+                      <span className="text-sm font-medium text-red-800">{unit.name}</span>
+                      <div className="text-xs text-red-600 mt-1">
+                        {unit.reason} • Batch A: {unit.byBatch.A}, Batch B: {unit.byBatch.B}
+                      </div>
+                    </div>
                     <span className="text-xs bg-red-200 text-red-800 px-2 py-1 rounded">Critical</span>
                   </div>
                 ))}
                 {warningUnits.map((unit) => (
                   <div key={unit.id} className="flex items-center justify-between p-2 bg-yellow-50 rounded-lg">
-                    <span className="text-sm font-medium text-yellow-800">{unit.name}</span>
+                    <div className="flex-1">
+                      <span className="text-sm font-medium text-yellow-800">{unit.name}</span>
+                      <div className="text-xs text-yellow-600 mt-1">
+                        {unit.reason} • Batch A: {unit.byBatch.A}, Batch B: {unit.byBatch.B}
+                      </div>
+                    </div>
                     <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded">Warning</span>
                   </div>
                 ))}
@@ -251,45 +274,7 @@ export default function Dashboard() {
           </div>
         </CardContent>
       </Card>
-
-      {/* Recent Activity */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Rotations</CardTitle>
-          <CardDescription>
-            Latest rotation assignments and changes
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {currentRotations?.rotations?.length > 0 ? (
-            <div className="space-y-3">
-              {currentRotations.rotations.slice(0, 5).map((rotation) => (
-                <div key={rotation.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <div className={`w-2 h-2 rounded-full ${getBatchColor(rotation.intern_batch)}`}></div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{rotation.intern_name}</p>
-                      <p className="text-xs text-gray-500">{rotation.unit_name}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-gray-500">
-                      {formatDate(rotation.start_date)} - {formatDate(rotation.end_date)}
-                    </p>
-                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getWorkloadColor(rotation.unit_workload)}`}>
-                      {rotation.unit_workload}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              No current rotations found
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Removed Recent Rotations per requirements */}
     </div>
   );
 }

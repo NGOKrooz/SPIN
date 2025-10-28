@@ -5,7 +5,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { api } from '../services/api';
 import { useToast } from '../hooks/use-toast';
 
@@ -13,8 +12,8 @@ export default function UnitForm({ unit, onClose, onSuccess }) {
   const [formData, setFormData] = useState({
     name: '',
     duration_days: '',
-    workload: 'Medium',
     description: '',
+    patient_count: '',
   });
 
   const { toast } = useToast();
@@ -57,11 +56,12 @@ export default function UnitForm({ unit, onClose, onSuccess }) {
 
   useEffect(() => {
     if (unit) {
+      console.log('Initializing form with unit data:', unit);
       setFormData({
         name: unit.name || '',
         duration_days: unit.duration_days || '',
-        workload: unit.workload || 'Medium',
         description: unit.description || '',
+        patient_count: unit.patient_count || '',
       });
     }
   }, [unit]);
@@ -81,7 +81,10 @@ export default function UnitForm({ unit, onClose, onSuccess }) {
     const submitData = {
       ...formData,
       duration_days: parseInt(formData.duration_days),
+      patient_count: parseInt(formData.patient_count) || 0,
     };
+
+    console.log('Submitting unit data:', submitData);
 
     if (unit) {
       updateMutation.mutate({ id: unit.id, data: submitData });
@@ -129,34 +132,62 @@ export default function UnitForm({ unit, onClose, onSuccess }) {
               />
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="duration_days">Duration (Days) *</Label>
-                <Input
-                  id="duration_days"
-                  type="number"
-                  min="1"
-                  max="365"
-                  value={formData.duration_days}
-                  onChange={(e) => handleChange('duration_days', e.target.value)}
-                  placeholder="Enter duration in days"
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="workload">Workload</Label>
-                <Select value={formData.workload} onValueChange={(value) => handleChange('workload', value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select workload" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Low">Low</SelectItem>
-                    <SelectItem value="Medium">Medium</SelectItem>
-                    <SelectItem value="High">High</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div>
+              <Label htmlFor="duration_days">Duration (Days) *</Label>
+              <Input
+                id="duration_days"
+                type="number"
+                min="1"
+                max="365"
+                value={formData.duration_days}
+                onChange={(e) => handleChange('duration_days', e.target.value)}
+                placeholder="Enter duration in days"
+                required
+              />
             </div>
+
+            <div>
+              <Label htmlFor="patient_count">Patient count (WorkLoad)</Label>
+              <Input
+                id="patient_count"
+                type="number"
+                min="0"
+                value={formData.patient_count}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  console.log('Patient count changed:', value);
+                  handleChange('patient_count', value);
+                  // Auto-calculate workload based on patient count
+                  if (value !== '' && !isNaN(value)) {
+                    const count = parseInt(value);
+                    let workload;
+                    if (count <= 4) {
+                      workload = 'Low';
+                    } else if (count <= 8) {
+                      workload = 'Medium';
+                    } else {
+                      workload = 'High';
+                    }
+                    console.log('Auto-calculated workload:', workload);
+                    handleChange('workload', workload);
+                  }
+                }}
+                placeholder="Enter patient count"
+              />
+            </div>
+
+            {formData.patient_count && (
+              <div className="bg-blue-50 p-3 rounded-lg">
+                <div className="flex items-center space-x-2 text-sm">
+                  <span className="text-blue-800">
+                    <strong>Auto-calculated Workload:</strong> {formData.workload} (from {formData.patient_count} patients)
+                  </span>
+                </div>
+                <p className="text-xs text-blue-600 mt-1">
+                  Workload is automatically calculated: ≤4 = Low, 5-8 = Medium, 9+ = High
+                </p>
+              </div>
+            )}
 
             <div>
               <Label htmlFor="description">Description</Label>

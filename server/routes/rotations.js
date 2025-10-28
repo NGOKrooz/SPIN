@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { getDatabase } = require('../database/init');
 const { addDays, format, parseISO, differenceInDays, startOfWeek, endOfWeek, isWithinInterval } = require('date-fns');
+const { isBatchOffOnDate } = require('./settings');
 
 const router = express.Router();
 const db = getDatabase();
@@ -93,50 +94,64 @@ router.get('/current', (req, res) => {
     ORDER BY u.name, i.batch
   `;
   
-  db.all(query, [], (err, rows) => {
+  // Get all units to check for units with no rotations
+  const allUnitsQuery = `SELECT id, name, workload FROM units`;
+  
+  db.all(allUnitsQuery, [], (err, allUnits) => {
     if (err) {
-      console.error('Error fetching current rotations:', err);
-      return res.status(500).json({ error: 'Failed to fetch current rotations' });
+      console.error('Error fetching all units:', err);
+      return res.status(500).json({ error: 'Failed to fetch units' });
     }
     
-    // Group by unit and analyze coverage
-    const unitCoverage = {};
-    rows.forEach(rotation => {
-      const unitId = rotation.unit_id;
-      if (!unitCoverage[unitId]) {
-        unitCoverage[unitId] = {
-          unit_name: rotation.unit_name,
-          unit_workload: rotation.unit_workload,
+    db.all(query, [], (err, rows) => {
+      if (err) {
+        console.error('Error fetching current rotations:', err);
+        return res.status(500).json({ error: 'Failed to fetch current rotations' });
+      }
+      
+      // Initialize coverage for all units
+      const unitCoverage = {};
+      allUnits.forEach(unit => {
+        unitCoverage[unit.id] = {
+          unit_name: unit.name,
+          unit_workload: unit.workload,
           batch_a: [],
           batch_b: [],
           coverage_status: 'good'
         };
-      }
+      });
       
-      if (rotation.intern_batch === 'A') {
-        unitCoverage[unitId].batch_a.push(rotation);
-      } else {
-        unitCoverage[unitId].batch_b.push(rotation);
-      }
-    });
-    
-    // Analyze coverage status
-    Object.values(unitCoverage).forEach(unit => {
-      const hasBatchA = unit.batch_a.length > 0;
-      const hasBatchB = unit.batch_b.length > 0;
+      // Add rotation data
+      rows.forEach(rotation => {
+        const unitId = rotation.unit_id;
+        if (unitCoverage[unitId]) {
+          if (rotation.intern_batch === 'A') {
+            unitCoverage[unitId].batch_a.push(rotation);
+          } else {
+            unitCoverage[unitId].batch_b.push(rotation);
+          }
+        }
+      });
       
-      if (unit.unit_workload === 'High' && (!hasBatchA || !hasBatchB)) {
-        unit.coverage_status = 'critical';
-      } else if (unit.unit_workload === 'Medium' && !hasBatchA && !hasBatchB) {
-        unit.coverage_status = 'warning';
-      } else if (!hasBatchA && !hasBatchB) {
-        unit.coverage_status = 'critical';
-      }
-    });
-    
-    res.json({
-      rotations: rows,
-      unit_coverage: unitCoverage
+      // Analyze coverage status
+      Object.values(unitCoverage).forEach(unit => {
+        const hasBatchA = unit.batch_a.length > 0;
+        const hasBatchB = unit.batch_b.length > 0;
+        
+        // Units with no interns from both batches require immediate attention - should be critical
+        if (!hasBatchA && !hasBatchB) {
+          unit.coverage_status = 'critical';
+        } else if (unit.unit_workload === 'High' && (!hasBatchA || !hasBatchB)) {
+          unit.coverage_status = 'critical';
+        } else if (unit.unit_workload === 'Medium' && (!hasBatchA || !hasBatchB)) {
+          unit.coverage_status = 'warning';
+        }
+      });
+      
+      res.json({
+        rotations: rows,
+        unit_coverage: unitCoverage
+      });
     });
   });
 });
@@ -349,7 +364,7 @@ function generateInternRotations(intern, units, startDate, settings) {
   let currentDate = parseISO(intern.start_date);
   const endDate = addDays(currentDate, internshipDuration);
   
-  // Calculate total rotation days needed
+  // Calculate total rotation days needed (excluding off days)
   const totalRotationDays = units.reduce((sum, unit) => sum + unit.duration_days, 0);
   const cycles = Math.ceil(internshipDuration / totalRotationDays);
   
@@ -360,23 +375,57 @@ function generateInternRotations(intern, units, startDate, settings) {
     const unit = units[unitIndex];
     
     const rotationStart = currentDate;
-    const rotationEnd = addDays(rotationStart, unit.duration_days - 1);
+    let rotationEnd = addDays(rotationStart, unit.duration_days - 1);
     
     // Ensure rotation doesn't exceed internship end date
     const actualEnd = rotationEnd > endDate ? endDate : rotationEnd;
     
+    // Adjust rotation dates to account for batch off days
+    const adjustedDates = adjustRotationDatesForOffDays(
+      rotationStart, 
+      actualEnd, 
+      intern.batch, 
+      settings
+    );
+    
     rotations.push({
       intern_id: intern.id,
       unit_id: unit.id,
-      start_date: format(rotationStart, 'yyyy-MM-dd'),
-      end_date: format(actualEnd, 'yyyy-MM-dd')
+      start_date: format(adjustedDates.start, 'yyyy-MM-dd'),
+      end_date: format(adjustedDates.end, 'yyyy-MM-dd')
     });
     
-    currentDate = addDays(actualEnd, 1);
+    currentDate = addDays(adjustedDates.end, 1);
     rotationIndex++;
   }
   
   return rotations;
+}
+
+// Helper function to adjust rotation dates to account for batch off days
+function adjustRotationDatesForOffDays(startDate, endDate, batch, settings) {
+  let adjustedStart = startDate;
+  let adjustedEnd = endDate;
+  
+  // Check if rotation starts on an off day and adjust
+  if (isBatchOffOnDate(batch, format(startDate, 'yyyy-MM-dd'), settings)) {
+    adjustedStart = addDays(startDate, 1);
+  }
+  
+  // Check if rotation ends on an off day and adjust
+  if (isBatchOffOnDate(batch, format(endDate, 'yyyy-MM-dd'), settings)) {
+    adjustedEnd = addDays(endDate, 1);
+  }
+  
+  // Ensure we don't go backwards
+  if (adjustedStart > adjustedEnd) {
+    adjustedEnd = adjustedStart;
+  }
+  
+  return {
+    start: adjustedStart,
+    end: adjustedEnd
+  };
 }
 
 module.exports = router;

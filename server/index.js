@@ -19,7 +19,8 @@ app.use('/api/interns', require('./routes/interns'));
 app.use('/api/units', require('./routes/units'));
 app.use('/api/rotations', require('./routes/rotations'));
 app.use('/api/reports', require('./routes/reports'));
-app.use('/api/settings', require('./routes/settings'));
+// Settings route exports helpers alongside the router; mount the router explicitly
+app.use('/api/settings', require('./routes/settings').router);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

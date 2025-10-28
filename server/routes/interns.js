@@ -10,7 +10,7 @@ const db = getDatabase();
 const validateIntern = [
   body('name').trim().isLength({ min: 2, max: 100 }).withMessage('Name must be 2-100 characters'),
   body('gender').isIn(['Male', 'Female']).withMessage('Gender must be Male or Female'),
-  body('batch').isIn(['A', 'B']).withMessage('Batch must be A or B'),
+  body('batch').optional().isIn(['A', 'B']).withMessage('Batch must be A or B'),
   body('start_date').isISO8601().withMessage('Start date must be a valid date'),
   body('phone_number').optional().isMobilePhone().withMessage('Phone number must be valid')
 ];
@@ -137,28 +137,91 @@ router.post('/', validateIntern, (req, res) => {
     return res.status(400).json({ errors: errors.array() });
   }
   
-  const { name, gender, batch, start_date, phone_number } = req.body;
+  const { name, gender, batch, start_date, phone_number, initial_unit_id } = req.body;
   
   const query = `
     INSERT INTO interns (name, gender, batch, start_date, phone_number)
     VALUES (?, ?, ?, ?, ?)
   `;
   
-  db.run(query, [name, gender, batch, start_date, phone_number], function(err) {
-    if (err) {
-      console.error('Error creating intern:', err);
-      return res.status(500).json({ error: 'Failed to create intern' });
-    }
+  // Auto-assign batch if not provided: alternate insertion order A/B
+  const getNextBatch = new Promise((resolve) => {
+    const countQuery = `SELECT COUNT(*) as count FROM interns`;
+    db.get(countQuery, [], (e, row) => {
+      if (e) return resolve('A');
+      const next = (row.count % 2 === 0) ? 'A' : 'B';
+      resolve(next);
+    });
+  });
+
+  getNextBatch.then((nextBatch) => {
+    const finalBatch = batch && ['A','B'].includes(batch) ? batch : nextBatch;
     
-    res.status(201).json({
-      id: this.lastID,
-      name,
-      gender,
-      batch,
-      start_date,
-      phone_number,
-      status: 'Active',
-      extension_days: 0
+    db.serialize(() => {
+      // Create intern
+      db.run(query, [name, gender, finalBatch, start_date, phone_number], function(err) {
+        if (err) {
+          console.error('Error creating intern:', err);
+          return res.status(500).json({ error: 'Failed to create intern' });
+        }
+        
+        const internId = this.lastID;
+        
+        // If initial unit is provided, create rotation
+        if (initial_unit_id) {
+          // Get unit duration
+          db.get('SELECT duration_days FROM units WHERE id = ?', [initial_unit_id], (err, unit) => {
+            if (err) {
+              console.error('Error fetching unit:', err);
+              return res.status(500).json({ error: 'Failed to fetch unit information' });
+            }
+            
+            if (!unit) {
+              return res.status(400).json({ error: 'Invalid unit selected' });
+            }
+            
+            // Calculate end date
+            const endDate = addDays(new Date(start_date), unit.duration_days);
+            
+            // Create rotation
+            const rotationQuery = `
+              INSERT INTO rotations (intern_id, unit_id, start_date, end_date, is_manual_assignment)
+              VALUES (?, ?, ?, ?, ?)
+            `;
+            
+            db.run(rotationQuery, [internId, initial_unit_id, start_date, format(endDate, 'yyyy-MM-dd'), true], (err) => {
+              if (err) {
+                console.error('Error creating rotation:', err);
+                return res.status(500).json({ error: 'Failed to create initial rotation' });
+              }
+              
+              res.status(201).json({
+                id: internId,
+                name,
+                gender,
+                batch: finalBatch,
+                start_date,
+                phone_number,
+                status: 'Active',
+                extension_days: 0,
+                initial_unit_id,
+                calculated_end_date: format(endDate, 'yyyy-MM-dd')
+              });
+            });
+          });
+        } else {
+          res.status(201).json({
+            id: internId,
+            name,
+            gender,
+            batch: finalBatch,
+            start_date,
+            phone_number,
+            status: 'Active',
+            extension_days: 0
+          });
+        }
+      });
     });
   });
 });
@@ -173,6 +236,9 @@ router.put('/:id', validateIntern, (req, res) => {
   const { id } = req.params;
   const { name, gender, batch, start_date, phone_number, status, extension_days } = req.body;
   
+  // Auto-derive status: if extension_days > 0 -> Extended; else respect provided status if present, or keep existing
+  const finalStatus = (typeof extension_days === 'number' && extension_days > 0) ? 'Extended' : (status || 'Active');
+
   const query = `
     UPDATE interns 
     SET name = ?, gender = ?, batch = ?, start_date = ?, phone_number = ?, 
@@ -180,7 +246,7 @@ router.put('/:id', validateIntern, (req, res) => {
     WHERE id = ?
   `;
   
-  db.run(query, [name, gender, batch, start_date, phone_number, status, extension_days, id], function(err) {
+  db.run(query, [name, gender, batch, start_date, phone_number, finalStatus, extension_days, id], function(err) {
     if (err) {
       console.error('Error updating intern:', err);
       return res.status(500).json({ error: 'Failed to update intern' });
@@ -196,7 +262,9 @@ router.put('/:id', validateIntern, (req, res) => {
 
 // POST /api/interns/:id/extend - Extend internship
 router.post('/:id/extend', [
-  body('extension_days').isInt({ min: 1, max: 365 }).withMessage('Extension must be 1-365 days')
+  body('extension_days').isInt({ min: 1, max: 365 }).withMessage('Extension must be 1-365 days'),
+  body('reason').isIn(['sign out', 'presentation', 'internal query', 'leave', 'other']).withMessage('Invalid extension reason'),
+  body('notes').optional().isString()
 ], (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -204,25 +272,46 @@ router.post('/:id/extend', [
   }
   
   const { id } = req.params;
-  const { extension_days } = req.body;
+  const { extension_days, reason, notes } = req.body;
   
-  const query = `
-    UPDATE interns 
-    SET status = 'Extended', extension_days = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `;
-  
-  db.run(query, [extension_days, id], function(err) {
-    if (err) {
-      console.error('Error extending internship:', err);
-      return res.status(500).json({ error: 'Failed to extend internship' });
-    }
+  db.serialize(() => {
+    // Update intern status
+    const updateQuery = `
+      UPDATE interns 
+      SET status = 'Extended', extension_days = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `;
     
-    if (this.changes === 0) {
-      return res.status(404).json({ error: 'Intern not found' });
-    }
-    
-    res.json({ message: 'Internship extended successfully' });
+    db.run(updateQuery, [extension_days, id], function(err) {
+      if (err) {
+        console.error('Error extending internship:', err);
+        return res.status(500).json({ error: 'Failed to extend internship' });
+      }
+      
+      if (this.changes === 0) {
+        return res.status(404).json({ error: 'Intern not found' });
+      }
+      
+      // Record extension reason
+      const reasonQuery = `
+        INSERT INTO extension_reasons (intern_id, extension_days, reason, notes)
+        VALUES (?, ?, ?, ?)
+      `;
+      
+      db.run(reasonQuery, [id, extension_days, reason, notes], function(err) {
+        if (err) {
+          console.error('Error recording extension reason:', err);
+          // Don't fail the request, just log the error
+        }
+        
+        res.json({ 
+          message: 'Internship extended successfully',
+          extension_days,
+          reason,
+          notes
+        });
+      });
+    });
   });
 });
 

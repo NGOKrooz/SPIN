@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Building2, Users, Clock, AlertTriangle, TrendingUp, Edit, BarChart3 } from 'lucide-react';
+import { Building2, AlertTriangle, Edit, BarChart3, Eye } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -10,14 +10,16 @@ import { api } from '../services/api';
 import { getWorkloadColor, getCoverageColor, getBatchColor } from '../lib/utils';
 import { useToast } from '../hooks/use-toast';
 import UnitForm from '../components/UnitForm';
+import UnitViewModal from '../components/UnitViewModal';
 
 export default function Units() {
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterWorkload, setFilterWorkload] = useState('');
-  const [filterCoverage, setFilterCoverage] = useState('');
+  const [filterWorkload, setFilterWorkload] = useState('ALL');
+  const [filterCoverage, setFilterCoverage] = useState('ALL');
   const [showForm, setShowForm] = useState(false);
   const [editingUnit, setEditingUnit] = useState(null);
   const [selectedUnit, setSelectedUnit] = useState(null);
+  const [showCompletedInterns, setShowCompletedInterns] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -44,10 +46,11 @@ export default function Units() {
     },
   });
 
+
   const filteredUnits = units?.filter(unit => {
     const matchesSearch = unit.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesWorkload = !filterWorkload || unit.workload === filterWorkload;
-    const matchesCoverage = !filterCoverage || unit.coverage_status === filterCoverage;
+    const matchesWorkload = filterWorkload === 'ALL' || unit.workload === filterWorkload;
+    const matchesCoverage = filterCoverage === 'ALL' || unit.coverage_status === filterCoverage;
     return matchesSearch && matchesWorkload && matchesCoverage;
   }) || [];
 
@@ -72,6 +75,7 @@ export default function Units() {
     setShowForm(false);
     setEditingUnit(null);
   };
+
 
   if (isLoading) {
     return (
@@ -101,14 +105,16 @@ export default function Units() {
           <h1 className="text-3xl font-bold text-gray-900">Units</h1>
           <p className="text-gray-600">Manage hospital units and their workload</p>
         </div>
-        <Button onClick={() => setShowForm(true)} className="hospital-gradient">
-          <Building2 className="h-4 w-4 mr-2" />
-          Add Unit
-        </Button>
+        <div className="flex space-x-2">
+          <Button onClick={() => setShowForm(true)} className="hospital-gradient">
+            <Building2 className="h-4 w-4 mr-2" />
+            Add Unit
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
-      <Card>
+      <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
         <CardHeader>
           <CardTitle>Filters</CardTitle>
         </CardHeader>
@@ -130,7 +136,7 @@ export default function Units() {
                   <SelectValue placeholder="All workloads" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All workloads</SelectItem>
+                  <SelectItem value="ALL">All workloads</SelectItem>
                   <SelectItem value="Low">Low</SelectItem>
                   <SelectItem value="Medium">Medium</SelectItem>
                   <SelectItem value="High">High</SelectItem>
@@ -144,7 +150,7 @@ export default function Units() {
                   <SelectValue placeholder="All coverage" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All coverage</SelectItem>
+                  <SelectItem value="ALL">All coverage</SelectItem>
                   <SelectItem value="good">Good</SelectItem>
                   <SelectItem value="warning">Warning</SelectItem>
                   <SelectItem value="critical">Critical</SelectItem>
@@ -156,8 +162,8 @@ export default function Units() {
                 variant="outline" 
                 onClick={() => {
                   setSearchTerm('');
-                  setFilterWorkload('');
-                  setFilterCoverage('');
+                  setFilterWorkload('ALL');
+                  setFilterCoverage('ALL');
                 }}
               >
                 Clear Filters
@@ -229,7 +235,7 @@ export default function Units() {
             <div className="flex items-center space-x-2">
               <AlertTriangle className="h-5 w-5 text-red-600" />
               <div>
-                <p className="text-sm font-medium text-gray-600">Critical</p>
+                <p className="text-sm font-medium text-gray-600">Critical (low coverage)</p>
                 <p className="text-2xl font-bold text-gray-900">{coverageStats.critical}</p>
               </div>
             </div>
@@ -248,9 +254,6 @@ export default function Units() {
                   <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getWorkloadColor(unit.workload)}`}>
                     {unit.workload}
                   </span>
-                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getCoverageColor(unit.coverage_status)}`}>
-                    {unit.coverage_status}
-                  </span>
                 </div>
               </div>
               <CardDescription>
@@ -260,7 +263,7 @@ export default function Units() {
             <CardContent className="space-y-4">
               {/* Current Interns */}
               <div>
-                <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-2">
                   <h4 className="text-sm font-medium text-gray-700">Current Interns</h4>
                   <span className="text-sm text-gray-500">{unit.current_interns}</span>
                 </div>
@@ -281,35 +284,20 @@ export default function Units() {
                 )}
               </div>
 
-              {/* Workload Update */}
+              {/* Patient Count Information */}
               <div>
-                <h4 className="text-sm font-medium text-gray-700 mb-2">Update Workload</h4>
-                <div className="flex space-x-1">
-                  <Button
-                    size="sm"
-                    variant={unit.workload === 'Low' ? 'default' : 'outline'}
-                    className={unit.workload === 'Low' ? 'bg-workload-low hover:bg-workload-low/90' : ''}
-                    onClick={() => handleWorkloadUpdate(unit.id, 'Low')}
-                  >
-                    Low
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={unit.workload === 'Medium' ? 'default' : 'outline'}
-                    className={unit.workload === 'Medium' ? 'bg-workload-medium hover:bg-workload-medium/90' : ''}
-                    onClick={() => handleWorkloadUpdate(unit.id, 'Medium')}
-                  >
-                    Medium
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={unit.workload === 'High' ? 'default' : 'outline'}
-                    className={unit.workload === 'High' ? 'bg-workload-high hover:bg-workload-high/90' : ''}
-                    onClick={() => handleWorkloadUpdate(unit.id, 'High')}
-                  >
-                    High
-                  </Button>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-medium text-gray-700">Patient Count</h4>
+                  <span className="text-sm font-medium text-blue-600">{unit.patient_count || 0} patients</span>
                 </div>
+                <p className="text-xs text-gray-500">
+                  Workload: <span className="font-medium">{unit.workload}</span> (Auto-calculated from patient count)
+                </p>
+                {(!unit.patient_count || unit.patient_count === 0) && (
+                  <p className="text-xs text-yellow-600 mt-1">
+                    ⚠️ No patient count set - edit unit to set patient count
+                  </p>
+                )}
               </div>
 
               {/* Actions */}
@@ -317,7 +305,10 @@ export default function Units() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setSelectedUnit(unit)}
+                  onClick={() => {
+                    setSelectedUnit(unit);
+                    setShowCompletedInterns(true);
+                  }}
                 >
                   <BarChart3 className="h-4 w-4 mr-1" />
                   History
@@ -329,6 +320,17 @@ export default function Units() {
                 >
                   <Edit className="h-4 w-4 mr-1" />
                   Edit
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSelectedUnit(unit);
+                    setShowCompletedInterns(false);
+                  }}
+                >
+                  <Eye className="h-4 w-4 mr-1" />
+                  View
                 </Button>
               </div>
             </CardContent>
@@ -344,6 +346,18 @@ export default function Units() {
             <p className="text-gray-500">No units match your current filters</p>
           </CardContent>
         </Card>
+      )}
+
+      {/* View Unit Modal */}
+      {selectedUnit && (
+        <UnitViewModal 
+          unit={selectedUnit} 
+          onClose={() => {
+            setSelectedUnit(null);
+            setShowCompletedInterns(false);
+          }}
+          showCompletedInterns={showCompletedInterns}
+        />
       )}
 
       {/* Unit Form Modal */}

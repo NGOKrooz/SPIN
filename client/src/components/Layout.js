@@ -4,7 +4,6 @@ import {
   LayoutDashboard, 
   Users, 
   Building2, 
-  Calendar, 
   UserPlus, 
   FileText, 
   Settings,
@@ -16,7 +15,6 @@ const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Interns', href: '/interns', icon: Users },
   { name: 'Units', href: '/units', icon: Building2 },
-  { name: 'Rotations', href: '/rotations', icon: Calendar },
   { name: 'Manual Assignment', href: '/manual-assignment', icon: UserPlus },
   { name: 'Reports', href: '/reports', icon: FileText },
   { name: 'Settings', href: '/settings', icon: Settings },
@@ -26,12 +24,12 @@ export default function Layout() {
   const location = useLocation();
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen app-bg">
       {/* Sidebar */}
-      <div className="fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg">
+      <div className="fixed inset-y-0 left-0 z-50 w-64 bg-white/90 backdrop-blur-md shadow-xl">
         <div className="flex h-full flex-col">
           {/* Logo */}
-          <div className="flex h-16 items-center justify-center border-b border-gray-200">
+          <div className="flex h-16 items-center justify-center glass-header">
             <div className="flex items-center space-x-2">
               <div className="hospital-gradient rounded-lg p-2">
                 <Stethoscope className="h-6 w-6 text-white" />
@@ -86,7 +84,7 @@ export default function Layout() {
 
       {/* Main content */}
       <div className="pl-64">
-        <main className="py-6">
+        <main className="py-8">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <Outlet />
           </div>

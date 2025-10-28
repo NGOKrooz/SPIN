@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useMutation } from '@tanstack/react-query';
-import { X, Save, User, Calendar, Phone } from 'lucide-react';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { X, Save, User, Calendar } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -8,6 +8,7 @@ import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { api } from '../services/api';
 import { useToast } from '../hooks/use-toast';
+import { addDays, format } from 'date-fns';
 
 export default function InternForm({ intern, onClose, onSuccess }) {
   const [formData, setFormData] = useState({
@@ -16,11 +17,17 @@ export default function InternForm({ intern, onClose, onSuccess }) {
     batch: '',
     start_date: '',
     phone_number: '',
-    status: 'Active',
     extension_days: 0,
+    initial_unit_id: '',
   });
 
   const { toast } = useToast();
+
+  // Fetch units for dropdown
+  const { data: units } = useQuery({
+    queryKey: ['units'],
+    queryFn: api.getUnits,
+  });
 
   const createMutation = useMutation({
     mutationFn: api.createIntern,
@@ -66,11 +73,21 @@ export default function InternForm({ intern, onClose, onSuccess }) {
         batch: intern.batch || '',
         start_date: intern.start_date || '',
         phone_number: intern.phone_number || '',
-        status: intern.status || 'Active',
         extension_days: intern.extension_days || 0,
+        initial_unit_id: intern.initial_unit_id || '',
       });
     }
   }, [intern]);
+
+  // Calculate end date based on selected unit and start date
+  const getCalculatedEndDate = () => {
+    if (!formData.start_date || !formData.initial_unit_id) return '';
+    const selectedUnit = units?.find(unit => unit.id === parseInt(formData.initial_unit_id));
+    if (selectedUnit) {
+      return format(addDays(new Date(formData.start_date), selectedUnit.duration_days), 'yyyy-MM-dd');
+    }
+    return '';
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -184,20 +201,42 @@ export default function InternForm({ intern, onClose, onSuccess }) {
                   placeholder="Enter phone number"
                 />
               </div>
-              <div>
-                <Label htmlFor="status">Status</Label>
-                <Select value={formData.status} onValueChange={(value) => handleChange('status', value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Active">Active</SelectItem>
-                    <SelectItem value="Extended">Extended</SelectItem>
-                    <SelectItem value="Completed">Completed</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {!intern && (
+                <div>
+                  <Label htmlFor="initial_unit">Initial Unit Assignment</Label>
+                  <Select 
+                    value={formData.initial_unit_id} 
+                    onValueChange={(value) => handleChange('initial_unit_id', value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select initial unit" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {units?.map((unit) => (
+                        <SelectItem key={unit.id} value={unit.id.toString()}>
+                          {unit.name} ({unit.duration_days} days)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
+
+            {/* Show calculated end date if unit and start date are selected */}
+            {!intern && formData.start_date && formData.initial_unit_id && (
+              <div className="bg-blue-50 p-3 rounded-lg">
+                <div className="flex items-center space-x-2 text-sm">
+                  <Calendar className="h-4 w-4 text-blue-600" />
+                  <span className="text-blue-800">
+                    Calculated end date: <strong>{getCalculatedEndDate()}</strong>
+                  </span>
+                </div>
+                <p className="text-xs text-blue-600 mt-1">
+                  Based on {units?.find(u => u.id === parseInt(formData.initial_unit_id))?.name} duration
+                </p>
+              </div>
+            )}
 
             {formData.status === 'Extended' && (
               <div>

@@ -39,11 +39,24 @@ function initializeDatabase() {
           name TEXT NOT NULL UNIQUE,
           duration_days INTEGER NOT NULL,
           workload TEXT NOT NULL DEFAULT 'Medium' CHECK (workload IN ('Low', 'Medium', 'High')),
+          patient_count INTEGER DEFAULT 0,
           description TEXT,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
       `);
+
+      // Add patient_count column if it doesn't exist (migration for existing databases)
+      db.run(`
+        ALTER TABLE units ADD COLUMN patient_count INTEGER DEFAULT 0
+      `, (err) => {
+        // Ignore error if column already exists
+        if (err && !err.message.includes('duplicate column name')) {
+          console.error('Error adding patient_count column:', err);
+        } else {
+          console.log('Patient count column added or already exists');
+        }
+      });
 
       // Rotations table
       db.run(`
@@ -82,6 +95,19 @@ function initializeDatabase() {
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (unit_id) REFERENCES units (id) ON DELETE CASCADE
         )
+      `);
+
+      // Extension reasons table
+      db.run(`
+        CREATE TABLE IF NOT EXISTS extension_reasons (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          intern_id INTEGER NOT NULL,
+          extension_days INTEGER NOT NULL,
+          reason TEXT NOT NULL CHECK (reason IN ('sign out', 'presentation', 'internal query', 'leave', 'other')),
+          notes TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (intern_id) REFERENCES interns (id) ON DELETE CASCADE
+        )
       `, (err) => {
         if (err) {
           reject(err);
@@ -100,8 +126,11 @@ function initializeDatabase() {
 function insertDefaultSettings() {
   return new Promise((resolve, reject) => {
     const defaultSettings = [
-      { key: 'batch_a_off_day', value: 'Monday', description: 'Day of the week when Batch A is off' },
-      { key: 'batch_b_off_day', value: 'Wednesday', description: 'Day of the week when Batch B is off' },
+      { key: 'batch_a_off_day_week1', value: 'Monday', description: 'Day of the week when Batch A is off in weeks 1&2' },
+      { key: 'batch_b_off_day_week1', value: 'Wednesday', description: 'Day of the week when Batch B is off in weeks 1&2' },
+      { key: 'batch_a_off_day_week3', value: 'Wednesday', description: 'Day of the week when Batch A is off in weeks 3&4' },
+      { key: 'batch_b_off_day_week3', value: 'Monday', description: 'Day of the week when Batch B is off in weeks 3&4' },
+      { key: 'schedule_start_date', value: '2024-01-01', description: 'Reference date for calculating alternating schedule weeks' },
       { key: 'internship_duration_months', value: '12', description: 'Total internship duration in months' },
       { key: 'rotation_buffer_days', value: '2', description: 'Buffer days between rotations' }
     ];
