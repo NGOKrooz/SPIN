@@ -9,7 +9,7 @@ const db = getDatabase();
 const validateUnit = [
   body('name').trim().isLength({ min: 2, max: 100 }).withMessage('Name must be 2-100 characters'),
   body('duration_days').isInt({ min: 1, max: 365 }).withMessage('Duration must be 1-365 days'),
-  body('workload').isIn(['Low', 'Medium', 'High']).withMessage('Workload must be Low, Medium, or High'),
+  body('workload').optional().isIn(['Low', 'Medium', 'High']).withMessage('Workload must be Low, Medium, or High'),
   body('patient_count').optional().isInt({ min: 0 }).withMessage('Patient count must be a non-negative integer')
 ];
 
@@ -186,13 +186,22 @@ router.post('/', validateUnit, (req, res) => {
   }
   
   const { name, duration_days, workload, description, patient_count } = req.body;
+
+  // Derive workload from patient_count if not provided
+  let finalWorkload = workload;
+  const count = typeof patient_count === 'number' ? patient_count : parseInt(patient_count || '0');
+  if (!finalWorkload) {
+    if (count <= 4) finalWorkload = 'Low';
+    else if (count <= 8) finalWorkload = 'Medium';
+    else finalWorkload = 'High';
+  }
   
   const query = `
     INSERT INTO units (name, duration_days, workload, description, patient_count)
     VALUES (?, ?, ?, ?, ?)
   `;
   
-  db.run(query, [name, duration_days, workload, description, patient_count || 0], function(err) {
+  db.run(query, [name, duration_days, finalWorkload, description, count || 0], function(err) {
     if (err) {
       console.error('Error creating unit:', err);
       if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
@@ -205,9 +214,9 @@ router.post('/', validateUnit, (req, res) => {
       id: this.lastID,
       name,
       duration_days,
-      workload,
+      workload: finalWorkload,
       description,
-      patient_count: patient_count || 0
+      patient_count: count || 0
     });
   });
 });
@@ -221,6 +230,15 @@ router.put('/:id', validateUnit, (req, res) => {
   
   const { id } = req.params;
   const { name, duration_days, workload, description, patient_count } = req.body;
+
+  // Derive workload from patient_count if not provided
+  let finalWorkload = workload;
+  const count = typeof patient_count === 'number' ? patient_count : parseInt(patient_count || '0');
+  if (!finalWorkload) {
+    if (count <= 4) finalWorkload = 'Low';
+    else if (count <= 8) finalWorkload = 'Medium';
+    else finalWorkload = 'High';
+  }
   
   console.log('Updating unit:', { id, name, duration_days, workload, description, patient_count });
   
@@ -230,7 +248,7 @@ router.put('/:id', validateUnit, (req, res) => {
     WHERE id = ?
   `;
   
-  db.run(query, [name, duration_days, workload, description, patient_count || 0, id], function(err) {
+  db.run(query, [name, duration_days, finalWorkload, description, count || 0, id], function(err) {
     if (err) {
       console.error('Error updating unit:', err);
       if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
