@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 require('dotenv').config();
 
 const app = express();
@@ -31,9 +32,9 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Serve React build in production
-if (process.env.NODE_ENV === 'production') {
-  const buildPath = path.join(__dirname, '../client/build');
+// Serve React build if it exists (works in production containers without NODE_ENV)
+const buildPath = path.join(__dirname, '../client/build');
+if (fs.existsSync(buildPath)) {
   app.use(express.static(buildPath));
 
   // Non-API routes should serve the SPA
@@ -44,7 +45,7 @@ if (process.env.NODE_ENV === 'production') {
     res.sendFile(path.join(buildPath, 'index.html'));
   });
 } else {
-  // 404 handler (development)
+  // 404 handler when no frontend build is present
   app.use('*', (req, res) => {
     res.status(404).json({ error: 'Route not found' });
   });
