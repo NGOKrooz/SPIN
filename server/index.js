@@ -20,6 +20,12 @@ app.options('*', cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Basic request logging to help diagnose errors in production
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
+  next();
+});
+
 // Routes
 app.use('/api/interns', require('./routes/interns'));
 app.use('/api/units', require('./routes/units'));

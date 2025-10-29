@@ -221,6 +221,45 @@ router.post('/', validateUnit, (req, res) => {
   });
 });
 
+// POST /api/units/seed-defaults - Seed default units (idempotent)
+router.post('/seed-defaults', (req, res) => {
+  const defaultUnits = [
+    { name: 'Adult Neurology', duration_days: 21, workload: 'Medium' },
+    { name: 'Acute Stroke', duration_days: 30, workload: 'High' },
+    { name: 'Neurosurgery', duration_days: 30, workload: 'High' },
+    { name: 'Geriatrics', duration_days: 30, workload: 'Medium' },
+    { name: 'Orthopedic Inpatients', duration_days: 30, workload: 'High' },
+    { name: 'Orthopedic Outpatients', duration_days: 30, workload: 'Medium' },
+    { name: 'Electrophysiology', duration_days: 30, workload: 'Low' },
+    { name: 'Exercise Immunology', duration_days: 30, workload: 'Low' },
+    { name: "Women's Health", duration_days: 30, workload: 'Medium' },
+    { name: 'Pediatrics Inpatients', duration_days: 21, workload: 'High' },
+    { name: 'Pediatrics Outpatients', duration_days: 21, workload: 'Medium' },
+    { name: 'Cardio Thoracic Unit', duration_days: 30, workload: 'High' }
+  ];
+
+  const stmt = db.prepare(`
+    INSERT OR IGNORE INTO units (name, duration_days, workload, description, patient_count)
+    VALUES (?, ?, ?, '', 0)
+  `);
+
+  db.serialize(() => {
+    try {
+      defaultUnits.forEach(u => stmt.run(u.name, u.duration_days, u.workload));
+      stmt.finalize((err) => {
+        if (err) {
+          console.error('Error seeding units:', err);
+          return res.status(500).json({ error: 'Failed to seed units' });
+        }
+        res.json({ message: 'Default units seeded (idempotent)' });
+      });
+    } catch (e) {
+      console.error('Seed error:', e);
+      return res.status(500).json({ error: 'Failed to seed units' });
+    }
+  });
+});
+
 // PUT /api/units/:id - Update unit
 router.put('/:id', validateUnit, (req, res) => {
   const errors = validationResult(req);
