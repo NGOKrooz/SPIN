@@ -9,10 +9,13 @@ COPY package*.json ./
 COPY server/package*.json ./server/
 COPY client/package*.json ./client/
 
-# Install dependencies
-RUN npm install
-RUN cd server && npm install
-RUN cd client && npm install
+# Install dependencies with explicit flags
+RUN npm install --production=false
+RUN cd server && npm install --production=false
+RUN cd client && npm install --production=false
+
+# Verify react-scripts is installed
+RUN cd client && ls -la node_modules/.bin/react-scripts || npm install react-scripts --save
 
 # Copy source code
 COPY . .
