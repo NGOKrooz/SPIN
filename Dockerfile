@@ -4,12 +4,12 @@ FROM node:18-alpine
 # Set working directory
 WORKDIR /app
 
-# Copy package files
+# Copy package files first for better caching
 COPY package*.json ./
 COPY server/package*.json ./server/
 COPY client/package*.json ./client/
 
-# Install dependencies with explicit flags
+# Install all dependencies
 RUN npm install --production=false
 RUN cd server && npm install --production=false
 RUN cd client && npm install --production=false
