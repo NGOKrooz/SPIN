@@ -17,8 +17,8 @@ COPY package*.json ./
 COPY server/package*.json ./server/
 COPY client/package*.json ./client/
 
-# Install dependencies deterministically and faster
-RUN npm ci --no-audit --fund=false
+# Install root dependencies (no lockfile at root)
+RUN npm install --no-audit --fund=false
 RUN cd server && npm ci --omit=dev --no-audit --fund=false
 RUN cd client && npm ci --no-audit --fund=false
 
