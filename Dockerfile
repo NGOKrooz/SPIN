@@ -31,5 +31,5 @@ RUN cd client && npm run build
 # Expose port
 EXPOSE 5000
 
-# Start the server
-CMD ["npm", "run", "server"]
+# Start the server (production)
+CMD ["node", "server/index.js"]
