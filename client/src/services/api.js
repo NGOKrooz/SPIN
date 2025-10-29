@@ -1,7 +1,19 @@
 import axios from 'axios';
 
-// Use same-origin relative API base to avoid CORS/mixed-content issues
-const API_BASE_URL = process.env.REACT_APP_API_URL || '/api';
+// Force production to use same-origin relative path
+// This ensures deployed app uses /api (same domain) instead of localhost
+const getApiBaseUrl = () => {
+  // If explicit env var is set, use it
+  if (process.env.REACT_APP_API_URL) {
+    return process.env.REACT_APP_API_URL;
+  }
+  // Always use relative path in production (same-origin)
+  return '/api';
+};
+
+const API_BASE_URL = getApiBaseUrl();
+
+console.log('API Base URL configured:', API_BASE_URL);
 
 const http = axios.create({
   baseURL: API_BASE_URL,
