@@ -1,7 +1,7 @@
 import axios from 'axios';
 
-const API_BASE_URL =
-  process.env.REACT_APP_API_URL || `${window.location.origin}/api`;
+// Use same-origin relative API base to avoid CORS/mixed-content issues
+const API_BASE_URL = process.env.REACT_APP_API_URL || '/api';
 
 const http = axios.create({
   baseURL: API_BASE_URL,
