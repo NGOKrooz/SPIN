@@ -1,19 +1,34 @@
 import axios from 'axios';
 
 // Force production to use same-origin relative path
-// This ensures deployed app uses /api (same domain) instead of localhost
+// NEVER use localhost in production - always use /api
 const getApiBaseUrl = () => {
-  // If explicit env var is set, use it
-  if (process.env.REACT_APP_API_URL) {
+  // In production (when not on localhost), always use /api
+  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  
+  if (!isLocalhost) {
+    // Production: always use same-origin relative path
+    return '/api';
+  }
+  
+  // Development: check env var, but default to /api
+  if (process.env.REACT_APP_API_URL && !process.env.REACT_APP_API_URL.includes('localhost')) {
     return process.env.REACT_APP_API_URL;
   }
-  // Always use relative path in production (same-origin)
+  
+  // Default to /api even in development (proxy will handle it)
   return '/api';
 };
 
-const API_BASE_URL = getApiBaseUrl();
+let API_BASE_URL = getApiBaseUrl();
 
-console.log('API Base URL configured:', API_BASE_URL);
+// Safety check: NEVER allow localhost in production builds
+if (API_BASE_URL.includes('localhost') && window.location.hostname !== 'localhost') {
+  console.error('ERROR: localhost API URL detected in production! Forcing /api');
+  API_BASE_URL = '/api';
+}
+
+console.log('API Base URL configured:', API_BASE_URL, '(hostname:', window.location.hostname + ')');
 
 const http = axios.create({
   baseURL: API_BASE_URL,
