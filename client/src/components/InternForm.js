@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { X, Save, User, Calendar } from 'lucide-react';
+import { useMutation } from '@tanstack/react-query';
+import { X, Save, User } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -18,16 +18,11 @@ export default function InternForm({ intern, onClose, onSuccess }) {
     start_date: '',
     phone_number: '',
     extension_days: 0,
-    initial_unit_id: '',
   });
 
   const { toast } = useToast();
 
-  // Fetch units for dropdown
-  const { data: units } = useQuery({
-    queryKey: ['units'],
-    queryFn: api.getUnits,
-  });
+  // No initial unit assignment in create flow
 
   const createMutation = useMutation({
     mutationFn: api.createIntern,
@@ -74,20 +69,11 @@ export default function InternForm({ intern, onClose, onSuccess }) {
         start_date: intern.start_date || '',
         phone_number: intern.phone_number || '',
         extension_days: intern.extension_days || 0,
-        initial_unit_id: intern.initial_unit_id || '',
       });
     }
   }, [intern]);
 
-  // Calculate end date based on selected unit and start date
-  const getCalculatedEndDate = () => {
-    if (!formData.start_date || !formData.initial_unit_id) return '';
-    const selectedUnit = units?.find(unit => unit.id === parseInt(formData.initial_unit_id));
-    if (selectedUnit) {
-      return format(addDays(new Date(formData.start_date), selectedUnit.duration_days), 'yyyy-MM-dd');
-    }
-    return '';
-  };
+  // Removed initial unit end-date preview
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -201,42 +187,10 @@ export default function InternForm({ intern, onClose, onSuccess }) {
                   placeholder="Enter phone number"
                 />
               </div>
-              {!intern && (
-                <div>
-                  <Label htmlFor="initial_unit">Initial Unit Assignment</Label>
-                  <Select 
-                    value={formData.initial_unit_id} 
-                    onValueChange={(value) => handleChange('initial_unit_id', value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select initial unit" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {units?.map((unit) => (
-                        <SelectItem key={unit.id} value={unit.id.toString()}>
-                          {unit.name} ({unit.duration_days} days)
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
+              
             </div>
 
-            {/* Show calculated end date if unit and start date are selected */}
-            {!intern && formData.start_date && formData.initial_unit_id && (
-              <div className="bg-blue-50 p-3 rounded-lg">
-                <div className="flex items-center space-x-2 text-sm">
-                  <Calendar className="h-4 w-4 text-blue-600" />
-                  <span className="text-blue-800">
-                    Calculated end date: <strong>{getCalculatedEndDate()}</strong>
-                  </span>
-                </div>
-                <p className="text-xs text-blue-600 mt-1">
-                  Based on {units?.find(u => u.id === parseInt(formData.initial_unit_id))?.name} duration
-                </p>
-              </div>
-            )}
+            
 
             {formData.status === 'Extended' && (
               <div>
