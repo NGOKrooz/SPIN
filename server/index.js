@@ -26,6 +26,15 @@ app.use((req, res, next) => {
   next();
 });
 
+// Extra CORS safety headers for environments behind proxies
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  next();
+});
+
 // Routes
 app.use('/api/interns', require('./routes/interns'));
 app.use('/api/units', require('./routes/units'));
