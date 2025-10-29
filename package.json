@@ -10,8 +10,7 @@
     "build": "npm install && cd client && npm install && npm run build",
     "install-all": "npm install && cd server && npm install && cd ../client && npm install",
     "prebuild": "npm run install-all",
-    "build-client": "cd client && npm install && npm run build",
-    "postinstall": "cd client && npm install"
+    "build-client": "cd client && npm install && npm run build"
   },
   "keywords": ["hospital", "internship", "rotation", "scheduler", "physiotherapy"],
   "author": "SPIN Development Team",
