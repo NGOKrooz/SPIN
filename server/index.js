@@ -55,13 +55,25 @@ app.get('/api/health', (req, res) => {
 // Serve React build if it exists (works in production containers without NODE_ENV)
 const buildPath = path.join(__dirname, '../client/build');
 if (fs.existsSync(buildPath)) {
-  app.use(express.static(buildPath));
+  // Serve static files; prevent caching of HTML to avoid stale bundles
+  app.use(express.static(buildPath, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+      }
+    }
+  }));
 
   // Non-API routes should serve the SPA
   app.get('*', (req, res) => {
     if (req.path.startsWith('/api')) {
       return res.status(404).json({ error: 'Route not found' });
     }
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.sendFile(path.join(buildPath, 'index.html'));
   });
 } else {
