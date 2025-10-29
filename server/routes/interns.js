@@ -12,7 +12,8 @@ const validateIntern = [
   body('gender').isIn(['Male', 'Female']).withMessage('Gender must be Male or Female'),
   body('batch').optional().isIn(['A', 'B']).withMessage('Batch must be A or B'),
   body('start_date').isISO8601().withMessage('Start date must be a valid date'),
-  body('phone_number').optional().isMobilePhone().withMessage('Phone number must be valid')
+  // Relax phone validation to any non-empty string if provided
+  body('phone_number').optional().isString().withMessage('Phone number must be a string')
 ];
 
 // GET /api/interns - Get all interns

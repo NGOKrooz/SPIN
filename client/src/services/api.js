@@ -29,8 +29,16 @@ http.interceptors.request.use(
 http.interceptors.response.use(
   (response) => response.data,
   (error) => {
-    console.error('API Error:', error.response?.data || error.message);
-    return Promise.reject(error.response?.data || error.message);
+    const data = error.response?.data;
+    let message = error.message;
+    if (data) {
+      if (typeof data === 'string') message = data;
+      else if (data.error) message = data.error;
+      else if (Array.isArray(data.errors)) message = data.errors.map(e => e.msg).join('; ');
+      else message = JSON.stringify(data);
+    }
+    console.error('API Error:', message);
+    return Promise.reject({ message });
   }
 );
 
