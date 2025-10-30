@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import api from '../services/api';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -37,11 +38,17 @@ export default function Layout() {
               className="w-full rounded-md bg-gray-900 px-4 py-2 text-white hover:bg-gray-800"
               onClick={() => {
                 const key = window.prompt('Enter admin password');
-                if (key && key.trim()) {
-                  localStorage.setItem('role', 'admin');
-                  localStorage.setItem('adminKey', key.trim());
-                  window.location.reload();
-                }
+                const trimmed = (key || '').trim();
+                if (!trimmed) return;
+                api.verifyAdmin(trimmed)
+                  .then(() => {
+                    localStorage.setItem('role', 'admin');
+                    localStorage.setItem('adminKey', trimmed);
+                    window.location.reload();
+                  })
+                  .catch(() => {
+                    window.alert('Wrong password');
+                  });
               }}
             >
               Sign in as Admin

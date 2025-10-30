@@ -58,6 +58,18 @@ function requireAdminForWrites(req, res, next) {
 // Apply admin protection to all API write routes
 app.use('/api', requireAdminForWrites);
 
+// Auth helper: verify admin key
+app.get('/api/auth/verify-admin', (req, res) => {
+  if (!ADMIN_PASSWORD) {
+    return res.status(503).json({ error: 'Admin not configured' });
+  }
+  const key = req.header('x-admin-key') || '';
+  if (key !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Invalid admin password' });
+  }
+  res.json({ ok: true });
+});
+
 // Routes
 app.use('/api/interns', require('./routes/interns'));
 app.use('/api/units', require('./routes/units'));

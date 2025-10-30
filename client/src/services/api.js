@@ -142,6 +142,11 @@ export const healthAPI = {
   check: () => http.get('/health'),
 };
 
+// Auth helpers
+export const authAPI = {
+  verifyAdmin: (key) => http.get('/auth/verify-admin', { headers: { 'x-admin-key': key } }),
+};
+
 // Main API object with all endpoints
 export const api = {
   // Interns
@@ -192,6 +197,7 @@ export const api = {
 
   // Health
   healthCheck: () => healthAPI.check(),
+  verifyAdmin: (key) => authAPI.verifyAdmin(key),
 };
 
 export default api;

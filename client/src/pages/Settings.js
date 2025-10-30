@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings as SettingsIcon, Save, Calendar, Users, Building2 } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Calendar, Users, Building2, LogOut } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -591,29 +591,19 @@ export default function Settings() {
         <CardContent className="flex items-center justify-between">
           <div className="space-x-2">
             <Button
-              variant="outline"
-              onClick={() => {
-                const token = window.prompt('Enter admin token (placeholder):');
-                if (token) {
-                  localStorage.setItem('token', token);
-                  toast({ title: 'Signed in', description: 'Admin session started' });
-                }
-              }}
-            >
-              Sign In
-            </Button>
-            <Button
               variant="destructive"
               onClick={() => {
-                localStorage.removeItem('token');
+                localStorage.removeItem('adminKey');
+                localStorage.removeItem('role');
                 toast({ title: 'Signed out', description: 'Admin session ended' });
+                window.location.reload();
               }}
             >
-              Sign Out
+              <LogOut className="h-4 w-4 mr-2" /> Sign Out
             </Button>
           </div>
           <div className="text-xs text-gray-500">
-            {localStorage.getItem('token') ? 'Authenticated' : 'Not signed in'}
+            {localStorage.getItem('role') === 'admin' ? 'Authenticated as admin' : 'Not signed in'}
           </div>
         </CardContent>
       </Card>
