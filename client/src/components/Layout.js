@@ -46,8 +46,9 @@ export default function Layout() {
                     localStorage.setItem('adminKey', trimmed);
                     window.location.reload();
                   })
-                  .catch(() => {
-                    window.alert('Wrong password');
+                  .catch((err) => {
+                    const msg = err?.message || 'Wrong password';
+                    window.alert(msg);
                   });
               }}
             >
