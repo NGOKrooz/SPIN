@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -23,6 +23,44 @@ const navigation = [
 export default function Layout() {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const role = useMemo(() => localStorage.getItem('role') || '', []);
+
+  // Simple gate overlay if no role selected yet
+  if (!role) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow">
+          <h2 className="mb-1 text-lg font-semibold text-gray-900">Welcome to SPIN</h2>
+          <p className="mb-4 text-sm text-gray-600">Choose how you want to continue:</p>
+          <div className="space-y-3">
+            <button
+              className="w-full rounded-md bg-gray-900 px-4 py-2 text-white hover:bg-gray-800"
+              onClick={() => {
+                const key = window.prompt('Enter admin password');
+                if (key && key.trim()) {
+                  localStorage.setItem('role', 'admin');
+                  localStorage.setItem('adminKey', key.trim());
+                  window.location.reload();
+                }
+              }}
+            >
+              Sign in as Admin
+            </button>
+            <button
+              className="w-full rounded-md border border-gray-300 px-4 py-2 text-gray-800 hover:bg-gray-50"
+              onClick={() => {
+                localStorage.setItem('role', 'guest');
+                window.location.reload();
+              }}
+            >
+              View as Guest
+            </button>
+          </div>
+          <p className="mt-4 text-center text-xs text-gray-500">Guests can view dashboards, units and interns.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen app-bg">
@@ -113,6 +151,27 @@ export default function Layout() {
                 Physiotherapy Department
               </p>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Role switch bar */}
+      <div className="md:pl-64">
+        <div className="sticky top-0 z-40 hidden h-10 items-center justify-end bg-white/80 px-4 backdrop-blur md:flex">
+          <div className="text-xs text-gray-600">
+            Role: <span className="font-medium">{role}</span>
+            <button
+              className="ml-3 rounded border border-gray-300 px-2 py-0.5 text-gray-700 hover:bg-gray-50"
+              onClick={() => {
+                if (role === 'admin') {
+                  localStorage.removeItem('adminKey');
+                }
+                localStorage.removeItem('role');
+                window.location.reload();
+              }}
+            >
+              Switch
+            </button>
           </div>
         </div>
       </div>

@@ -12,7 +12,7 @@ app.use(cors({
   origin: (origin, callback) => callback(null, true),
   credentials: false,
   methods: ['GET','POST','PUT','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization']
+  allowedHeaders: ['Content-Type','Authorization','x-admin-key']
 }));
 
 // Handle preflight
@@ -30,10 +30,33 @@ app.use((req, res, next) => {
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-admin-key');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
+
+// Admin authorization middleware for write operations
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+function requireAdminForWrites(req, res, next) {
+  if (req.method === 'OPTIONS') return next();
+  const isWrite = req.method === 'POST' || req.method === 'PUT' || req.method === 'DELETE';
+  if (!isWrite) return next();
+
+  if (!ADMIN_PASSWORD) {
+    console.warn('ADMIN_PASSWORD is not set. Blocking write operation.');
+    return res.status(403).json({ error: 'Admin not configured on server' });
+  }
+
+  const key = req.header('x-admin-key') || '';
+  if (key !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Admin authentication required' });
+  }
+
+  next();
+}
+
+// Apply admin protection to all API write routes
+app.use('/api', requireAdminForWrites);
 
 // Routes
 app.use('/api/interns', require('./routes/interns'));
