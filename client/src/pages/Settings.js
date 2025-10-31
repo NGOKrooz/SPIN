@@ -7,6 +7,7 @@ import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useToast } from '../hooks/use-toast';
 import { api } from '../services/api';
+import { Link } from 'react-router-dom';
 
 export default function Settings() {
   const { toast } = useToast();
@@ -143,6 +144,28 @@ export default function Settings() {
     toast({ title: 'Saved', description: 'Notification settings updated' });
   };
 
+  // Unified save for all settings present on this page
+  const saveAllSettings = () => {
+    try {
+      // Persist current states (even if sections are hidden)
+      localStorage.setItem('rotationSettings', JSON.stringify(rotationSettings));
+      localStorage.setItem('rotationUpdatedAt', nowTs());
+
+      localStorage.setItem('units', JSON.stringify(units));
+      localStorage.setItem('unitsUpdatedAt', nowTs());
+
+      localStorage.setItem('notificationSettings', JSON.stringify(notificationSettings));
+      localStorage.setItem('notificationUpdatedAt', nowTs());
+
+      localStorage.setItem('internSettings', JSON.stringify(interns));
+      localStorage.setItem('internsUpdatedAt', nowTs());
+
+      toast({ title: 'Saved', description: 'All settings saved successfully' });
+    } catch (e) {
+      toast({ title: 'Save failed', description: 'Could not save settings', variant: 'destructive' });
+    }
+  };
+
   // Unit list operations
   const addUnit = () => {
     if (!newUnit.name) {
@@ -221,70 +244,9 @@ export default function Settings() {
         <p className="text-gray-600">Admin configuration hub for rotations, units, notifications, and data.</p>
       </div>
 
-      {/* 1) Rotation & Batch Setting */}
-      <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Calendar className="h-5 w-5" />
-            <span>Rotation & Batch Setting</span>
-          </CardTitle>
-          <CardDescription>Controls how interns are identified, grouped, and rotated.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <Label className="mr-4">Auto-Generate Badges</Label>
-            <input
-              type="checkbox"
-              checked={rotationSettings.autoGenerateBadges}
-              onChange={(e) => setRotationSettings((s) => ({ ...s, autoGenerateBadges: e.target.checked }))}
-            />
-          </div>
+      {/* Rotation & Batch Setting removed */}
 
-          <div>
-            <Label>Rotation Duration (weeks)</Label>
-            <Input
-              type="number"
-              min="1"
-              max="12"
-              value={rotationSettings.rotationDurationWeeks}
-              onChange={(e) => setRotationSettings((s) => ({ ...s, rotationDurationWeeks: Number(e.target.value) }))}
-            />
-          </div>
-
-          
-          <div>
-            <Label>Schedule Start Date</Label>
-            <Input
-              type="date"
-              value={rotationSettings.scheduleStartDate}
-              onChange={(e) => setRotationSettings((s) => ({ ...s, scheduleStartDate: e.target.value }))}
-            />
-            <p className="text-xs text-gray-500 mt-1">Off-days auto-switch every two weeks from this date.</p>
-          </div>
-
-          <div>
-            <Label>Batch Naming Convention</Label>
-            <Input
-              placeholder="e.g. Batch A"
-              value={rotationSettings.batchNaming}
-              onChange={(e) => setRotationSettings((s) => ({ ...s, batchNaming: e.target.value }))}
-            />
-            <p className="text-xs text-gray-500 mt-1">Required; ≤ 20 characters.</p>
-          </div>
-
-          {/* Auto off-day display */}
-          <AutoOffDayNotice scheduleStartDate={rotationSettings.scheduleStartDate} />
-
-          <div className="flex items-center justify-between">
-            <Button className="hospital-gradient" onClick={saveRotationSettings}>
-              <Save className="h-4 w-4 mr-2" /> Save Changes
-            </Button>
-            <span className="text-xs text-gray-500">Last Updated: {fmt(rotationUpdatedAt)}</span>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 2) Unit Settings */}
+      {/* Unit Settings (trimmed to only buttons) */}
       <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
         <CardHeader>
           <CardTitle className="flex items-center space-x-2">
@@ -294,51 +256,10 @@ export default function Settings() {
           <CardDescription>Manage physiotherapy units.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Add Unit Form */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label>Unit Name</Label>
-              <Input value={newUnit.name} onChange={(e) => setNewUnit((u) => ({ ...u, name: e.target.value }))} />
-            </div>
-            <div>
-              <Label>Assigned Supervisor</Label>
-              <Input value={newUnit.supervisor} onChange={(e) => setNewUnit((u) => ({ ...u, supervisor: e.target.value }))} />
-            </div>
-            <div>
-              <Label>Duration (days)</Label>
-              <Input type="number" value={newUnit.durationDays} onChange={(e) => setNewUnit((u) => ({ ...u, durationDays: e.target.value }))} />
-            </div>
-            <div>
-              <Label>Max Capacity</Label>
-              <Input type="number" value={newUnit.maxCapacity} onChange={(e) => setNewUnit((u) => ({ ...u, maxCapacity: e.target.value }))} />
-            </div>
-            <div>
-              <Label>Rotation Order</Label>
-              <Input type="number" value={newUnit.rotationOrder} onChange={(e) => setNewUnit((u) => ({ ...u, rotationOrder: e.target.value }))} />
-            </div>
-            <div className="md:col-span-2">
-              <Label>Description (optional)</Label>
-              <Input value={newUnit.description} onChange={(e) => setNewUnit((u) => ({ ...u, description: e.target.value }))} />
-            </div>
-            <div className="flex items-center space-x-2">
-              <input type="checkbox" checked={newUnit.enabled} onChange={(e) => setNewUnit((u) => ({ ...u, enabled: e.target.checked }))} />
-              <Label>Enable Unit</Label>
-            </div>
-          </div>
-          <div className="flex justify-between">
-            <Button variant="secondary" onClick={addUnit}>Add Unit</Button>
-            <div className="flex items-center space-x-4">
-              <Button className="hospital-gradient" onClick={saveUnits}><Save className="h-4 w-4 mr-2" /> Save Changes</Button>
-              <span className="text-xs text-gray-500">Last Updated: {fmt(unitsUpdatedAt)}</span>
-            </div>
-          </div>
-
-          {/* Seed default 12 units */}
-          <div>
+          <div className="flex items-center space-x-3">
             <Button
               variant="outline"
               onClick={() => {
-                if (units.length > 0 && !window.confirm('Overwrite existing units with defaults?')) return;
                 const defaults = [
                   ['Adult Neurology', 21],
                   ['Acute Stroke', 30],
@@ -353,24 +274,10 @@ export default function Settings() {
                   ['Pediatrics Outpatients', 21],
                   ['Cardio Thoracic Unit', 30],
                 ];
-                const seeded = defaults.map(([name, days], idx) => ({
-                  id: crypto.randomUUID(),
-                  name,
-                  description: '',
-                  durationDays: days,
-                  maxCapacity: 10,
-                  rotationOrder: idx + 1,
-                  supervisor: '',
-                  enabled: true,
-                }));
-                setUnits(seeded);
-                // Persist to backend so Units page (server-driven) sees them
                 Promise.all(defaults.map(async ([name, days]) => {
                   try {
                     await api.createUnit({ name, duration_days: days, workload: 'Low', description: '' });
-                  } catch (e) {
-                    // ignore duplicates or validation errors silently
-                  }
+                  } catch (e) {}
                 })).then(() => {
                   toast({ title: 'Units loaded', description: '12 default units added to server' });
                 });
@@ -380,149 +287,10 @@ export default function Settings() {
             </Button>
           </div>
 
-          {/* Units Table */}
-          <div className="overflow-x-auto border rounded-lg">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="text-left p-2">Name</th>
-                  <th className="text-left p-2">Duration</th>
-                  <th className="text-left p-2">Supervisor</th>
-                  <th className="text-left p-2">Max</th>
-                  <th className="text-left p-2">Order</th>
-                  <th className="text-left p-2">Enabled</th>
-                  <th className="text-left p-2">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {units.length === 0 && (
-                  <tr>
-                    <td className="p-3 text-gray-500" colSpan={6}>No units added yet.</td>
-                  </tr>
-                )}
-                {units.map((u) => (
-                  <tr key={u.id} className="border-t">
-                    <td className="p-2">
-                      <Input value={u.name} disabled={editingUnitId !== u.id} onChange={(e) => updateUnit(u.id, { name: e.target.value })} />
-                    </td>
-                    <td className="p-2">
-                      <Input type="number" value={u.durationDays ?? 0} disabled={editingUnitId !== u.id} onChange={(e) => updateUnit(u.id, { durationDays: Number(e.target.value) })} />
-                    </td>
-                    <td className="p-2">
-                      <Input value={u.supervisor} disabled={editingUnitId !== u.id} onChange={(e) => updateUnit(u.id, { supervisor: e.target.value })} />
-                    </td>
-                    <td className="p-2">
-                      <Input type="number" value={u.maxCapacity} disabled={editingUnitId !== u.id} onChange={(e) => updateUnit(u.id, { maxCapacity: Number(e.target.value) })} />
-                    </td>
-                    <td className="p-2">
-                      <Input type="number" value={u.rotationOrder} disabled={editingUnitId !== u.id} onChange={(e) => updateUnit(u.id, { rotationOrder: Number(e.target.value) })} />
-                    </td>
-                    <td className="p-2">
-                      <input type="checkbox" checked={u.enabled} disabled={editingUnitId !== u.id} onChange={(e) => updateUnit(u.id, { enabled: e.target.checked })} />
-                    </td>
-                    <td className="p-2 space-x-2">
-                      {editingUnitId === u.id ? (
-                        <Button size="sm" onClick={() => setEditingUnitId(null)}>Save</Button>
-                      ) : (
-                        <Button size="sm" variant="outline" onClick={() => setEditingUnitId(u.id)}>Edit</Button>
-                      )}
-                      <Button size="sm" variant="destructive" onClick={() => removeUnit(u.id)}>Delete</Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
         </CardContent>
       </Card>
 
-      {/* 2b) Intern Settings */}
-      <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Users className="h-5 w-5" />
-            <span>Intern Settings</span>
-          </CardTitle>
-          <CardDescription>Manage interns (local-only for MVP).</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Add Intern Form */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label>Full Name</Label>
-              <Input value={newIntern.fullName} onChange={(e) => setNewIntern((v) => ({ ...v, fullName: e.target.value }))} />
-            </div>
-            <div>
-              <Label>Email</Label>
-              <Input type="email" value={newIntern.email} onChange={(e) => setNewIntern((v) => ({ ...v, email: e.target.value }))} />
-            </div>
-            <div>
-              <Label>Badge ID</Label>
-              <Input value={newIntern.badgeId} onChange={(e) => setNewIntern((v) => ({ ...v, badgeId: e.target.value }))} />
-            </div>
-            <div>
-              <Label>Batch</Label>
-              <Input placeholder="e.g. Batch A" value={newIntern.batch} onChange={(e) => setNewIntern((v) => ({ ...v, batch: e.target.value }))} />
-            </div>
-            <div className="flex items-center space-x-2">
-              <input type="checkbox" checked={newIntern.active} onChange={(e) => setNewIntern((v) => ({ ...v, active: e.target.checked }))} />
-              <Label>Active</Label>
-            </div>
-          </div>
-          <div className="flex justify-between">
-            <Button variant="secondary" onClick={addIntern}>Add Intern</Button>
-            <div className="flex items-center space-x-4">
-              <Button className="hospital-gradient" onClick={saveInterns}><Save className="h-4 w-4 mr-2" /> Save Changes</Button>
-              <span className="text-xs text-gray-500">Last Updated: {fmt(internsUpdatedAt)}</span>
-            </div>
-          </div>
-
-          {/* Interns Table */}
-          <div className="overflow-x-auto border rounded-lg">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="text-left p-2">Full Name</th>
-                  <th className="text-left p-2">Email</th>
-                  <th className="text-left p-2">Badge ID</th>
-                  <th className="text-left p-2">Batch</th>
-                  <th className="text-left p-2">Active</th>
-                  <th className="text-left p-2">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {interns.length === 0 && (
-                  <tr>
-                    <td className="p-3 text-gray-500" colSpan={6}>No interns added yet.</td>
-                  </tr>
-                )}
-                {interns.map((i) => (
-                  <tr key={i.id} className="border-t">
-                    <td className="p-2">
-                      <Input value={i.fullName} onChange={(e) => updateIntern(i.id, { fullName: e.target.value })} />
-                    </td>
-                    <td className="p-2">
-                      <Input type="email" value={i.email} onChange={(e) => updateIntern(i.id, { email: e.target.value })} />
-                    </td>
-                    <td className="p-2">
-                      <Input value={i.badgeId} onChange={(e) => updateIntern(i.id, { badgeId: e.target.value })} />
-                    </td>
-                    <td className="p-2">
-                      <Input value={i.batch} onChange={(e) => updateIntern(i.id, { batch: e.target.value })} />
-                    </td>
-                    <td className="p-2">
-                      <input type="checkbox" checked={i.active} onChange={(e) => updateIntern(i.id, { active: e.target.checked })} />
-                    </td>
-                    <td className="p-2 space-x-2">
-                      <Button size="sm" variant="destructive" onClick={() => removeIntern(i.id)}>Remove</Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Intern Settings removed */}
 
       {/* 3) Notification & Reminder Settings */}
       <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
@@ -570,12 +338,23 @@ export default function Settings() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between">
-            <Button className="hospital-gradient" onClick={saveNotificationSettings}>
-              <Save className="h-4 w-4 mr-2" /> Save Changes
-            </Button>
-            <span className="text-xs text-gray-500">Last Updated: {fmt(notificationUpdatedAt)}</span>
-          </div>
+          {/* Global Save button handles notifications as well */}
+        </CardContent>
+      </Card>
+
+      {/* Global Save Changes (applies to all settings) */}
+      <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
+        <CardHeader>
+          <CardTitle className="flex items-center space-x-2">
+            <Save className="h-5 w-5" />
+            <span>Save Changes</span>
+          </CardTitle>
+          <CardDescription>Apply all updates made in Settings</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button className="hospital-gradient" onClick={saveAllSettings}>
+            <Save className="h-4 w-4 mr-2" /> Save Changes
+          </Button>
         </CardContent>
       </Card>
 

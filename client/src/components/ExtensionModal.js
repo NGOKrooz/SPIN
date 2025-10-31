@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import React, { useMemo, useState } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { X, Save, Clock } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -16,8 +16,21 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
     reason: '',
     notes: '',
   });
+  const [selectedUnitId, setSelectedUnitId] = useState(undefined);
 
   const { toast } = useToast();
+
+  // Fetch active units for this intern (current rotations)
+  const { data: schedule } = useQuery({
+    queryKey: ['intern-schedule', intern.id],
+    queryFn: () => api.getInternSchedule(intern.id),
+  });
+  const activeUnits = useMemo(() => (schedule || []).filter(r => new Date(r.start_date) <= new Date() && new Date(r.end_date) >= new Date()), [schedule]);
+  React.useEffect(() => {
+    if (activeUnits && activeUnits.length > 0) {
+      setSelectedUnitId(activeUnits[0].unit_id);
+    }
+  }, [activeUnits]);
 
   const extendMutation = useMutation({
     mutationFn: ({ id, data }) => api.extendInternship(id, data),
@@ -53,6 +66,7 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
       extension_days: parseInt(formData.extension_days),
       reason: formData.reason,
       notes: formData.notes || '',
+      unit_id: selectedUnitId,
     };
 
     extendMutation.mutate({ id: intern.id, data: submitData });
@@ -74,10 +88,10 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
           <div>
             <CardTitle className="flex items-center space-x-2">
               <Clock className="h-5 w-5" />
-              <span>Extend Internship</span>
+              <span>Extension</span>
             </CardTitle>
             <CardDescription>
-              Extend {intern.name}'s internship
+              Extend {intern.name}'s current unit assignment
             </CardDescription>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose}>
@@ -86,6 +100,24 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
+            {activeUnits && activeUnits.length > 0 ? (
+              <div>
+                <Label>Active Unit</Label>
+                <Select value={selectedUnitId?.toString()} onValueChange={(v) => setSelectedUnitId(parseInt(v))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select active unit" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {activeUnits.map(u => (
+                      <SelectItem key={u.unit_id} value={u.unit_id.toString()}>{u.unit_name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="text-xs text-gray-500 mt-1">Extension will add days to the selected active unit.</div>
+              </div>
+            ) : (
+              <div className="text-sm text-gray-500">No active unit found for this intern.</div>
+            )}
             <div>
               <Label htmlFor="extension_days">Extension Days *</Label>
               <Input
@@ -107,7 +139,6 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
                   <SelectValue placeholder="Select reason" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="sign out">Sign Out</SelectItem>
                   <SelectItem value="presentation">Presentation</SelectItem>
                   <SelectItem value="internal query">Internal Query</SelectItem>
                   <SelectItem value="leave">Leave</SelectItem>
@@ -133,7 +164,7 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
               </Button>
               <Button type="submit" disabled={isLoading} className="hospital-gradient">
                 <Save className="h-4 w-4 mr-2" />
-                {isLoading ? 'Extending...' : 'Extend Internship'}
+                {isLoading ? 'Saving...' : 'Save Extension'}
               </Button>
             </div>
           </form>

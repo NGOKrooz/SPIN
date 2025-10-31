@@ -264,15 +264,15 @@ export default function Interns() {
           ) : (
             <div className="space-y-4">
               {filteredInterns.map((intern) => (
-                <div key={intern.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
+                <div key={intern.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow overflow-hidden">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center space-x-4 min-w-0">
                       <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold ${getBatchColor(intern.batch)}`}>
                         {intern.batch}
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <h3 className="text-lg font-semibold text-gray-900">{intern.name}</h3>
-                        <div className="flex items-center space-x-4 text-sm text-gray-500">
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
                           <span className="flex items-center space-x-1">
                             <User className="h-4 w-4" />
                             <span>{intern.gender}</span>
@@ -284,7 +284,7 @@ export default function Interns() {
                           {intern.phone_number && (
                             <span className="flex items-center space-x-1">
                               <Phone className="h-4 w-4" />
-                              <span>{intern.phone_number}</span>
+                              <span className="break-all">{intern.phone_number}</span>
                             </span>
                           )}
                         </div>
@@ -300,7 +300,7 @@ export default function Interns() {
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                       <Button
                         variant="outline"
                         size="sm"
@@ -321,6 +321,7 @@ export default function Interns() {
                           variant="outline"
                           size="sm"
                           onClick={() => handleExtend(intern)}
+                          title="Extension"
                         >
                           <Clock className="h-4 w-4" />
                         </Button>

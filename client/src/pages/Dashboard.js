@@ -173,7 +173,7 @@ export default function Dashboard() {
               <span>Batch Distribution</span>
             </CardTitle>
             <CardDescription>
-              Current distribution of active interns by batch and on/off cycle
+              Current distribution of active interns by batch
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -181,19 +181,16 @@ export default function Dashboard() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <div className="w-3 h-3 rounded-full bg-batch-a"></div>
-                  <span className="text-sm font-medium">Batch A (Weeks 1-2: Monday off, Weeks 3-4: Wednesday off)</span>
+                  <span className="text-sm font-medium">Batch A</span>
                 </div>
                 <span className="text-lg font-bold">{batchAInterns.length}</span>
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <div className="w-3 h-3 rounded-full bg-batch-b"></div>
-                  <span className="text-sm font-medium">Batch B (Weeks 1-2: Wednesday off, Weeks 3-4: Monday off)</span>
+                  <span className="text-sm font-medium">Batch B</span>
                 </div>
                 <span className="text-lg font-bold">{batchBInterns.length}</span>
-              </div>
-              <div className="text-xs text-gray-500 pt-2 border-t">
-                Cycle: Two weeks each, then switch off-days.
               </div>
             </div>
           </CardContent>

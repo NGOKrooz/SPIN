@@ -1,12 +1,15 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { X, Calendar, User, Clock, MapPin, Award, Building2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import ExtensionModal from './ExtensionModal';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { api } from '../services/api';
 import { formatDate, getBatchColor, getStatusColor, getWorkloadColor } from '../lib/utils';
 
 export default function InternDashboard({ intern, onClose }) {
+  const [showExtend, setShowExtend] = React.useState(false);
   const { data: internSchedule } = useQuery({
     queryKey: ['intern-schedule', intern.id],
     queryFn: () => api.getInternSchedule(intern.id),
@@ -64,6 +67,13 @@ export default function InternDashboard({ intern, onClose }) {
             </Button>
           </CardHeader>
           <CardContent className="space-y-6">
+            {/* Actions */}
+            <div className="flex items-center justify-end space-x-2">
+              <Link to={`/manual-assignment?internId=${intern.id}`}>
+                <Button variant="outline">Reassign</Button>
+              </Link>
+              <Button className="hospital-gradient" onClick={() => setShowExtend(true)}>Extension</Button>
+            </div>
             {/* Intern Overview */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <Card>
@@ -133,7 +143,7 @@ export default function InternDashboard({ intern, onClose }) {
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-medium text-blue-600">
-                            {Math.floor((new Date() - new Date(rotation.start_date)) / (1000 * 60 * 60 * 24))} / {rotation.duration_days} days
+                            {Math.max(0, Math.floor((new Date() - new Date(rotation.start_date)) / (1000 * 60 * 60 * 24)))} / {Math.max(0, Math.floor((new Date(rotation.end_date) - new Date(rotation.start_date)) / (1000 * 60 * 60 * 24)))} days
                           </p>
                         </div>
                       </div>
@@ -164,7 +174,7 @@ export default function InternDashboard({ intern, onClose }) {
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-medium text-green-600">
-                            {rotation.duration_days} days completed
+                            {Math.max(0, Math.floor((new Date(rotation.end_date) - new Date(rotation.start_date)) / (1000 * 60 * 60 * 24)))} days completed
                           </p>
                           <span className="text-xs text-gray-500">
                             {rotation.workload} workload
@@ -200,7 +210,7 @@ export default function InternDashboard({ intern, onClose }) {
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-medium text-yellow-600">
-                            {rotation.duration_days} days
+                            {Math.max(0, Math.floor((new Date(rotation.end_date) - new Date(rotation.start_date)) / (1000 * 60 * 60 * 24)))} days
                           </p>
                           <span className="text-xs text-gray-500">
                             {rotation.workload} workload
@@ -250,6 +260,13 @@ export default function InternDashboard({ intern, onClose }) {
             </Card>
           </CardContent>
         </Card>
+        {showExtend && (
+          <ExtensionModal
+            intern={intern}
+            onClose={() => setShowExtend(false)}
+            onSuccess={() => setShowExtend(false)}
+          />
+        )}
       </div>
     </div>
   );

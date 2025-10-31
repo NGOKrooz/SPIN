@@ -264,7 +264,8 @@ router.put('/:id', validateIntern, (req, res) => {
 // POST /api/interns/:id/extend - Extend internship
 router.post('/:id/extend', [
   body('extension_days').isInt({ min: 1, max: 365 }).withMessage('Extension must be 1-365 days'),
-  body('reason').isIn(['sign out', 'presentation', 'internal query', 'leave', 'other']).withMessage('Invalid extension reason'),
+  body('reason').isIn(['presentation', 'internal query', 'leave', 'other']).withMessage('Invalid extension reason'),
+  body('unit_id').optional().isInt().withMessage('unit_id must be a valid id'),
   body('notes').optional().isString()
 ], (req, res) => {
   const errors = validationResult(req);
@@ -273,7 +274,7 @@ router.post('/:id/extend', [
   }
   
   const { id } = req.params;
-  const { extension_days, reason, notes } = req.body;
+  const { extension_days, reason, notes, unit_id } = req.body;
   
   db.serialize(() => {
     // Update intern status
@@ -293,23 +294,41 @@ router.post('/:id/extend', [
         return res.status(404).json({ error: 'Intern not found' });
       }
       
-      // Record extension reason
-      const reasonQuery = `
-        INSERT INTO extension_reasons (intern_id, extension_days, reason, notes)
-        VALUES (?, ?, ?, ?)
-      `;
-      
-      db.run(reasonQuery, [id, extension_days, reason, notes], function(err) {
-        if (err) {
-          console.error('Error recording extension reason:', err);
-          // Don't fail the request, just log the error
-        }
+      // Optionally extend active rotation end_date for selected unit
+      const extendActiveRotation = () => new Promise((resolve) => {
+        if (!unit_id) return resolve();
+        const findActive = `
+          SELECT id, end_date FROM rotations
+          WHERE intern_id = ? AND unit_id = ? AND start_date <= date('now') AND end_date >= date('now')
+          ORDER BY start_date DESC LIMIT 1
+        `;
+        db.get(findActive, [id, unit_id], (e, row) => {
+          if (e || !row) return resolve();
+          const newEnd = format(addDays(parseISO(row.end_date), parseInt(extension_days)), 'yyyy-MM-dd');
+          const upd = 'UPDATE rotations SET end_date = ? WHERE id = ?';
+          db.run(upd, [newEnd, row.id], () => resolve());
+        });
+      });
+
+      extendActiveRotation().then(() => {
+        // Record extension reason
+        const reasonQuery = `
+          INSERT INTO extension_reasons (intern_id, extension_days, reason, notes)
+          VALUES (?, ?, ?, ?)
+        `;
         
-        res.json({ 
-          message: 'Internship extended successfully',
-          extension_days,
-          reason,
-          notes
+        db.run(reasonQuery, [id, extension_days, reason, notes], function(err) {
+          if (err) {
+            console.error('Error recording extension reason:', err);
+          }
+          
+          res.json({ 
+            message: 'Internship extended successfully',
+            extension_days,
+            reason,
+            notes,
+            unit_id: unit_id || null
+          });
         });
       });
     });
