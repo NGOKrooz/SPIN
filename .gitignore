@@ -7,6 +7,12 @@ node_modules/
 *.sqlite
 *.sqlite3
 
+# Backup files
+backups/
+server/backups/
+*.backup
+*.bak
+
 # Environment variables
 .env
 .env.local

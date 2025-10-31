@@ -64,7 +64,6 @@ export default function Layout() {
               View as Guest
             </button>
           </div>
-          <p className="mt-4 text-center text-xs text-gray-500">Guests can view dashboards, units and interns.</p>
         </div>
       </div>
     );

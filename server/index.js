@@ -129,11 +129,35 @@ app.use((err, req, res, next) => {
 
 // Initialize database and start server
 const { initializeDatabase } = require('./database/init');
+const scheduler = require('./services/scheduler');
+const autoRestore = require('./services/autoRestore');
 
 async function startServer() {
   try {
     await initializeDatabase();
     console.log('✅ Database initialized successfully');
+    
+    // Initialize backup scheduler
+    if (process.env.BACKUP_SCHEDULE && process.env.BACKUP_SCHEDULE !== 'disabled') {
+      scheduler.initializeScheduler();
+      console.log('✅ Backup scheduler initialized');
+    }
+    
+    // Perform auto-restore if needed (on fresh deployment)
+    if (process.env.AUTO_RESTORE_ENABLED !== 'false') {
+      setTimeout(async () => {
+        try {
+          const restoreResult = await autoRestore.performAutoRestore();
+          if (restoreResult.performed) {
+            console.log(`✅ Auto-restore completed: ${restoreResult.backupFile}`);
+          } else {
+            console.log(`ℹ️  Auto-restore skipped: ${restoreResult.reason || 'No action needed'}`);
+          }
+        } catch (error) {
+          console.error('⚠️  Auto-restore error:', error.message);
+        }
+      }, 2000); // Wait 2 seconds after server start
+    }
     
     app.listen(PORT, () => {
       console.log(`🚀 SPIN Server running on port ${PORT}`);

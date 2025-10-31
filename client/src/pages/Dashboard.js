@@ -43,8 +43,10 @@ export default function Dashboard() {
   const extendedInterns = interns?.filter(intern => intern.status === 'Extended') || [];
   // removed unused completedInterns
   
-  const batchAInterns = activeInterns.filter(intern => intern.batch === 'A');
-  const batchBInterns = activeInterns.filter(intern => intern.batch === 'B');
+  // Batch distribution includes all interns (active + extended)
+  const allActiveInterns = [...activeInterns, ...extendedInterns];
+  const batchAInterns = allActiveInterns.filter(intern => intern.batch === 'A');
+  const batchBInterns = allActiveInterns.filter(intern => intern.batch === 'B');
 
   // Compute coverage issues from current rotations by unit and batch
   const rotationList = currentRotations?.rotations || [];

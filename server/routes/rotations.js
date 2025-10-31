@@ -15,6 +15,14 @@ const validateRotation = [
   body('end_date').isISO8601().withMessage('End date must be a valid date')
 ];
 
+// Validation middleware for updates (intern_id is optional since we don't change it)
+const validateRotationUpdate = [
+  body('intern_id').optional().isInt().withMessage('Intern ID must be a number'),
+  body('unit_id').isInt().withMessage('Unit ID must be a number'),
+  body('start_date').isISO8601().withMessage('Start date must be a valid date'),
+  body('end_date').isISO8601().withMessage('End date must be a valid date')
+];
+
 // GET /api/rotations - Get all rotations with filters
 router.get('/', (req, res) => {
   const { start_date, end_date, unit_id, batch, status } = req.query;
@@ -305,7 +313,7 @@ router.post('/generate', async (req, res) => {
 });
 
 // PUT /api/rotations/:id - Update rotation
-router.put('/:id', validateRotation, (req, res) => {
+router.put('/:id', validateRotationUpdate, (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
@@ -314,13 +322,25 @@ router.put('/:id', validateRotation, (req, res) => {
   const { id } = req.params;
   const { intern_id, unit_id, start_date, end_date } = req.body;
   
-  const query = `
-    UPDATE rotations 
-    SET intern_id = ?, unit_id = ?, start_date = ?, end_date = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `;
+  // If intern_id is not provided, we only update unit, start_date, and end_date
+  let query, params;
+  if (intern_id) {
+    query = `
+      UPDATE rotations 
+      SET intern_id = ?, unit_id = ?, start_date = ?, end_date = ?
+      WHERE id = ?
+    `;
+    params = [intern_id, unit_id, start_date, end_date, id];
+  } else {
+    query = `
+      UPDATE rotations 
+      SET unit_id = ?, start_date = ?, end_date = ?
+      WHERE id = ?
+    `;
+    params = [unit_id, start_date, end_date, id];
+  }
   
-  db.run(query, [intern_id, unit_id, start_date, end_date, id], function(err) {
+  db.run(query, params, function(err) {
     if (err) {
       console.error('Error updating rotation:', err);
       return res.status(500).json({ error: 'Failed to update rotation' });

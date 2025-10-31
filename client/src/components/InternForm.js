@@ -160,8 +160,8 @@ export default function InternForm({ intern, onClose, onSuccess }) {
                     <SelectValue placeholder="Select batch" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="A">Batch A (Monday off)</SelectItem>
-                    <SelectItem value="B">Batch B (Wednesday off)</SelectItem>
+                    <SelectItem value="A">A</SelectItem>
+                    <SelectItem value="B">B</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

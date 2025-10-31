@@ -1,8 +1,8 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { X, Calendar, User, Clock, MapPin, Award, Building2 } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import ExtensionModal from './ExtensionModal';
+import ReassignModal from './ReassignModal';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { api } from '../services/api';
@@ -10,6 +10,8 @@ import { formatDate, getBatchColor, getStatusColor, getWorkloadColor } from '../
 
 export default function InternDashboard({ intern, onClose }) {
   const [showExtend, setShowExtend] = React.useState(false);
+  const [showReassign, setShowReassign] = React.useState(false);
+  const [activeRotation, setActiveRotation] = React.useState(null);
   const { data: internSchedule } = useQuery({
     queryKey: ['intern-schedule', intern.id],
     queryFn: () => api.getInternSchedule(intern.id),
@@ -69,9 +71,20 @@ export default function InternDashboard({ intern, onClose }) {
           <CardContent className="space-y-6">
             {/* Actions */}
             <div className="flex items-center justify-end space-x-2">
-              <Link to={`/manual-assignment?internId=${intern.id}`}>
-                <Button variant="outline">Reassign</Button>
-              </Link>
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  // Use the first current rotation (interns typically have one active unit at a time)
+                  if (currentRotations.length > 0) {
+                    setActiveRotation(currentRotations[0]);
+                    setShowReassign(true);
+                  }
+                }}
+                disabled={currentRotations.length === 0}
+                title={currentRotations.length === 0 ? "No active unit to reassign" : "Reassign current unit"}
+              >
+                Reassign
+              </Button>
               <Button className="hospital-gradient" onClick={() => setShowExtend(true)}>Extension</Button>
             </div>
             {/* Intern Overview */}
@@ -265,6 +278,22 @@ export default function InternDashboard({ intern, onClose }) {
             intern={intern}
             onClose={() => setShowExtend(false)}
             onSuccess={() => setShowExtend(false)}
+          />
+        )}
+        {showReassign && activeRotation && (
+          <ReassignModal
+            intern={intern}
+            currentRotation={activeRotation}
+            onClose={() => {
+              setShowReassign(false);
+              setActiveRotation(null);
+            }}
+            onSuccess={() => {
+              setShowReassign(false);
+              setActiveRotation(null);
+              // Refresh the schedule data
+              window.location.reload();
+            }}
           />
         )}
       </div>

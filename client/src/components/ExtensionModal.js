@@ -13,10 +13,10 @@ import { useToast } from '../hooks/use-toast';
 export default function ExtensionModal({ intern, onClose, onSuccess }) {
   const [formData, setFormData] = useState({
     extension_days: '',
+    adjustment_days: '',
     reason: '',
     notes: '',
   });
-  const [selectedUnitId, setSelectedUnitId] = useState(undefined);
 
   const { toast } = useToast();
 
@@ -26,11 +26,9 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
     queryFn: () => api.getInternSchedule(intern.id),
   });
   const activeUnits = useMemo(() => (schedule || []).filter(r => new Date(r.start_date) <= new Date() && new Date(r.end_date) >= new Date()), [schedule]);
-  React.useEffect(() => {
-    if (activeUnits && activeUnits.length > 0) {
-      setSelectedUnitId(activeUnits[0].unit_id);
-    }
-  }, [activeUnits]);
+  
+  const currentExtension = intern.extension_days || 0;
+  const hasExtension = currentExtension > 0;
 
   const extendMutation = useMutation({
     mutationFn: ({ id, data }) => api.extendInternship(id, data),
@@ -53,7 +51,9 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     
-    if (!formData.extension_days || !formData.reason) {
+    const daysToUse = hasExtension ? formData.adjustment_days : formData.extension_days;
+    
+    if (!daysToUse || !formData.reason) {
       toast({
         title: 'Error',
         description: 'Please fill in all required fields',
@@ -62,11 +62,35 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
       return;
     }
 
+    const adjustmentValue = parseInt(daysToUse);
+    
+    // Calculate new total extension days
+    const newTotalExtension = hasExtension ? currentExtension + adjustmentValue : adjustmentValue;
+    
+    if (newTotalExtension < 0) {
+      toast({
+        title: 'Error',
+        description: 'Cannot reduce extension below 0 days',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (newTotalExtension > 365) {
+      toast({
+        title: 'Error',
+        description: 'Total extension cannot exceed 365 days',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     const submitData = {
-      extension_days: parseInt(formData.extension_days),
+      extension_days: newTotalExtension,
+      adjustment_days: hasExtension ? adjustmentValue : undefined,
       reason: formData.reason,
       notes: formData.notes || '',
-      unit_id: selectedUnitId,
+      unit_id: activeUnits?.[0]?.unit_id || undefined,
     };
 
     extendMutation.mutate({ id: intern.id, data: submitData });
@@ -88,10 +112,13 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
           <div>
             <CardTitle className="flex items-center space-x-2">
               <Clock className="h-5 w-5" />
-              <span>Extension</span>
+              <span>{hasExtension ? 'Update Extension' : 'Add Extension'}</span>
             </CardTitle>
             <CardDescription>
-              Extend {intern.name}'s current unit assignment
+              {hasExtension 
+                ? `Adjust ${intern.name}'s extension (Currently: ${currentExtension} days)`
+                : `Extend ${intern.name}'s current unit assignment`
+              }
             </CardDescription>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose}>
@@ -100,37 +127,60 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
+            {hasExtension && (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="text-sm font-medium text-blue-900">Current Extension: {currentExtension} days</div>
+                <div className="text-xs text-blue-700 mt-1">
+                  Intern status: {intern.status}
+                </div>
+              </div>
+            )}
+            
             {activeUnits && activeUnits.length > 0 ? (
               <div>
                 <Label>Active Unit</Label>
-                <Select value={selectedUnitId?.toString()} onValueChange={(v) => setSelectedUnitId(parseInt(v))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select active unit" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {activeUnits.map(u => (
-                      <SelectItem key={u.unit_id} value={u.unit_id.toString()}>{u.unit_name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <div className="text-xs text-gray-500 mt-1">Extension will add days to the selected active unit.</div>
+                <div className="text-sm text-gray-700">
+                  {activeUnits[0].unit_name}
+                </div>
+                <div className="text-xs text-gray-500">Extension will adjust days for this unit.</div>
               </div>
             ) : (
               <div className="text-sm text-gray-500">No active unit found for this intern.</div>
             )}
-            <div>
-              <Label htmlFor="extension_days">Extension Days *</Label>
-              <Input
-                id="extension_days"
-                type="number"
-                min="1"
-                max="365"
-                value={formData.extension_days}
-                onChange={(e) => handleChange('extension_days', e.target.value)}
-                placeholder="Enter number of days"
-                required
-              />
-            </div>
+            
+            {hasExtension ? (
+              <div>
+                <Label htmlFor="adjustment_days">Adjustment Days *</Label>
+                <Input
+                  id="adjustment_days"
+                  type="number"
+                  min={-currentExtension}
+                  max="365"
+                  value={formData.adjustment_days}
+                  onChange={(e) => handleChange('adjustment_days', e.target.value)}
+                  placeholder="Enter adjustment (e.g., 5 to add, -5 to reduce)"
+                  required
+                />
+                <div className="text-xs text-gray-500 mt-1">
+                  Use positive numbers to add days, negative to reduce. 
+                  {formData.adjustment_days && ` New total: ${currentExtension + parseInt(formData.adjustment_days || 0)} days`}
+                </div>
+              </div>
+            ) : (
+              <div>
+                <Label htmlFor="extension_days">Extension Days *</Label>
+                <Input
+                  id="extension_days"
+                  type="number"
+                  min="1"
+                  max="365"
+                  value={formData.extension_days}
+                  onChange={(e) => handleChange('extension_days', e.target.value)}
+                  placeholder="Enter number of days to extend"
+                  required
+                />
+              </div>
+            )}
 
             <div>
               <Label htmlFor="reason">Extension Reason *</Label>
@@ -164,7 +214,7 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
               </Button>
               <Button type="submit" disabled={isLoading} className="hospital-gradient">
                 <Save className="h-4 w-4 mr-2" />
-                {isLoading ? 'Saving...' : 'Save Extension'}
+                {isLoading ? 'Saving...' : (hasExtension ? 'Update Extension' : 'Save Extension')}
               </Button>
             </div>
           </form>

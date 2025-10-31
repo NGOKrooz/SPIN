@@ -102,6 +102,16 @@ export default function ManualAssignment() {
       return;
     }
 
+    // Validate that assignment start date is not before intern's start date
+    if (selectedIntern && new Date(formData.start_date) < new Date(selectedIntern.start_date)) {
+      toast({
+        title: 'Error',
+        description: `Assignment cannot start before intern's start date (${formatDate(selectedIntern.start_date)})`,
+        variant: 'destructive',
+      });
+      return;
+    }
+
     if (new Date(formData.start_date) >= new Date(formData.end_date)) {
       toast({
         title: 'Error',
@@ -143,6 +153,12 @@ export default function ManualAssignment() {
   const selectedIntern = interns?.find(intern => intern.id === parseInt(formData.intern_id));
   const selectedUnit = units?.find(unit => unit.id === parseInt(formData.unit_id));
 
+  // Filter out interns who currently have active units (current rotations)
+  const availableInterns = interns?.filter(intern => {
+    // Exclude interns who have current_units (meaning they're actively in a unit)
+    return intern.status === 'Active' && (!intern.current_units || intern.current_units.length === 0);
+  }) || [];
+
   if (internsLoading || unitsLoading || rotationsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -180,18 +196,27 @@ export default function ManualAssignment() {
                     <SelectValue placeholder="Choose an intern" />
                   </SelectTrigger>
                   <SelectContent>
-                    {interns?.filter(intern => intern.status === 'Active').map((intern) => (
-                      <SelectItem key={intern.id} value={intern.id.toString()}>
-                        <div className="flex items-center space-x-2">
-                          <span>{intern.name}</span>
-                          <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium text-white ${getBatchColor(intern.batch)}`}>
-                            {intern.batch}
-                          </span>
-                        </div>
-                      </SelectItem>
-                    ))}
+                    {availableInterns.length === 0 ? (
+                      <div className="px-2 py-1 text-sm text-gray-500">No available interns (all are currently in active units)</div>
+                    ) : (
+                      availableInterns.map((intern) => (
+                        <SelectItem key={intern.id} value={intern.id.toString()}>
+                          <div className="flex items-center space-x-2">
+                            <span>{intern.name}</span>
+                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium text-white ${getBatchColor(intern.batch)}`}>
+                              {intern.batch}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
+                {availableInterns.length === 0 && (
+                  <p className="text-xs text-yellow-600 mt-1">
+                    All active interns are currently assigned to units. Only interns without active assignments can be manually assigned.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -222,9 +247,15 @@ export default function ManualAssignment() {
                     id="start_date"
                     type="date"
                     value={formData.start_date}
+                    min={selectedIntern?.start_date || undefined}
                     onChange={(e) => handleChange('start_date', e.target.value)}
                     required
                   />
+                  {selectedIntern && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Intern started on: {formatDate(selectedIntern.start_date)}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <Label htmlFor="end_date">End Date *</Label>
@@ -371,27 +402,38 @@ export default function ManualAssignment() {
               {rotations
                 ?.filter(rotation => rotation.is_manual_assignment)
                 .slice(0, 5)
-                .map((rotation) => (
-                  <div key={rotation.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center space-x-3">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm ${getBatchColor(rotation.intern_batch)}`}>
-                        {rotation.intern_batch}
+                .map((rotation) => {
+                  const isActiveRotation = new Date(rotation.start_date) <= new Date() && new Date(rotation.end_date) >= new Date();
+                  
+                  return (
+                    <div key={rotation.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div className="flex items-center space-x-3">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm ${getBatchColor(rotation.intern_batch)}`}>
+                          {rotation.intern_batch}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{rotation.intern_name}</p>
+                          <p className="text-xs text-gray-500">{rotation.unit_name}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{rotation.intern_name}</p>
-                        <p className="text-xs text-gray-500">{rotation.unit_name}</p>
+                      <div className="text-right">
+                        <p className="text-xs text-gray-500">
+                          {formatDate(rotation.start_date)} - {formatDate(rotation.end_date)}
+                        </p>
+                        <div className="flex items-center space-x-1 mt-1">
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                            Manual
+                          </span>
+                          {isActiveRotation && (
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              Active
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs text-gray-500">
-                        {formatDate(rotation.start_date)} - {formatDate(rotation.end_date)}
-                      </p>
-                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                        Manual
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
             </div>
           )}
         </CardContent>

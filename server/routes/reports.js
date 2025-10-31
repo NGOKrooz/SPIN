@@ -19,14 +19,27 @@ router.get('/summary', (req, res) => {
     SELECT 
       u.name as unit_name,
       u.workload,
-      COUNT(DISTINCT r.intern_id) as total_interns,
-      COUNT(CASE WHEN i.batch = 'A' THEN 1 END) as batch_a_count,
-      COUNT(CASE WHEN i.batch = 'B' THEN 1 END) as batch_b_count,
+      u.patient_count,
+      COUNT(DISTINCT CASE 
+        WHEN r.start_date <= date('now') AND r.end_date >= date('now') 
+        THEN r.intern_id 
+        ELSE NULL 
+      END) as total_interns,
+      COUNT(DISTINCT CASE 
+        WHEN r.start_date <= date('now') AND r.end_date >= date('now') AND i.batch = 'A' 
+        THEN r.intern_id 
+        ELSE NULL 
+      END) as batch_a_count,
+      COUNT(DISTINCT CASE 
+        WHEN r.start_date <= date('now') AND r.end_date >= date('now') AND i.batch = 'B' 
+        THEN r.intern_id 
+        ELSE NULL 
+      END) as batch_b_count,
       AVG(u.duration_days) as avg_duration
     FROM units u
-    LEFT JOIN rotations r ON u.id = r.unit_id ${dateFilter}
+    LEFT JOIN rotations r ON u.id = r.unit_id
     LEFT JOIN interns i ON r.intern_id = i.id
-    GROUP BY u.id, u.name, u.workload
+    GROUP BY u.id, u.name, u.workload, u.patient_count
     ORDER BY u.name
   `;
   
@@ -39,13 +52,30 @@ router.get('/summary', (req, res) => {
     const summary = {
       total_units: rows.length,
       total_rotations: rows.reduce((sum, row) => sum + (row.total_interns || 0), 0),
-      units: rows.map(row => ({
-        ...row,
-        total_interns: row.total_interns || 0,
-        batch_a_count: row.batch_a_count || 0,
-        batch_b_count: row.batch_b_count || 0,
-        coverage_status: getCoverageStatus(row.total_interns, row.workload)
-      }))
+      units: rows.map(row => {
+        // Auto-calculate workload based on patient count (same logic as units route)
+        let workload = row.workload;
+        if (row.patient_count && row.patient_count > 0) {
+          if (row.patient_count <= 4) {
+            workload = 'Low';
+          } else if (row.patient_count <= 8) {
+            workload = 'Medium';
+          } else {
+            workload = 'High';
+          }
+        } else {
+          workload = 'Low';
+        }
+        
+        return {
+          ...row,
+          workload: workload, // Use calculated workload
+          total_interns: row.total_interns || 0,
+          batch_a_count: row.batch_a_count || 0,
+          batch_b_count: row.batch_b_count || 0,
+          coverage_status: getCoverageStatus(row.total_interns, workload)
+        };
+      })
     };
     
     res.json(summary);
@@ -253,18 +283,31 @@ async function generateSummarySheet(workbook, startDate, endDate) {
     { header: 'Coverage Status', key: 'coverage_status', width: 15 }
   ];
   
-  // Get data
+  // Get data - only count CURRENT interns (same as Units section)
   const query = `
     SELECT 
       u.name as unit_name,
       u.workload,
-      COUNT(DISTINCT r.intern_id) as total_interns,
-      COUNT(CASE WHEN i.batch = 'A' THEN 1 END) as batch_a_count,
-      COUNT(CASE WHEN i.batch = 'B' THEN 1 END) as batch_b_count
+      u.patient_count,
+      COUNT(DISTINCT CASE 
+        WHEN r.start_date <= date('now') AND r.end_date >= date('now') 
+        THEN r.intern_id 
+        ELSE NULL 
+      END) as total_interns,
+      COUNT(DISTINCT CASE 
+        WHEN r.start_date <= date('now') AND r.end_date >= date('now') AND i.batch = 'A' 
+        THEN r.intern_id 
+        ELSE NULL 
+      END) as batch_a_count,
+      COUNT(DISTINCT CASE 
+        WHEN r.start_date <= date('now') AND r.end_date >= date('now') AND i.batch = 'B' 
+        THEN r.intern_id 
+        ELSE NULL 
+      END) as batch_b_count
     FROM units u
     LEFT JOIN rotations r ON u.id = r.unit_id
     LEFT JOIN interns i ON r.intern_id = i.id
-    GROUP BY u.id, u.name, u.workload
+    GROUP BY u.id, u.name, u.workload, u.patient_count
     ORDER BY u.name
   `;
   
@@ -276,9 +319,24 @@ async function generateSummarySheet(workbook, startDate, endDate) {
       }
       
       rows.forEach(row => {
+        // Auto-calculate workload based on patient count
+        let workload = row.workload;
+        if (row.patient_count && row.patient_count > 0) {
+          if (row.patient_count <= 4) {
+            workload = 'Low';
+          } else if (row.patient_count <= 8) {
+            workload = 'Medium';
+          } else {
+            workload = 'High';
+          }
+        } else {
+          workload = 'Low';
+        }
+        
         worksheet.addRow({
           ...row,
-          coverage_status: getCoverageStatus(row.total_interns, row.workload)
+          workload: workload, // Use calculated workload
+          coverage_status: getCoverageStatus(row.total_interns, workload)
         });
       });
       
