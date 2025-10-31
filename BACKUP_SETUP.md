@@ -19,9 +19,9 @@ npm install
 
 This will install:
 - `@microsoft/microsoft-graph-client` (OneDrive support)
+- `@azure/msal-node` (Microsoft authentication)
 - `googleapis` (Google Drive support)
 - `node-cron` (Scheduled backups)
-- `msal-node` (Microsoft authentication)
 
 ### 2. Configure Cloud Storage (Optional)
 

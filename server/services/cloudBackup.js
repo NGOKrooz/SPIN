@@ -7,12 +7,12 @@ let Client, ConfidentialClientApplication, google;
 try {
   const graphClient = require('@microsoft/microsoft-graph-client');
   Client = graphClient.Client;
-  const msal = require('msal-node');
+  const msal = require('@azure/msal-node');
   ConfidentialClientApplication = msal.ConfidentialClientApplication;
   const googleapis = require('googleapis');
   google = googleapis.google;
 } catch (error) {
-  console.warn('Cloud backup dependencies not installed. Install with: npm install @microsoft/microsoft-graph-client googleapis msal-node');
+  console.warn('Cloud backup dependencies not installed. Install with: npm install @microsoft/microsoft-graph-client googleapis @azure/msal-node');
 }
 
 const db = getDatabase();
@@ -20,7 +20,7 @@ const db = getDatabase();
 // OneDrive configuration
 const getOneDriveClient = async () => {
   if (!Client || !ConfidentialClientApplication) {
-    throw new Error('OneDrive dependencies not installed. Run: npm install @microsoft/microsoft-graph-client msal-node');
+    throw new Error('OneDrive dependencies not installed. Run: npm install @microsoft/microsoft-graph-client @azure/msal-node');
   }
 
   const clientId = process.env.ONEDRIVE_CLIENT_ID;
