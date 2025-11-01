@@ -96,35 +96,28 @@ async function initializeDatabase() {
       )
     `);
 
-    await client.query('COMMIT');
-    
     // Add patient_count column if it doesn't exist (migration for existing databases)
-    // This needs to be outside the transaction because it might fail
-    try {
-      await client.query('BEGIN');
-      await client.query(`
-        ALTER TABLE units ADD COLUMN patient_count INTEGER DEFAULT 0
-      `);
-      await client.query('COMMIT');
-      console.log('Patient count column added');
-    } catch (err) {
-      // Rollback the transaction if it failed
+    // Check if column exists first to avoid transaction errors
+    const columnCheck = await client.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'units' AND column_name = 'patient_count'
+    `);
+    
+    if (columnCheck.rows.length === 0) {
       try {
+        await client.query(`
+          ALTER TABLE units ADD COLUMN patient_count INTEGER DEFAULT 0
+        `);
+        console.log('Patient count column added');
+      } catch (err) {
+        console.error('Error adding patient_count column:', err);
         await client.query('ROLLBACK');
-      } catch (rollbackErr) {
-        // Ignore rollback errors
-      }
-      
-      if (err.message.includes('already exists') || err.code === '42701' || err.message.includes('duplicate column')) {
-        console.log('Patient count column already exists');
-      } else {
-        // Re-throw if it's a different error
         throw err;
       }
+    } else {
+      console.log('Patient count column already exists');
     }
-    
-    // Continue with the rest of table creation in a new transaction
-    await client.query('BEGIN');
 
     // Rotations table
     await client.query(`
@@ -180,13 +173,18 @@ async function initializeDatabase() {
 
     await client.query('COMMIT');
     
-    // Insert default settings
+    // Insert default settings and units outside of transaction
     await insertDefaultSettings();
     await insertDefaultUnits();
     
     console.log('✅ Database tables initialized successfully');
   } catch (err) {
-    await client.query('ROLLBACK');
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackErr) {
+      // Ignore rollback errors
+      console.error('Error during rollback:', rollbackErr);
+    }
     throw err;
   } finally {
     client.release();
