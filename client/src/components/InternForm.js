@@ -34,9 +34,11 @@ export default function InternForm({ intern, onClose, onSuccess }) {
       onSuccess();
     },
     onError: (error) => {
+      console.error('Error creating intern:', error);
+      const errorMessage = error?.message || error?.response?.data?.error || 'Failed to create intern';
       toast({
         title: 'Error',
-        description: error.message || 'Failed to create intern',
+        description: errorMessage,
         variant: 'destructive',
       });
     },
@@ -52,9 +54,11 @@ export default function InternForm({ intern, onClose, onSuccess }) {
       onSuccess();
     },
     onError: (error) => {
+      console.error('Error updating intern:', error);
+      const errorMessage = error?.message || error?.response?.data?.error || 'Failed to update intern';
       toast({
         title: 'Error',
-        description: error.message || 'Failed to update intern',
+        description: errorMessage,
         variant: 'destructive',
       });
     },

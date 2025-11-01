@@ -162,10 +162,16 @@ router.post('/', validateIntern, (req, res) => {
       db.run(query, [name, gender, finalBatch, start_date, phone_number], function(err) {
         if (err) {
           console.error('Error creating intern:', err);
-          return res.status(500).json({ error: 'Failed to create intern' });
+          console.error('Query:', query);
+          console.error('Params:', [name, gender, finalBatch, start_date, phone_number]);
+          return res.status(500).json({ 
+            error: 'Failed to create intern',
+            details: err.message || String(err)
+          });
         }
         
         const internId = this.lastID;
+        console.log('Intern created successfully with ID:', internId);
         
         // If initial unit is provided, create rotation
         if (initial_unit_id) {
