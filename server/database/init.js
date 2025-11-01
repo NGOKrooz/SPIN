@@ -1,19 +1,33 @@
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
-const fs = require('fs');
+// Determine database type based on environment
+const DB_TYPE = process.env.DATABASE_URL ? 'postgres' : (process.env.DB_TYPE || 'sqlite');
 
-const DB_PATH = process.env.DB_PATH || './database/spin.db';
+let db, initializeDatabase, getDatabase;
 
-// Ensure database directory exists
-const dbDir = path.dirname(DB_PATH);
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
-}
+if (DB_TYPE === 'postgres') {
+  // Use PostgreSQL
+  const postgres = require('./postgres');
+  initializeDatabase = postgres.initializeDatabase;
+  getDatabase = postgres.getDatabase;
+  db = getDatabase();
+  module.exports = { initializeDatabase, getDatabase };
+} else {
+  // Use SQLite (existing code)
+  const sqlite3 = require('sqlite3').verbose();
+  const path = require('path');
+  const fs = require('fs');
 
-const db = new sqlite3.Database(DB_PATH);
+  const DB_PATH = process.env.DB_PATH || './database/spin.db';
 
-// Initialize database tables
-function initializeDatabase() {
+  // Ensure database directory exists
+  const dbDir = path.dirname(DB_PATH);
+  if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+  }
+
+  db = new sqlite3.Database(DB_PATH);
+
+  // Initialize database tables
+  initializeDatabase = function() {
   return new Promise((resolve, reject) => {
     db.serialize(() => {
       // Interns table
@@ -184,12 +198,13 @@ function insertDefaultUnits() {
   });
 }
 
-// Get database instance
-function getDatabase() {
-  return db;
-}
+  // Get database instance
+  getDatabase = function() {
+    return db;
+  };
 
-module.exports = {
-  initializeDatabase,
-  getDatabase
-};
+  module.exports = {
+    initializeDatabase,
+    getDatabase
+  };
+}

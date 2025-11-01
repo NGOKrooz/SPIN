@@ -1,11 +1,10 @@
 const express = require('express');
-const { getDatabase } = require('../database/init');
+const db = require('../database/dbWrapper');
 const ExcelJS = require('exceljs');
 const puppeteer = require('puppeteer');
 const { format, parseISO, startOfMonth, endOfMonth } = require('date-fns');
 
 const router = express.Router();
-const db = getDatabase();
 
 // GET /api/reports/summary - Get summary report
 router.get('/summary', (req, res) => {

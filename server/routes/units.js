@@ -1,9 +1,8 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const { getDatabase } = require('../database/init');
+const db = require('../database/dbWrapper');
 
 const router = express.Router();
-const db = getDatabase();
 
 // Validation middleware
 const validateUnit = [

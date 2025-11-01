@@ -1,11 +1,10 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const { getDatabase } = require('../database/init');
+const db = require('../database/dbWrapper');
 const { addDays, format, parseISO, differenceInDays, startOfWeek, endOfWeek, isWithinInterval } = require('date-fns');
 const { isBatchOffOnDate } = require('./settings');
 
 const router = express.Router();
-const db = getDatabase();
 
 // Validation middleware
 const validateRotation = [
@@ -384,7 +383,7 @@ function generateInternRotations(intern, units, startDate, settings) {
   let currentDate = parseISO(intern.start_date);
   const endDate = addDays(currentDate, internshipDuration);
   
-  // Calculate total rotation days needed (excluding off days)
+  // Calculate total rotation days needed (sum of all unit durations)
   const totalRotationDays = units.reduce((sum, unit) => sum + unit.duration_days, 0);
   const cycles = Math.ceil(internshipDuration / totalRotationDays);
   
@@ -394,28 +393,28 @@ function generateInternRotations(intern, units, startDate, settings) {
     const unitIndex = rotationIndex % units.length;
     const unit = units[unitIndex];
     
+    // Start date is current date (immediate, no gaps)
     const rotationStart = currentDate;
+    
+    // Calculate end date based on unit duration (includes off days)
+    // Duration is the number of calendar days, including off days
     let rotationEnd = addDays(rotationStart, unit.duration_days - 1);
     
     // Ensure rotation doesn't exceed internship end date
     const actualEnd = rotationEnd > endDate ? endDate : rotationEnd;
     
-    // Adjust rotation dates to account for batch off days
-    const adjustedDates = adjustRotationDatesForOffDays(
-      rotationStart, 
-      actualEnd, 
-      intern.batch, 
-      settings
-    );
+    // Include off days - no adjustment, just use the calculated dates
+    // The duration includes calendar days, so off days are part of the rotation
     
     rotations.push({
       intern_id: intern.id,
       unit_id: unit.id,
-      start_date: format(adjustedDates.start, 'yyyy-MM-dd'),
-      end_date: format(adjustedDates.end, 'yyyy-MM-dd')
+      start_date: format(rotationStart, 'yyyy-MM-dd'),
+      end_date: format(actualEnd, 'yyyy-MM-dd')
     });
     
-    currentDate = addDays(adjustedDates.end, 1);
+    // Next rotation starts immediately after this one ends (no gaps)
+    currentDate = addDays(actualEnd, 1);
     rotationIndex++;
   }
   

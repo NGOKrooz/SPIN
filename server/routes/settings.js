@@ -1,10 +1,9 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const { getDatabase } = require('../database/init');
+const db = require('../database/dbWrapper');
 const { parseISO, differenceInDays } = require('date-fns');
 
 const router = express.Router();
-const db = getDatabase();
 
 // Helper function to get batch off day for a specific date
 function getBatchOffDay(batch, date, scheduleSettings) {

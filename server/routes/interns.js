@@ -1,10 +1,9 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const { getDatabase } = require('../database/init');
+const db = require('../database/dbWrapper');
 const { addDays, format, parseISO, differenceInDays } = require('date-fns');
 
 const router = express.Router();
-const db = getDatabase();
 
 // Validation middleware
 const validateIntern = [
@@ -211,15 +210,105 @@ router.post('/', validateIntern, (req, res) => {
             });
           });
         } else {
-          res.status(201).json({
-            id: internId,
-            name,
-            gender,
-            batch: finalBatch,
-            start_date,
-            phone_number,
-            status: 'Active',
-            extension_days: 0
+          // Check if auto-generate on create is enabled (from JSON settings)
+          db.get('SELECT value FROM settings WHERE key = ?', ['auto-generation'], async (err, setting) => {
+            let autoGenerate = false;
+            
+            if (setting && setting.value) {
+              try {
+                const autoGenSettings = JSON.parse(setting.value);
+                autoGenerate = autoGenSettings.auto_generate_on_create === true;
+              } catch (e) {
+                // If parsing fails, default to false
+                autoGenerate = false;
+              }
+            }
+            
+            if (autoGenerate) {
+              // Auto-generate rotations for the new intern
+              try {
+                // Get all units
+                const units = await new Promise((resolve, reject) => {
+                  db.all('SELECT * FROM units ORDER BY id', [], (err, rows) => {
+                    if (err) reject(err);
+                    else resolve(rows);
+                  });
+                });
+                
+                // Get settings for rotation generation
+                const settings = await new Promise((resolve, reject) => {
+                  db.all('SELECT key, value FROM settings', [], (err, rows) => {
+                    if (err) reject(err);
+                    else {
+                      const settingsObj = rows.reduce((acc, row) => {
+                        try {
+                          // Try to parse JSON, fallback to string
+                          const value = row.value.startsWith('{') || row.value.startsWith('[') 
+                            ? JSON.parse(row.value) 
+                            : row.value;
+                          acc[row.key] = value;
+                        } catch {
+                          acc[row.key] = row.value;
+                        }
+                        return acc;
+                      }, {});
+                      resolve(settingsObj);
+                    }
+                  });
+                });
+                
+                // Generate rotations for this intern
+                const internData = {
+                  id: internId,
+                  name,
+                  gender,
+                  batch: finalBatch,
+                  start_date,
+                  status: 'Active',
+                  extension_days: 0
+                };
+                
+                const rotations = generateInternRotations(
+                  internData,
+                  units,
+                  parseISO(start_date),
+                  settings
+                );
+                
+                // Insert generated rotations
+                for (const rotation of rotations) {
+                  await new Promise((resolve, reject) => {
+                    db.run(
+                      `INSERT INTO rotations (intern_id, unit_id, start_date, end_date, is_manual_assignment)
+                       VALUES (?, ?, ?, ?, FALSE)`,
+                      [rotation.intern_id, rotation.unit_id, rotation.start_date, rotation.end_date],
+                      (err) => {
+                        if (err) reject(err);
+                        else resolve();
+                      }
+                    );
+                  });
+                }
+                
+                console.log(`✅ Auto-generated ${rotations.length} rotations for intern ${internId}`);
+                
+              } catch (genErr) {
+                console.error('Error auto-generating rotations:', genErr);
+                // Don't fail intern creation if rotation generation fails
+              }
+            }
+            
+            res.status(201).json({
+              id: internId,
+              name,
+              gender,
+              batch: finalBatch,
+              start_date,
+              phone_number,
+              status: 'Active',
+              extension_days: 0,
+              auto_generated_rotations: autoGenerate
+            });
           });
         }
       });
@@ -387,5 +476,54 @@ router.get('/:id/schedule', (req, res) => {
     res.json(rows);
   });
 });
+
+// Helper function to generate rotations for a single intern
+function generateInternRotations(intern, units, startDate, settings) {
+  const rotations = [];
+  const internshipDuration = intern.status === 'Extended' 
+    ? 365 + (intern.extension_days || 0) 
+    : 365;
+  
+  let currentDate = parseISO(intern.start_date);
+  const endDate = addDays(currentDate, internshipDuration);
+  
+  // Calculate total rotation days needed (sum of all unit durations)
+  const totalRotationDays = units.reduce((sum, unit) => sum + unit.duration_days, 0);
+  const cycles = Math.ceil(internshipDuration / totalRotationDays);
+  
+  let rotationIndex = 0;
+  
+  while (currentDate < endDate && rotationIndex < units.length * cycles) {
+    const unitIndex = rotationIndex % units.length;
+    const unit = units[unitIndex];
+    
+    // Start date is current date (immediate, no gaps)
+    const rotationStart = currentDate;
+    
+    // Calculate end date based on unit duration (includes off days)
+    // Duration is the number of calendar days, including off days
+    let rotationEnd = addDays(rotationStart, unit.duration_days - 1);
+    
+    // Ensure rotation doesn't exceed internship end date
+    const actualEnd = rotationEnd > endDate ? endDate : rotationEnd;
+    
+    // Include off days - no adjustment, just use the calculated dates
+    // The duration includes calendar days, so off days are part of the rotation
+    
+    rotations.push({
+      intern_id: intern.id,
+      unit_id: unit.id,
+      start_date: format(rotationStart, 'yyyy-MM-dd'),
+      end_date: format(actualEnd, 'yyyy-MM-dd')
+    });
+    
+    // Next rotation starts immediately after this one ends (no gaps)
+    currentDate = addDays(actualEnd, 1);
+    rotationIndex++;
+  }
+  
+  return rotations;
+}
+
 
 module.exports = router;
