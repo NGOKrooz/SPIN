@@ -26,12 +26,16 @@ export default function InternForm({ intern, onClose, onSuccess }) {
 
   const createMutation = useMutation({
     mutationFn: api.createIntern,
-    onSuccess: () => {
+    onSuccess: (data) => {
+      console.log('Intern created successfully:', data);
       toast({
         title: 'Success',
         description: 'Intern created successfully',
       });
-      onSuccess();
+      // Call onSuccess which should invalidate queries and close modal
+      if (onSuccess) {
+        onSuccess();
+      }
     },
     onError: (error) => {
       console.error('Error creating intern:', error);

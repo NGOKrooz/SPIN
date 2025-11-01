@@ -24,7 +24,7 @@ export default function Interns() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: interns, isLoading } = useQuery({
+  const { data: interns, isLoading, refetch } = useQuery({
     queryKey: ['interns', { batch: filterBatch, status: filterStatus }],
     queryFn: () => api.getInterns({
       batch: filterBatch === 'ALL' ? undefined : filterBatch,
@@ -370,8 +370,10 @@ export default function Interns() {
         <InternForm
           intern={editingIntern}
           onClose={handleFormClose}
-          onSuccess={() => {
-            queryClient.invalidateQueries({ queryKey: ['interns'] });
+          onSuccess={async () => {
+            // Invalidate and refetch to ensure fresh data
+            await queryClient.invalidateQueries({ queryKey: ['interns'] });
+            await refetch();
             handleFormClose();
           }}
         />

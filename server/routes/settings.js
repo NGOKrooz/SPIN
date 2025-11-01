@@ -304,15 +304,24 @@ function getJSONSetting(key, defaultValue = {}) {
 function setJSONSetting(key, value, description = '') {
   return new Promise((resolve, reject) => {
     const valueStr = JSON.stringify(value);
-    db.run(
-      `INSERT OR REPLACE INTO settings (key, value, description, updated_at) 
-       VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
-      [key, valueStr, description],
-      function(err) {
-        if (err) return reject(err);
-        resolve();
+    const DB_TYPE = process.env.DATABASE_URL ? 'postgres' : (process.env.DB_TYPE || 'sqlite');
+    const isPostgres = DB_TYPE === 'postgres';
+    
+    // Use appropriate syntax for each database
+    const query = isPostgres
+      ? `INSERT INTO settings (key, value, description, updated_at) 
+         VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+         ON CONFLICT (key) DO UPDATE SET value = $2, description = $3, updated_at = CURRENT_TIMESTAMP`
+      : `INSERT OR REPLACE INTO settings (key, value, description, updated_at) 
+         VALUES (?, ?, ?, CURRENT_TIMESTAMP)`;
+    
+    db.run(query, [key, valueStr, description], function(err) {
+      if (err) {
+        console.error('Error in setJSONSetting:', err);
+        return reject(err);
       }
-    );
+      resolve();
+    });
   });
 }
 
@@ -846,7 +855,12 @@ router.put('/:key', [
   db.run(query, [value, key], function(err) {
     if (err) {
       console.error('Error updating setting:', err);
-      return res.status(500).json({ error: 'Failed to update setting' });
+      console.error('Query:', query);
+      console.error('Params:', [value, key]);
+      return res.status(500).json({ 
+        error: 'Failed to update setting',
+        details: err.message || String(err)
+      });
     }
     
     if (this.changes === 0) {
