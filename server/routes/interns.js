@@ -211,7 +211,22 @@ router.post('/', validateIntern, (req, res) => {
           });
         } else {
           // Check if auto-generate on create is enabled (from JSON settings)
-          db.get('SELECT value FROM settings WHERE key = ?', ['auto-generation'], async (err, setting) => {
+          db.get('SELECT value FROM settings WHERE key = ?', ['auto-generation'], (err, setting) => {
+            if (err) {
+              console.error('Error checking auto-generation setting:', err);
+              return res.status(201).json({
+                id: internId,
+                name,
+                gender,
+                batch: finalBatch,
+                start_date,
+                phone_number,
+                status: 'Active',
+                extension_days: 0,
+                auto_generated_rotations: false
+              });
+            }
+            
             let autoGenerate = false;
             
             if (setting && setting.value) {
@@ -224,80 +239,7 @@ router.post('/', validateIntern, (req, res) => {
               }
             }
             
-            if (autoGenerate) {
-              // Auto-generate rotations for the new intern
-              try {
-                // Get all units
-                const units = await new Promise((resolve, reject) => {
-                  db.all('SELECT * FROM units ORDER BY id', [], (err, rows) => {
-                    if (err) reject(err);
-                    else resolve(rows);
-                  });
-                });
-                
-                // Get settings for rotation generation
-                const settings = await new Promise((resolve, reject) => {
-                  db.all('SELECT key, value FROM settings', [], (err, rows) => {
-                    if (err) reject(err);
-                    else {
-                      const settingsObj = rows.reduce((acc, row) => {
-                        try {
-                          // Try to parse JSON, fallback to string
-                          const value = row.value.startsWith('{') || row.value.startsWith('[') 
-                            ? JSON.parse(row.value) 
-                            : row.value;
-                          acc[row.key] = value;
-                        } catch {
-                          acc[row.key] = row.value;
-                        }
-                        return acc;
-                      }, {});
-                      resolve(settingsObj);
-                    }
-                  });
-                });
-                
-                // Generate rotations for this intern
-                const internData = {
-                  id: internId,
-                  name,
-                  gender,
-                  batch: finalBatch,
-                  start_date,
-                  status: 'Active',
-                  extension_days: 0
-                };
-                
-                const rotations = generateInternRotations(
-                  internData,
-                  units,
-                  parseISO(start_date),
-                  settings
-                );
-                
-                // Insert generated rotations
-                for (const rotation of rotations) {
-                  await new Promise((resolve, reject) => {
-                    db.run(
-                      `INSERT INTO rotations (intern_id, unit_id, start_date, end_date, is_manual_assignment)
-                       VALUES (?, ?, ?, ?, FALSE)`,
-                      [rotation.intern_id, rotation.unit_id, rotation.start_date, rotation.end_date],
-                      (err) => {
-                        if (err) reject(err);
-                        else resolve();
-                      }
-                    );
-                  });
-                }
-                
-                console.log(`✅ Auto-generated ${rotations.length} rotations for intern ${internId}`);
-                
-              } catch (genErr) {
-                console.error('Error auto-generating rotations:', genErr);
-                // Don't fail intern creation if rotation generation fails
-              }
-            }
-            
+            // Send response first, then generate rotations in background
             res.status(201).json({
               id: internId,
               name,
@@ -309,6 +251,13 @@ router.post('/', validateIntern, (req, res) => {
               extension_days: 0,
               auto_generated_rotations: autoGenerate
             });
+            
+            // Generate rotations asynchronously if enabled (don't block response)
+            if (autoGenerate) {
+              generateRotationsForIntern(internId, finalBatch, start_date).catch(err => {
+                console.error('Error auto-generating rotations in background:', err);
+              });
+            }
           });
         }
       });
@@ -476,6 +425,78 @@ router.get('/:id/schedule', (req, res) => {
     res.json(rows);
   });
 });
+
+// Helper function to generate rotations for a new intern (called asynchronously)
+async function generateRotationsForIntern(internId, batch, start_date) {
+  try {
+    // Get all units
+    const units = await new Promise((resolve, reject) => {
+      db.all('SELECT * FROM units ORDER BY id', [], (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+      });
+    });
+    
+    // Get settings for rotation generation
+    const settings = await new Promise((resolve, reject) => {
+      db.all('SELECT key, value FROM settings', [], (err, rows) => {
+        if (err) reject(err);
+        else {
+          const settingsObj = rows.reduce((acc, row) => {
+            try {
+              // Try to parse JSON, fallback to string
+              const value = row.value.startsWith('{') || row.value.startsWith('[') 
+                ? JSON.parse(row.value) 
+                : row.value;
+              acc[row.key] = value;
+            } catch {
+              acc[row.key] = row.value;
+            }
+            return acc;
+          }, {});
+          resolve(settingsObj);
+        }
+      });
+    });
+    
+    // Generate rotations for this intern
+    const internData = {
+      id: internId,
+      batch,
+      start_date,
+      status: 'Active',
+      extension_days: 0
+    };
+    
+    const rotations = generateInternRotations(
+      internData,
+      units,
+      parseISO(start_date),
+      settings
+    );
+    
+    // Insert generated rotations
+    for (const rotation of rotations) {
+      await new Promise((resolve, reject) => {
+        db.run(
+          `INSERT INTO rotations (intern_id, unit_id, start_date, end_date, is_manual_assignment)
+           VALUES (?, ?, ?, ?, FALSE)`,
+          [rotation.intern_id, rotation.unit_id, rotation.start_date, rotation.end_date],
+          (err) => {
+            if (err) reject(err);
+            else resolve();
+          }
+        );
+      });
+    }
+    
+    console.log(`✅ Auto-generated ${rotations.length} rotations for intern ${internId}`);
+    
+  } catch (genErr) {
+    console.error('Error auto-generating rotations:', genErr);
+    // Don't fail intern creation if rotation generation fails
+  }
+}
 
 // Helper function to generate rotations for a single intern
 function generateInternRotations(intern, units, startDate, settings) {
