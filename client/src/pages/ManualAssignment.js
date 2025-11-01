@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { UserPlus, Calendar, Building2, Users, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { api } from '../services/api';
 import { formatDate, getBatchColor, getWorkloadColor } from '../lib/utils';
 import { useToast } from '../hooks/use-toast';
+import { addDays, format, parseISO } from 'date-fns';
 
 export default function ManualAssignment() {
   const [formData, setFormData] = useState({
@@ -139,16 +140,51 @@ export default function ManualAssignment() {
   };
 
   const handleChange = (field, value) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
+    setFormData(prev => {
+      const newData = {
+        ...prev,
+        [field]: value
+      };
+      
+      // Auto-calculate end date when unit or start date changes
+      if ((field === 'unit_id' || field === 'start_date') && newData.unit_id && newData.start_date) {
+        const unit = units?.find(u => u.id === parseInt(newData.unit_id));
+        if (unit && unit.duration_days) {
+          // End date = start date + (duration_days - 1) since duration includes the start day
+          const startDate = parseISO(newData.start_date);
+          const endDate = addDays(startDate, unit.duration_days - 1);
+          newData.end_date = format(endDate, 'yyyy-MM-dd');
+        }
+      }
+      
+      return newData;
+    });
     
     // Check conflicts when relevant fields change
     if (field === 'intern_id' || field === 'start_date' || field === 'end_date') {
       setTimeout(checkConflicts, 100);
     }
   };
+
+  // Auto-calculate end date when unit or start date changes
+  useEffect(() => {
+    if (formData.unit_id && formData.start_date) {
+      const unit = units?.find(u => u.id === parseInt(formData.unit_id));
+      if (unit && unit.duration_days) {
+        const startDate = parseISO(formData.start_date);
+        const calculatedEndDate = addDays(startDate, unit.duration_days - 1);
+        const formattedEndDate = format(calculatedEndDate, 'yyyy-MM-dd');
+        
+        // Only update if it's different from current end_date or if end_date is empty
+        if (formData.end_date !== formattedEndDate) {
+          setFormData(prev => ({
+            ...prev,
+            end_date: formattedEndDate
+          }));
+        }
+      }
+    }
+  }, [formData.unit_id, formData.start_date, units]);
 
   const selectedIntern = interns?.find(intern => intern.id === parseInt(formData.intern_id));
   const selectedUnit = units?.find(unit => unit.id === parseInt(formData.unit_id));
@@ -265,7 +301,19 @@ export default function ManualAssignment() {
                     value={formData.end_date}
                     onChange={(e) => handleChange('end_date', e.target.value)}
                     required
+                    disabled={!selectedUnit || !formData.start_date}
+                    className={(!selectedUnit || !formData.start_date) ? 'bg-gray-100 cursor-not-allowed' : ''}
                   />
+                  {selectedUnit && formData.start_date && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Auto-calculated: {selectedUnit.duration_days} days from start date
+                    </p>
+                  )}
+                  {(!selectedUnit || !formData.start_date) && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Select unit and start date to auto-calculate end date
+                    </p>
+                  )}
                 </div>
               </div>
 
