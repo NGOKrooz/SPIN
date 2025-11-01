@@ -14,33 +14,42 @@ const dbWrapper = {
     
     let converted = query;
     
-    // Convert GROUP_CONCAT - handle simple cases first
-    converted = converted.replace(/GROUP_CONCAT\(([^,]+),\s*'\|'\)/gi, "STRING_AGG($1::text, '|')");
-    converted = converted.replace(/GROUP_CONCAT\(([^,]+),\s*',\s*'\)/gi, "STRING_AGG($1::text, ', ')");
+    // Convert date functions first
+    converted = converted.replace(/date\('now'\)/gi, 'CURRENT_DATE');
+    converted = converted.replace(/datetime\('now'\)/gi, 'CURRENT_TIMESTAMP');
     
-    // Convert GROUP_CONCAT with CASE statements (more complex)
-    converted = converted.replace(/GROUP_CONCAT\s*\(\s*((?:CASE[^)]*END[^,)]*))\s*,\s*'([^']+)'\s*\)/gi, (match, caseExpr, separator) => {
-      // For PostgreSQL, we need to filter NULL values
+    // Convert string concatenation operator (|| works in PostgreSQL too, but ensure it's handled)
+    // PostgreSQL supports || for string concatenation, so this should be fine
+    
+    // Convert GROUP_CONCAT with CASE statements (most complex, do first)
+    // Match: GROUP_CONCAT(CASE ... END, 'separator')
+    // Using non-greedy matching to get the full CASE expression
+    converted = converted.replace(/GROUP_CONCAT\s*\(\s*(CASE[^E]+END[^)]*)\s*,\s*'([^']+)'\s*\)/gi, (match, caseExpr, separator) => {
+      // For PostgreSQL, STRING_AGG with CASE needs proper NULL handling
       return `STRING_AGG((${caseExpr})::text, '${separator}') FILTER (WHERE (${caseExpr}) IS NOT NULL)`;
     });
     
-    converted = converted
-      .replace(/date\('now'\)/gi, 'CURRENT_DATE')
-      .replace(/datetime\('now'\)/gi, 'CURRENT_TIMESTAMP')
-      .replace(/PRAGMA\s+table_info\((\w+)\)/gi, (match, tableName) => {
-        return `
-          SELECT 
-            ordinal_position as cid,
-            column_name as name,
-            data_type as type,
-            CASE WHEN is_nullable = 'NO' THEN 1 ELSE 0 END as notnull,
-            column_default as dflt_value,
-            CASE WHEN column_name = (SELECT column_name FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name WHERE tc.table_name = '${tableName}' AND tc.constraint_type = 'PRIMARY KEY' LIMIT 1) THEN 1 ELSE 0 END as pk
-          FROM information_schema.columns
-          WHERE table_name = '${tableName}'
-          ORDER BY ordinal_position
-        `;
-      });
+    // Convert simple GROUP_CONCAT - handle pipe separator
+    converted = converted.replace(/GROUP_CONCAT\(([^,()]+),\s*'\|'\)/gi, "STRING_AGG($1::text, '|')");
+    
+    // Convert simple GROUP_CONCAT - handle comma separator  
+    converted = converted.replace(/GROUP_CONCAT\(([^,()]+),\s*',\s*'\)/gi, "STRING_AGG($1::text, ', ')");
+    
+    // Convert PRAGMA table_info
+    converted = converted.replace(/PRAGMA\s+table_info\((\w+)\)/gi, (match, tableName) => {
+      return `
+        SELECT 
+          ordinal_position as cid,
+          column_name as name,
+          data_type as type,
+          CASE WHEN is_nullable = 'NO' THEN 1 ELSE 0 END as notnull,
+          column_default as dflt_value,
+          CASE WHEN column_name = (SELECT column_name FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name WHERE tc.table_name = '${tableName}' AND tc.constraint_type = 'PRIMARY KEY' LIMIT 1) THEN 1 ELSE 0 END as pk
+        FROM information_schema.columns
+        WHERE table_name = '${tableName}'
+        ORDER BY ordinal_position
+      `;
+    });
     
     return converted;
   },
