@@ -187,24 +187,23 @@ router.post('/', validateIntern, (req, res) => {
   getNextBatch.then((nextBatch) => {
     const finalBatch = batch && ['A','B'].includes(batch) ? batch : nextBatch;
     
-    db.serialize(() => {
-      // Create intern
-      db.run(query, [name, gender, finalBatch, start_date, phone_number], function(err) {
-        if (err) {
-          console.error('Error creating intern:', err);
-          console.error('Query:', query);
-          console.error('Params:', [name, gender, finalBatch, start_date, phone_number]);
-          return res.status(500).json({ 
-            error: 'Failed to create intern',
-            details: err.message || String(err)
-          });
-        }
-        
-        const internId = this.lastID;
-        console.log('Intern created successfully with ID:', internId);
-        
-        // If initial unit is provided, create rotation
-        if (initial_unit_id) {
+    // Create intern (don't use serialize for PostgreSQL compatibility)
+    db.run(query, [name, gender, finalBatch, start_date, phone_number], function(err) {
+      if (err) {
+        console.error('Error creating intern:', err);
+        console.error('Query:', query);
+        console.error('Params:', [name, gender, finalBatch, start_date, phone_number]);
+        return res.status(500).json({ 
+          error: 'Failed to create intern',
+          details: err.message || String(err)
+        });
+      }
+      
+      const internId = this.lastID;
+      console.log('Intern created successfully with ID:', internId);
+      
+      // If initial unit is provided, create rotation
+      if (initial_unit_id) {
           // Get unit duration
           db.get('SELECT duration_days FROM units WHERE id = ?', [initial_unit_id], (err, unit) => {
             if (err) {

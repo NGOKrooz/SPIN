@@ -369,12 +369,18 @@ export default function Interns() {
       {showForm && (
         <InternForm
           intern={editingIntern}
-          onClose={handleFormClose}
-          onSuccess={async () => {
-            // Invalidate and refetch to ensure fresh data
-            await queryClient.invalidateQueries({ queryKey: ['interns'] });
-            await refetch();
+          onClose={() => {
             handleFormClose();
+          }}
+          onSuccess={async () => {
+            // Close modal first
+            handleFormClose();
+            // Then invalidate and refetch to ensure fresh data
+            queryClient.invalidateQueries({ queryKey: ['interns'] });
+            // Use setTimeout to ensure modal closes before refetch
+            setTimeout(() => {
+              refetch();
+            }, 100);
           }}
         />
       )}
