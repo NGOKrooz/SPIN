@@ -170,9 +170,14 @@ async function startServer() {
       }, 2000); // Wait 2 seconds after server start
     }
     
-    app.listen(PORT, () => {
+    app.listen(PORT, '0.0.0.0', () => {
       console.log(`🚀 SPIN Server running on port ${PORT}`);
       console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
+    });
+    
+    // Keep process alive and handle errors gracefully
+    app.on('error', (err) => {
+      console.error('Express error:', err);
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);
