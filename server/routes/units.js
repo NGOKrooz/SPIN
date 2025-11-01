@@ -223,18 +223,18 @@ router.post('/', validateUnit, (req, res) => {
 // POST /api/units/seed-defaults - Seed default units (idempotent)
 router.post('/seed-defaults', async (req, res) => {
   const defaultUnits = [
-    { name: 'Adult Neurology', duration_days: 21, workload: 'Medium' },
-    { name: 'Acute Stroke', duration_days: 30, workload: 'High' },
-    { name: 'Neurosurgery', duration_days: 30, workload: 'High' },
-    { name: 'Geriatrics', duration_days: 30, workload: 'Medium' },
-    { name: 'Orthopedic Inpatients', duration_days: 30, workload: 'High' },
-    { name: 'Orthopedic Outpatients', duration_days: 30, workload: 'Medium' },
-    { name: 'Electrophysiology', duration_days: 30, workload: 'Low' },
-    { name: 'Exercise Immunology', duration_days: 30, workload: 'Low' },
-    { name: "Women's Health", duration_days: 30, workload: 'Medium' },
-    { name: 'Pediatrics Inpatients', duration_days: 21, workload: 'High' },
-    { name: 'Pediatrics Outpatients', duration_days: 21, workload: 'Medium' },
-    { name: 'Cardio Thoracic Unit', duration_days: 30, workload: 'High' }
+    { name: 'Adult Neurology', duration_days: 2, workload: 'Medium' },
+    { name: 'Acute Stroke', duration_days: 2, workload: 'High' },
+    { name: 'Neurosurgery', duration_days: 2, workload: 'High' },
+    { name: 'Geriatrics', duration_days: 2, workload: 'Medium' },
+    { name: 'Orthopedic Inpatients', duration_days: 2, workload: 'High' },
+    { name: 'Orthopedic Outpatients', duration_days: 2, workload: 'Medium' },
+    { name: 'Electrophysiology', duration_days: 2, workload: 'Low' },
+    { name: 'Exercise Immunology', duration_days: 2, workload: 'Low' },
+    { name: "Women's Health", duration_days: 2, workload: 'Medium' },
+    { name: 'Pediatrics Inpatients', duration_days: 2, workload: 'High' },
+    { name: 'Pediatrics Outpatients', duration_days: 2, workload: 'Medium' },
+    { name: 'Cardio Thoracic Unit', duration_days: 2, workload: 'High' }
   ];
 
   // Use a function to handle INSERT OR IGNORE for both SQLite and PostgreSQL
