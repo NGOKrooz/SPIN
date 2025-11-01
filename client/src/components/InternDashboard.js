@@ -156,7 +156,7 @@ export default function InternDashboard({ intern, onClose }) {
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-medium text-blue-600">
-                            {Math.max(0, Math.floor((new Date() - new Date(rotation.start_date)) / (1000 * 60 * 60 * 24)))} / {Math.max(0, Math.floor((new Date(rotation.end_date) - new Date(rotation.start_date)) / (1000 * 60 * 60 * 24)))} days
+                            {Math.max(0, Math.floor((new Date() - new Date(rotation.start_date)) / (1000 * 60 * 60 * 24)))} / {rotation.duration_days || Math.max(0, Math.floor((new Date(rotation.end_date) - new Date(rotation.start_date)) / (1000 * 60 * 60 * 24)) + 1)} days
                           </p>
                         </div>
                       </div>
@@ -187,7 +187,7 @@ export default function InternDashboard({ intern, onClose }) {
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-medium text-green-600">
-                            {Math.max(0, Math.floor((new Date(rotation.end_date) - new Date(rotation.start_date)) / (1000 * 60 * 60 * 24)))} days completed
+                            {rotation.duration_days || Math.max(0, Math.floor((new Date(rotation.end_date) - new Date(rotation.start_date)) / (1000 * 60 * 60 * 24)) + 1)} days completed
                           </p>
                           <span className="text-xs text-gray-500">
                             {rotation.workload} workload
@@ -223,7 +223,7 @@ export default function InternDashboard({ intern, onClose }) {
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-medium text-yellow-600">
-                            {Math.max(0, Math.floor((new Date(rotation.end_date) - new Date(rotation.start_date)) / (1000 * 60 * 60 * 24)))} days
+                            {rotation.duration_days || Math.max(0, Math.floor((new Date(rotation.end_date) - new Date(rotation.start_date)) / (1000 * 60 * 60 * 24)) + 1)} days
                           </p>
                           <span className="text-xs text-gray-500">
                             {rotation.workload} workload

@@ -215,8 +215,9 @@ router.post('/', validateIntern, (req, res) => {
               return res.status(400).json({ error: 'Invalid unit selected' });
             }
             
-            // Calculate end date
-            const endDate = addDays(new Date(start_date), unit.duration_days);
+            // Calculate end date: duration_days includes start day, so subtract 1
+            const startDateParsed = parseISO(start_date);
+            const endDate = addDays(startDateParsed, unit.duration_days - 1);
             
             // Create rotation
             const rotationQuery = `
