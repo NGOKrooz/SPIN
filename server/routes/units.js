@@ -221,7 +221,7 @@ router.post('/', validateUnit, (req, res) => {
 });
 
 // POST /api/units/seed-defaults - Seed default units (idempotent)
-router.post('/seed-defaults', (req, res) => {
+router.post('/seed-defaults', async (req, res) => {
   const defaultUnits = [
     { name: 'Adult Neurology', duration_days: 21, workload: 'Medium' },
     { name: 'Acute Stroke', duration_days: 30, workload: 'High' },
@@ -237,6 +237,39 @@ router.post('/seed-defaults', (req, res) => {
     { name: 'Cardio Thoracic Unit', duration_days: 30, workload: 'High' }
   ];
 
+  // Use a function to handle INSERT OR IGNORE for both SQLite and PostgreSQL
+  const insertUnit = async (unit) => {
+    return new Promise((resolve, reject) => {
+      const query = isPostgres 
+        ? `INSERT INTO units (name, duration_days, workload, description, patient_count) VALUES ($1, $2, $3, '', 0) ON CONFLICT (name) DO NOTHING`
+        : `INSERT OR IGNORE INTO units (name, duration_days, workload, description, patient_count) VALUES (?, ?, ?, '', 0)`;
+      
+      const params = isPostgres ? [unit.name, unit.duration_days, unit.workload] : [unit.name, unit.duration_days, unit.workload];
+      
+      db.run(query, params, (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+  };
+  
+  const DB_TYPE = process.env.DATABASE_URL ? 'postgres' : (process.env.DB_TYPE || 'sqlite');
+  const isPostgres = DB_TYPE === 'postgres';
+  
+  // Use prepared statement for SQLite, direct queries for PostgreSQL
+  if (isPostgres) {
+    try {
+      for (const unit of defaultUnits) {
+        await insertUnit(unit);
+      }
+      res.json({ message: 'Default units seeded (idempotent)' });
+    } catch (err) {
+      console.error('Error seeding units:', err);
+      return res.status(500).json({ error: 'Failed to seed units' });
+    }
+    return;
+  }
+  
   const stmt = db.prepare(`
     INSERT OR IGNORE INTO units (name, duration_days, workload, description, patient_count)
     VALUES (?, ?, ?, '', 0)

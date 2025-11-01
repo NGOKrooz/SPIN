@@ -55,8 +55,13 @@ const dbWrapper = {
   },
 
   // Convert params array to PostgreSQL format
-  _convertParams: (query, params) => {
+  _convertParams: function(query, params) {
     if (!isPostgres) return { query, params };
+    
+    // If query already uses $1, $2 format, don't convert
+    if (query.includes('$1')) {
+      return { query, params };
+    }
     
     let paramIndex = 1;
     const convertedParams = [];
