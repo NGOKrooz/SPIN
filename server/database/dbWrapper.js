@@ -75,7 +75,7 @@ const dbWrapper = {
     if (isPostgres) {
       // For INSERT queries, add RETURNING id to get the lastID
       let queryToRun = finalQuery;
-      if (query.trim().toUpperCase().startsWith('INSERT') && !query.includes('RETURNING')) {
+      if (query.trim().toUpperCase().startsWith('INSERT') && !query.includes('RETURNING') && !query.toUpperCase().includes('RETURNING')) {
         queryToRun = finalQuery + ' RETURNING id';
       }
       
@@ -89,10 +89,18 @@ const dbWrapper = {
           }
         })
         .catch(err => {
+          console.error('PostgreSQL query error in db.run:', err);
+          console.error('Query:', queryToRun);
+          console.error('Params:', finalParams);
           if (callback) callback.call({ lastID: null, changes: 0 }, err);
         });
     } else {
       db.run(finalQuery, finalParams, function(err) {
+        if (err) {
+          console.error('SQLite query error in db.run:', err);
+          console.error('Query:', finalQuery);
+          console.error('Params:', finalParams);
+        }
         if (callback) callback.call(this, err);
       });
     }
@@ -117,10 +125,20 @@ const dbWrapper = {
           if (callback) callback(null, row);
         })
         .catch(err => {
+          console.error('PostgreSQL query error in db.get:', err);
+          console.error('Query:', finalQuery);
+          console.error('Params:', finalParams);
           if (callback) callback(err, null);
         });
     } else {
-      db.get(finalQuery, finalParams, callback);
+      db.get(finalQuery, finalParams, (err, row) => {
+        if (err) {
+          console.error('SQLite query error in db.get:', err);
+          console.error('Query:', finalQuery);
+          console.error('Params:', finalParams);
+        }
+        if (callback) callback(err, row);
+      });
     }
   },
 
@@ -143,10 +161,20 @@ const dbWrapper = {
           if (callback) callback(null, rows);
         })
         .catch(err => {
+          console.error('PostgreSQL query error in db.all:', err);
+          console.error('Query:', finalQuery);
+          console.error('Params:', finalParams);
           if (callback) callback(err, null);
         });
     } else {
-      db.all(finalQuery, finalParams, callback);
+      db.all(finalQuery, finalParams, (err, rows) => {
+        if (err) {
+          console.error('SQLite query error in db.all:', err);
+          console.error('Query:', finalQuery);
+          console.error('Params:', finalParams);
+        }
+        if (callback) callback(err, rows);
+      });
     }
   },
 
