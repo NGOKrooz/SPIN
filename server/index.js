@@ -118,13 +118,24 @@ if (fs.existsSync(buildPath)) {
   });
 }
 
-// Error handling middleware
+// Error handling middleware - must be last
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  console.error('Error middleware caught:', err.stack || err);
+  
+  // Don't send response if headers already sent
+  if (res.headersSent) {
+    return next(err);
+  }
+  
   res.status(500).json({ 
     error: 'Something went wrong!',
     message: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
   });
+});
+
+// 404 handler for API routes
+app.use('/api/*', (req, res) => {
+  res.status(404).json({ error: 'API route not found' });
 });
 
 // Initialize database and start server
@@ -168,5 +179,17 @@ async function startServer() {
     process.exit(1);
   }
 }
+
+// Handle unhandled promise rejections to prevent crashes
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit, just log - keep server running
+});
+
+// Handle uncaught exceptions to prevent crashes
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  // Don't exit immediately - give it a chance to recover
+});
 
 startServer();

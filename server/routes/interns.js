@@ -61,36 +61,45 @@ router.get('/', (req, res) => {
       return res.status(500).json({ error: 'Failed to fetch interns' });
     }
     
+    // Ensure rows is an array
+    const safeRows = Array.isArray(rows) ? rows : [];
+    
     // Get all units to calculate total duration
     db.all('SELECT SUM(duration_days) as total FROM units', [], (err, unitRows) => {
-      if (err) {
-        console.error('Error calculating unit durations:', err);
-        // Fallback to default if query fails
-        const interns = rows.map(row => ({
-          ...row,
-          current_units: row.current_units ? row.current_units.split('|') : [],
-          days_since_start: differenceInDays(new Date(), parseISO(row.start_date)),
-          total_duration_days: 365 // Fallback
-        }));
-        return res.json(interns);
-      }
-      
-      const totalUnitDays = unitRows?.[0]?.total || 365; // Fallback to 365 if no units
-      
-      const interns = rows.map(row => {
-        const baseDuration = totalUnitDays;
-        const extensionDays = row.status === 'Extended' ? (row.extension_days || 0) : 0;
-        const totalDuration = baseDuration + extensionDays;
+      // Always return response, even if unit query fails
+      try {
+        const totalUnitDays = (unitRows && unitRows[0] && unitRows[0].total) ? unitRows[0].total : (safeRows.length > 0 ? 365 : 0);
         
-        return {
-          ...row,
-          current_units: row.current_units ? row.current_units.split('|') : [],
-          days_since_start: differenceInDays(new Date(), parseISO(row.start_date)),
-          total_duration_days: totalDuration
-        };
-      });
-      
-      res.json(interns);
+        const interns = safeRows.map(row => {
+          try {
+            const baseDuration = totalUnitDays || 0;
+            const extensionDays = row.status === 'Extended' ? (parseInt(row.extension_days) || 0) : 0;
+            const totalDuration = baseDuration + extensionDays;
+            
+            return {
+              ...row,
+              current_units: row.current_units ? row.current_units.split('|').filter(Boolean) : [],
+              days_since_start: row.start_date ? differenceInDays(new Date(), parseISO(row.start_date)) : 0,
+              total_duration_days: totalDuration
+            };
+          } catch (mapErr) {
+            console.error('Error mapping intern row:', mapErr);
+            // Return basic row data if mapping fails
+            return {
+              ...row,
+              current_units: [],
+              days_since_start: 0,
+              total_duration_days: 365
+            };
+          }
+        });
+        
+        return res.json(interns);
+      } catch (responseErr) {
+        console.error('Error preparing response:', responseErr);
+        // Return empty array as fallback
+        return res.json([]);
+      }
     });
   });
 });

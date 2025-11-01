@@ -153,6 +153,7 @@ const dbWrapper = {
           console.error('PostgreSQL query error in db.get:', err);
           console.error('Query:', finalQuery);
           console.error('Params:', finalParams);
+          // Always call callback, return null on error
           if (callback) callback(err, null);
         });
     } else {
@@ -161,8 +162,10 @@ const dbWrapper = {
           console.error('SQLite query error in db.get:', err);
           console.error('Query:', finalQuery);
           console.error('Params:', finalParams);
+          if (callback) callback(err, null);
+        } else {
+          if (callback) callback(null, row || null);
         }
-        if (callback) callback(err, row);
       });
     }
   },
@@ -189,7 +192,8 @@ const dbWrapper = {
           console.error('PostgreSQL query error in db.all:', err);
           console.error('Query:', finalQuery);
           console.error('Params:', finalParams);
-          if (callback) callback(err, null);
+          // Always call callback, return empty array on error instead of null
+          if (callback) callback(err, []);
         });
     } else {
       db.all(finalQuery, finalParams, (err, rows) => {
@@ -197,8 +201,11 @@ const dbWrapper = {
           console.error('SQLite query error in db.all:', err);
           console.error('Query:', finalQuery);
           console.error('Params:', finalParams);
+          // Return empty array on error
+          if (callback) callback(err, []);
+        } else {
+          if (callback) callback(null, rows || []);
         }
-        if (callback) callback(err, rows);
       });
     }
   },
