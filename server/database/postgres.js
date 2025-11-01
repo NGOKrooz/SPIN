@@ -96,19 +96,35 @@ async function initializeDatabase() {
       )
     `);
 
+    await client.query('COMMIT');
+    
     // Add patient_count column if it doesn't exist (migration for existing databases)
+    // This needs to be outside the transaction because it might fail
     try {
+      await client.query('BEGIN');
       await client.query(`
         ALTER TABLE units ADD COLUMN patient_count INTEGER DEFAULT 0
       `);
+      await client.query('COMMIT');
       console.log('Patient count column added');
     } catch (err) {
-      if (err.message.includes('already exists') || err.code === '42701') {
+      // Rollback the transaction if it failed
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackErr) {
+        // Ignore rollback errors
+      }
+      
+      if (err.message.includes('already exists') || err.code === '42701' || err.message.includes('duplicate column')) {
         console.log('Patient count column already exists');
       } else {
+        // Re-throw if it's a different error
         throw err;
       }
     }
+    
+    // Continue with the rest of table creation in a new transaction
+    await client.query('BEGIN');
 
     // Rotations table
     await client.query(`
