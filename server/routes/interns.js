@@ -296,14 +296,13 @@ router.post('/', validateIntern, (req, res) => {
           });
         }
       });
+    }).catch(err => {
+      console.error('Error in getNextBatch:', err);
+      return res.status(500).json({ 
+        error: 'Failed to create intern',
+        details: err.message || String(err)
+      });
     });
-  }).catch(err => {
-    console.error('Error in getNextBatch:', err);
-    return res.status(500).json({ 
-      error: 'Failed to create intern',
-      details: err.message || String(err)
-    });
-  });
 });
 
 // PUT /api/interns/:id - Update intern
