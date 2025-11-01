@@ -33,9 +33,12 @@ export default function InternForm({ intern, onClose, onSuccess }) {
         description: 'Intern created successfully',
       });
       // Call onSuccess which should invalidate queries and close modal
-      if (onSuccess) {
-        onSuccess();
-      }
+      // Use setTimeout to ensure toast shows and then trigger refresh
+      setTimeout(() => {
+        if (onSuccess) {
+          onSuccess();
+        }
+      }, 100);
     },
     onError: (error) => {
       console.error('Error creating intern:', error);
