@@ -61,16 +61,37 @@ router.get('/', (req, res) => {
       return res.status(500).json({ error: 'Failed to fetch interns' });
     }
     
-    const interns = rows.map(row => ({
-      ...row,
-      current_units: row.current_units ? row.current_units.split('|') : [],
-      days_since_start: differenceInDays(new Date(), parseISO(row.start_date)),
-      total_duration_days: row.status === 'Extended' 
-        ? 365 + (row.extension_days || 0) 
-        : 365
-    }));
-    
-    res.json(interns);
+    // Get all units to calculate total duration
+    db.all('SELECT SUM(duration_days) as total FROM units', [], (err, unitRows) => {
+      if (err) {
+        console.error('Error calculating unit durations:', err);
+        // Fallback to default if query fails
+        const interns = rows.map(row => ({
+          ...row,
+          current_units: row.current_units ? row.current_units.split('|') : [],
+          days_since_start: differenceInDays(new Date(), parseISO(row.start_date)),
+          total_duration_days: 365 // Fallback
+        }));
+        return res.json(interns);
+      }
+      
+      const totalUnitDays = unitRows?.[0]?.total || 365; // Fallback to 365 if no units
+      
+      const interns = rows.map(row => {
+        const baseDuration = totalUnitDays;
+        const extensionDays = row.status === 'Extended' ? (row.extension_days || 0) : 0;
+        const totalDuration = baseDuration + extensionDays;
+        
+        return {
+          ...row,
+          current_units: row.current_units ? row.current_units.split('|') : [],
+          days_since_start: differenceInDays(new Date(), parseISO(row.start_date)),
+          total_duration_days: totalDuration
+        };
+      });
+      
+      res.json(interns);
+    });
   });
 });
 
@@ -507,20 +528,28 @@ async function generateRotationsForIntern(internId, batch, start_date) {
 // Helper function to generate rotations for a single intern
 function generateInternRotations(intern, units, startDate, settings) {
   const rotations = [];
-  const internshipDuration = intern.status === 'Extended' 
-    ? 365 + (intern.extension_days || 0) 
-    : 365;
+  
+  if (!units || units.length === 0) {
+    console.warn('No units available for rotation generation');
+    return rotations;
+  }
+  
+  // Calculate internship duration based on units (one rotation through all units)
+  // Internship ends after completing all units once, not after 365 days
+  const totalRotationDays = units.reduce((sum, unit) => sum + unit.duration_days, 0);
+  
+  // If extended, add extension days
+  const extensionDays = intern.status === 'Extended' ? (intern.extension_days || 0) : 0;
+  const internshipDuration = totalRotationDays + extensionDays;
   
   let currentDate = parseISO(intern.start_date);
   const endDate = addDays(currentDate, internshipDuration);
   
-  // Calculate total rotation days needed (sum of all unit durations)
-  const totalRotationDays = units.reduce((sum, unit) => sum + unit.duration_days, 0);
-  const cycles = Math.ceil(internshipDuration / totalRotationDays);
-  
+  // Generate rotations through all units once (plus any extension cycles if needed)
   let rotationIndex = 0;
   
-  while (currentDate < endDate && rotationIndex < units.length * cycles) {
+  // Go through all units at least once
+  while (currentDate < endDate && rotationIndex < units.length * 1000) { // Safety limit
     const unitIndex = rotationIndex % units.length;
     const unit = units[unitIndex];
     
@@ -534,9 +563,6 @@ function generateInternRotations(intern, units, startDate, settings) {
     // Ensure rotation doesn't exceed internship end date
     const actualEnd = rotationEnd > endDate ? endDate : rotationEnd;
     
-    // Include off days - no adjustment, just use the calculated dates
-    // The duration includes calendar days, so off days are part of the rotation
-    
     rotations.push({
       intern_id: intern.id,
       unit_id: unit.id,
@@ -547,6 +573,11 @@ function generateInternRotations(intern, units, startDate, settings) {
     // Next rotation starts immediately after this one ends (no gaps)
     currentDate = addDays(actualEnd, 1);
     rotationIndex++;
+    
+    // If we've completed all units once and there's no extension, stop
+    if (rotationIndex === units.length && extensionDays === 0) {
+      break;
+    }
   }
   
   return rotations;
