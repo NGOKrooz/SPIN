@@ -1,21 +1,20 @@
-const { getDatabase } = require('../database/init');
+const dbWrapper = require('../database/dbWrapper');
 const cloudBackup = require('./cloudBackup');
-const db = getDatabase();
 
 // Check if this is a fresh deployment (empty or minimal database)
 async function checkIfFreshDeployment() {
   return new Promise((resolve, reject) => {
     // Check if interns table has minimal data (less than 5 interns = likely fresh)
-    db.get('SELECT COUNT(*) as count FROM interns', [], (err, row) => {
+    dbWrapper.get('SELECT COUNT(*) as count FROM interns', [], (err, row) => {
       if (err) return reject(err);
       
-      const internCount = row.count || 0;
+      const internCount = row?.count || 0;
       
       // Also check settings table
-      db.get('SELECT COUNT(*) as count FROM settings', [], (err, settingsRow) => {
+      dbWrapper.get('SELECT COUNT(*) as count FROM settings', [], (err, settingsRow) => {
         if (err) return reject(err);
         
-        const settingsCount = settingsRow.count || 0;
+        const settingsCount = settingsRow?.count || 0;
         
         // Fresh if less than 5 interns AND less than 10 settings (default settings are 7)
         const isFresh = internCount < 5 && settingsCount < 10;
@@ -63,7 +62,7 @@ async function autoRestore(backupData) {
         
         // Clear existing data
         await new Promise((resolve, reject) => {
-          db.run(`DELETE FROM ${table}`, (err) => {
+          dbWrapper.run(`DELETE FROM ${table}`, [], (err) => {
             if (err) return reject(err);
             resolve();
           });
@@ -77,7 +76,7 @@ async function autoRestore(backupData) {
           
           for (const row of backupData[table]) {
             await new Promise((resolve, reject) => {
-              db.run(insertQuery, columns.map(col => row[col]), (err) => {
+              dbWrapper.run(insertQuery, columns.map(col => row[col]), (err) => {
                 if (err) return reject(err);
                 resolve();
               });
@@ -89,7 +88,7 @@ async function autoRestore(backupData) {
       }
       
       // Log restore operation
-      db.run(
+      dbWrapper.run(
         `INSERT INTO settings (key, value, description, updated_at) 
          VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
         ['last_auto_restore', new Date().toISOString(), 'Timestamp of last automatic restore'],

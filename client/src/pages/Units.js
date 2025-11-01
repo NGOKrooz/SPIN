@@ -118,24 +118,24 @@ export default function Units() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Units</h1>
-          <p className="text-gray-600">Manage hospital units and their workload</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Units</h1>
+          <p className="text-sm sm:text-base text-gray-600">Manage hospital units and their workload</p>
         </div>
-        <div className="flex space-x-2">
+        <div className="flex flex-col sm:flex-row gap-2 sm:space-x-2">
           {(!units || units.length === 0) && (
             <Button 
               onClick={() => seedUnitsMutation.mutate()} 
               disabled={seedUnitsMutation.isPending || (units && units.length > 0)}
               variant="outline"
-              className="mr-2"
+              className="w-full sm:w-auto"
             >
               <Building2 className="h-4 w-4 mr-2" />
               {seedUnitsMutation.isPending ? 'Loading Units...' : 'Load Units'}
             </Button>
           )}
-          <Button onClick={() => setShowForm(true)} className="hospital-gradient">
+          <Button onClick={() => setShowForm(true)} className="hospital-gradient w-full sm:w-auto">
             <Building2 className="h-4 w-4 mr-2" />
             Add Unit
           </Button>

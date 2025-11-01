@@ -22,18 +22,24 @@ const dbWrapper = {
     // PostgreSQL supports || for string concatenation, so this should be fine
     
     // Convert GROUP_CONCAT with CASE statements (most complex, do first)
-    // Match: GROUP_CONCAT(CASE ... END, 'separator')
-    // Using non-greedy matching to get the full CASE expression
-    converted = converted.replace(/GROUP_CONCAT\s*\(\s*(CASE[^E]+END[^)]*)\s*,\s*'([^']+)'\s*\)/gi, (match, caseExpr, separator) => {
+    // Need to handle multiline CASE statements with nested content
+    // Pattern: GROUP_CONCAT(CASE ... END, 'separator')
+    // Use a more robust regex that handles multiline and nested content
+    converted = converted.replace(/GROUP_CONCAT\s*\(\s*(CASE\s+.*?\s+END)\s*,\s*'([^']+)'\s*\)/gis, (match, caseExpr, separator) => {
+      // Clean up the CASE expression (remove extra whitespace/newlines)
+      const cleanCase = caseExpr.replace(/\s+/g, ' ').trim();
       // For PostgreSQL, STRING_AGG with CASE needs proper NULL handling
-      return `STRING_AGG((${caseExpr})::text, '${separator}') FILTER (WHERE (${caseExpr}) IS NOT NULL)`;
+      return `STRING_AGG((${cleanCase})::text, '${separator}') FILTER (WHERE (${cleanCase}) IS NOT NULL)`;
     });
     
-    // Convert simple GROUP_CONCAT - handle pipe separator
-    converted = converted.replace(/GROUP_CONCAT\(([^,()]+),\s*'\|'\)/gi, "STRING_AGG($1::text, '|')");
-    
-    // Convert simple GROUP_CONCAT - handle comma separator  
-    converted = converted.replace(/GROUP_CONCAT\(([^,()]+),\s*',\s*'\)/gi, "STRING_AGG($1::text, ', ')");
+    // Convert remaining GROUP_CONCAT calls (fallback for any that didn't match above)
+    // This handles simple GROUP_CONCAT calls
+    converted = converted.replace(/GROUP_CONCAT\s*\(/gi, (match) => {
+      // If we still have GROUP_CONCAT, it means the above didn't match
+      // This shouldn't happen often, but log a warning
+      console.warn('Warning: Found GROUP_CONCAT that may need manual conversion');
+      return 'STRING_AGG(';
+    });
     
     // Convert PRAGMA table_info
     converted = converted.replace(/PRAGMA\s+table_info\((\w+)\)/gi, (match, tableName) => {
