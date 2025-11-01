@@ -46,6 +46,24 @@ export default function Units() {
     },
   });
 
+  const seedUnitsMutation = useMutation({
+    mutationFn: () => api.seedUnits(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['units'] });
+      toast({
+        title: 'Success',
+        description: 'Default units loaded successfully',
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to load default units',
+        variant: 'destructive',
+      });
+    },
+  });
+
 
   const filteredUnits = units?.filter(unit => {
     const matchesSearch = unit.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -106,6 +124,17 @@ export default function Units() {
           <p className="text-gray-600">Manage hospital units and their workload</p>
         </div>
         <div className="flex space-x-2">
+          {(!units || units.length === 0) && (
+            <Button 
+              onClick={() => seedUnitsMutation.mutate()} 
+              disabled={seedUnitsMutation.isPending || (units && units.length > 0)}
+              variant="outline"
+              className="mr-2"
+            >
+              <Building2 className="h-4 w-4 mr-2" />
+              {seedUnitsMutation.isPending ? 'Loading Units...' : 'Load Units'}
+            </Button>
+          )}
           <Button onClick={() => setShowForm(true)} className="hospital-gradient">
             <Building2 className="h-4 w-4 mr-2" />
             Add Unit
