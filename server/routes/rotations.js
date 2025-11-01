@@ -216,6 +216,69 @@ router.post('/', validateRotation, (req, res) => {
   });
 });
 
+// POST /api/rotations/fix-end-dates - Fix all rotation end dates based on unit durations
+router.post('/fix-end-dates', async (req, res) => {
+  try {
+    // Get all rotations with their unit durations
+    const rotations = await new Promise((resolve, reject) => {
+      db.all(`
+        SELECT 
+          r.id,
+          r.start_date,
+          r.end_date,
+          r.unit_id,
+          u.duration_days,
+          u.name as unit_name
+        FROM rotations r
+        JOIN units u ON r.unit_id = u.id
+        ORDER BY r.id
+      `, [], (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+
+    let fixed = 0;
+    let skipped = 0;
+
+    for (const rotation of rotations) {
+      // Calculate correct end date: start_date + (duration_days - 1)
+      const startDate = parseISO(rotation.start_date);
+      const correctEndDate = addDays(startDate, rotation.duration_days - 1);
+      const correctEndDateStr = format(correctEndDate, 'yyyy-MM-dd');
+
+      // Check if end date needs fixing
+      if (rotation.end_date !== correctEndDateStr) {
+        await new Promise((resolve, reject) => {
+          db.run(
+            'UPDATE rotations SET end_date = ? WHERE id = ?',
+            [correctEndDateStr, rotation.id],
+            function(err) {
+              if (err) reject(err);
+              else {
+                fixed++;
+                resolve();
+              }
+            }
+          );
+        });
+      } else {
+        skipped++;
+      }
+    }
+
+    res.json({
+      message: `Fixed ${fixed} rotation(s), ${skipped} already correct`,
+      fixed,
+      skipped,
+      total: rotations.length
+    });
+  } catch (err) {
+    console.error('Error fixing rotation end dates:', err);
+    res.status(500).json({ error: 'Failed to fix rotation end dates' });
+  }
+});
+
 // POST /api/rotations/generate - Generate automatic rotations for all interns
 router.post('/generate', async (req, res) => {
   try {

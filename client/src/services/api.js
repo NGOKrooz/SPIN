@@ -105,6 +105,7 @@ export const rotationsAPI = {
   update: (id, data) => http.put(`/rotations/${id}`, data),
   delete: (id) => http.delete(`/rotations/${id}`),
   generate: (startDate) => http.post('/rotations/generate', { start_date: startDate }),
+  fixEndDates: () => http.post('/rotations/fix-end-dates'),
 };
 
 // Reports API
