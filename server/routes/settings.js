@@ -210,7 +210,7 @@ router.put('/batch-schedule', [
   
   let completed = 0;
   let hasError = false;
-  const errors = [];
+  const errorMessages = [];
   
   updates.forEach(update => {
     db.run(query, [update.value, update.key], function(err) {
@@ -219,10 +219,10 @@ router.put('/batch-schedule', [
         console.error('Error updating batch schedule:', err);
         console.error('Query:', query);
         console.error('Params:', [update.value, update.key]);
-        errors.push(err.message || String(err));
+        errorMessages.push(err.message || String(err));
         return res.status(500).json({ 
           error: 'Failed to update batch schedule',
-          details: errors.join('; ')
+          details: errorMessages.join('; ')
         });
       }
       
