@@ -172,42 +172,6 @@ export default function InternDashboard({ intern, onClose }) {
               </Card>
             )}
 
-            {/* Completed Rotations */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Award className="h-5 w-5" />
-                  <span>Completed Rotations ({completedRotations.length})</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {completedRotations.length > 0 ? (
-                  <div className="space-y-2">
-                    {completedRotations.map((rotation) => (
-                      <div key={rotation.id} className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                        <div>
-                          <h4 className="font-medium">{rotation.unit_name}</h4>
-                          <p className="text-sm text-gray-600">
-                            {formatDate(rotation.start_date)} - {formatDate(rotation.end_date)}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm font-medium text-green-600">
-                            {rotation.duration_days || Math.max(0, Math.floor((new Date(rotation.end_date) - new Date(rotation.start_date)) / (1000 * 60 * 60 * 24)) + 1)} days completed
-                          </p>
-                          <span className="text-xs text-gray-500">
-                            {rotation.workload} workload
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-gray-500 text-center py-4">No completed rotations yet</p>
-                )}
-              </CardContent>
-            </Card>
-
             {/* Upcoming Rotations */}
             <Card>
               <CardHeader>
@@ -240,6 +204,42 @@ export default function InternDashboard({ intern, onClose }) {
                   </div>
                 ) : (
                   <p className="text-gray-500 text-center py-4">No upcoming rotations scheduled</p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Completed Rotations */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <Award className="h-5 w-5" />
+                  <span>Completed Rotations ({completedRotations.length})</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {completedRotations.length > 0 ? (
+                  <div className="space-y-2">
+                    {completedRotations.map((rotation) => (
+                      <div key={rotation.id} className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+                        <div>
+                          <h4 className="font-medium">{rotation.unit_name}</h4>
+                          <p className="text-sm text-gray-600">
+                            {formatDate(rotation.start_date)} - {formatDate(rotation.end_date)}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-medium text-green-600">
+                            {rotation.duration_days || Math.max(0, Math.floor((new Date(rotation.end_date) - new Date(rotation.start_date)) / (1000 * 60 * 60 * 24)) + 1)} days completed
+                          </p>
+                          <span className="text-xs text-gray-500">
+                            {rotation.workload} workload
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-gray-500 text-center py-4">No completed rotations yet</p>
                 )}
               </CardContent>
             </Card>
