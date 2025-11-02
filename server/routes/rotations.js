@@ -523,9 +523,11 @@ async function autoAdvanceRotations() {
       const lastEndDate = parseISO(lastRotation.end_date);
       
       // Check if there's an upcoming automatic rotation (start_date > today)
-      const upcomingAutomaticRotations = automaticRotations.filter(r => 
-        parseISO(r.start_date) > todayDate
-      );
+      const upcomingAutomaticRotations = automaticRotations.filter(r => {
+        const rotationStartDate = parseISO(r.start_date);
+        // Compare dates (not time) by converting to ISO strings
+        return format(rotationStartDate, 'yyyy-MM-dd') > format(todayDate, 'yyyy-MM-dd');
+      });
       
       // Calculate where next rotation should start (day after last rotation ends)
       const nextStartDate = addDays(lastEndDate, 1);
