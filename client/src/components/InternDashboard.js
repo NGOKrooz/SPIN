@@ -229,7 +229,31 @@ export default function InternDashboard({ intern, onClose }) {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-gray-500 text-center py-4">No upcoming rotations scheduled</p>
+                  <div className="text-center py-4">
+                    <p className="text-gray-500 mb-4">No upcoming rotations scheduled</p>
+                    <Button
+                      onClick={() => {
+                        console.log('===== DEBUG INFO =====');
+                        console.log('All schedules:', internSchedule);
+                        console.log('Upcoming rotations:', upcomingRotations);
+                        console.log('Completed rotations:', completedRotations);
+                        console.log('Current rotations:', currentRotations);
+                        console.log('Today:', new Date().toISOString());
+                        console.log('Normalized today:', normalizeDate(new Date()));
+                        console.log('All rotations with is_after_today check:');
+                        internSchedule?.forEach(r => {
+                          const isAfter = isAfterToday(r.start_date);
+                          console.log(`  ${r.unit_name}: ${r.start_date} - isAfterToday=${isAfter}`);
+                        });
+                        console.log('======================');
+                        alert('Debug info printed to console. Open DevTools (F12) to view.');
+                      }}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Debug: Show Rotation Data
+                    </Button>
+                  </div>
                 )}
               </CardContent>
             </Card>
