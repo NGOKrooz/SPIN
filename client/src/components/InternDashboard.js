@@ -1,5 +1,5 @@
 import React from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { X, Calendar, User, Clock, MapPin, Award, Building2 } from 'lucide-react';
 import ExtensionModal from './ExtensionModal';
 import ReassignModal from './ReassignModal';
@@ -9,12 +9,15 @@ import { api } from '../services/api';
 import { formatDate, getBatchColor, getStatusColor, getWorkloadColor, isBeforeToday, isAfterToday, includesToday, normalizeDate } from '../lib/utils';
 
 export default function InternDashboard({ intern, onClose }) {
+  const queryClient = useQueryClient();
   const [showExtend, setShowExtend] = React.useState(false);
   const [showReassign, setShowReassign] = React.useState(false);
   const [activeRotation, setActiveRotation] = React.useState(null);
   const { data: internSchedule } = useQuery({
     queryKey: ['intern-schedule', intern.id],
     queryFn: () => api.getInternSchedule(intern.id),
+    staleTime: 0, // Always refetch fresh data
+    refetchOnMount: true,
   });
 
   const { data: units } = useQuery({
@@ -283,7 +286,12 @@ export default function InternDashboard({ intern, onClose }) {
           <ExtensionModal
             intern={intern}
             onClose={() => setShowExtend(false)}
-            onSuccess={() => setShowExtend(false)}
+            onSuccess={() => {
+              setShowExtend(false);
+              // Invalidate and refetch the schedule data
+              queryClient.invalidateQueries({ queryKey: ['intern-schedule', intern.id] });
+              queryClient.invalidateQueries({ queryKey: ['interns'] });
+            }}
           />
         )}
         {showReassign && activeRotation && (
@@ -297,8 +305,9 @@ export default function InternDashboard({ intern, onClose }) {
             onSuccess={() => {
               setShowReassign(false);
               setActiveRotation(null);
-              // Refresh the schedule data
-              window.location.reload();
+              // Invalidate and refetch the schedule data
+              queryClient.invalidateQueries({ queryKey: ['intern-schedule', intern.id] });
+              queryClient.invalidateQueries({ queryKey: ['rotations', 'current'] });
             }}
           />
         )}
