@@ -495,11 +495,11 @@ async function autoAdvanceRotations() {
   
   for (const intern of interns) {
     try {
-      // Get all automatic rotations for this intern (ignore manual assignments)
-      const allRotations = await new Promise((resolve, reject) => {
+      // Get ALL rotations for this intern (both manual and automatic) to find the last one
+      const allRotationsHistory = await new Promise((resolve, reject) => {
         db.all(
           `SELECT * FROM rotations 
-           WHERE intern_id = ? AND is_manual_assignment = FALSE
+           WHERE intern_id = ?
            ORDER BY start_date ASC`,
           [intern.id],
           (err, rows) => {
@@ -509,34 +509,37 @@ async function autoAdvanceRotations() {
         );
       });
       
-      if (allRotations.length === 0) {
-        // No automatic rotations yet, skip (should be handled by initial generation)
+      if (allRotationsHistory.length === 0) {
+        // No rotations yet, skip (should be handled by initial generation)
         skipped++;
         continue;
       }
       
-      // Get the last automatic rotation (most recent by end_date)
-      const lastRotation = allRotations[allRotations.length - 1];
+      // Get all automatic rotations to check for existing upcoming ones
+      const automaticRotations = allRotationsHistory.filter(r => !r.is_manual_assignment);
+      
+      // Get the last rotation (manual or automatic) to determine next unit
+      const lastRotation = allRotationsHistory[allRotationsHistory.length - 1];
       const lastEndDate = parseISO(lastRotation.end_date);
       
-      // Check if there's an upcoming rotation (start_date > today)
-      const upcomingRotations = allRotations.filter(r => 
+      // Check if there's an upcoming automatic rotation (start_date > today)
+      const upcomingAutomaticRotations = automaticRotations.filter(r => 
         parseISO(r.start_date) > todayDate
       );
       
       // Calculate where next rotation should start (day after last rotation ends)
       const nextStartDate = addDays(lastEndDate, 1);
       
-      // Check if we need to generate upcoming rotations
-      // We want at least one upcoming rotation (starting after today)
+      // Check if we need to generate upcoming automatic rotations
+      // We want at least one upcoming automatic rotation (starting after today)
       let rotationsToCreate = 0;
       
-      if (upcomingRotations.length === 0) {
-        // No upcoming rotations, need to create at least one
+      if (upcomingAutomaticRotations.length === 0) {
+        // No upcoming automatic rotations, need to create at least one
         rotationsToCreate = 1;
       } else {
-        // Check if the upcoming rotations cover until after the last rotation ends
-        const lastUpcomingEndDate = parseISO(upcomingRotations[upcomingRotations.length - 1].end_date);
+        // Check if the upcoming automatic rotations cover until after the last rotation ends
+        const lastUpcomingEndDate = parseISO(upcomingAutomaticRotations[upcomingAutomaticRotations.length - 1].end_date);
         if (lastUpcomingEndDate <= lastEndDate) {
           // Upcoming rotations don't go far enough, need more
           rotationsToCreate = 1;
@@ -544,7 +547,7 @@ async function autoAdvanceRotations() {
       }
       
       if (rotationsToCreate > 0) {
-        // Find which unit the intern was on (from last rotation)
+        // Find which unit the intern was on (from last rotation, which could be manual)
         let currentUnitIndex = units.findIndex(u => u.id === lastRotation.unit_id);
         
         if (currentUnitIndex === -1) {
@@ -580,7 +583,7 @@ async function autoAdvanceRotations() {
           }
           
           // Check if this rotation already exists
-          const existingRotation = allRotations.find(r => 
+          const existingRotation = allRotationsHistory.find(r => 
             r.start_date === newStartDateStr && r.unit_id === nextUnit.id
           );
           
