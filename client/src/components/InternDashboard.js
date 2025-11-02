@@ -25,6 +25,17 @@ export default function InternDashboard({ intern, onClose }) {
     queryFn: api.getUnits,
   });
 
+  // Debug logging
+  React.useEffect(() => {
+    if (internSchedule) {
+      console.log('[InternDashboard] Schedule data:', internSchedule);
+      console.log('[InternDashboard] Today:', normalizeDate(new Date()));
+      internSchedule.forEach(r => {
+        console.log(`[InternDashboard] Rotation: ${r.unit_name} ${r.start_date}-${r.end_date}, is_manual=${r.is_manual_assignment}`);
+      });
+    }
+  }, [internSchedule]);
+
   // Separate completed and upcoming rotations using date-only comparisons
   const completedRotations = internSchedule?.filter(rotation => 
     isBeforeToday(rotation.end_date)
@@ -38,20 +49,32 @@ export default function InternDashboard({ intern, onClose }) {
     isAfterToday(rotation.start_date)
   ) || [];
 
+  // Debug logging for filtered results
+  React.useEffect(() => {
+    console.log('[InternDashboard] Completed:', completedRotations.length);
+    console.log('[InternDashboard] Current:', currentRotations.length);
+    console.log('[InternDashboard] Upcoming:', upcomingRotations.length);
+  }, [completedRotations.length, currentRotations.length, upcomingRotations.length]);
+
   // Get units not yet assigned to this intern
   const assignedUnitIds = internSchedule?.map(r => r.unit_id) || [];
   const remainingUnits = units?.filter(unit => !assignedUnitIds.includes(unit.id)) || [];
 
   const totalDaysCompleted = completedRotations.reduce((total, rotation) => {
-    return total + rotation.duration_days;
+    const days = rotation.duration_days || 0;
+    console.log(`[Days] Completed rotation: ${rotation.unit_name}, duration_days=${days}, total=${total + days}`);
+    return total + days;
   }, 0);
 
   const currentUnitDays = currentRotations.reduce((total, rotation) => {
     const startDate = normalizeDate(rotation.start_date);
     const currentDate = normalizeDate(new Date());
     const daysInCurrentUnit = Math.max(0, Math.floor((currentDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
+    console.log(`[Days] Current rotation: ${rotation.unit_name}, daysInCurrentUnit=${daysInCurrentUnit}, total=${total + daysInCurrentUnit}`);
     return total + daysInCurrentUnit;
   }, 0);
+
+  console.log(`[Days] Final: completed=${totalDaysCompleted}, current=${currentUnitDays}, total=${totalDaysCompleted + currentUnitDays}`);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
