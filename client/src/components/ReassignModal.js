@@ -7,7 +7,7 @@ import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { api } from '../services/api';
 import { useToast } from '../hooks/use-toast';
-import { addDays, format } from 'date-fns';
+import { addDays, format, parseISO } from 'date-fns';
 
 export default function ReassignModal({ intern, currentRotation, onClose, onSuccess }) {
   const [selectedUnitId, setSelectedUnitId] = useState('');
@@ -72,7 +72,9 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
     }
 
     // Calculate new end date based on selected unit duration
-    const newEndDate = addDays(new Date(currentRotation.start_date), selectedUnit.duration_days);
+    // End date = start date + (duration_days - 1) since duration includes the start day
+    const startDateParsed = parseISO(currentRotation.start_date);
+    const newEndDate = addDays(startDateParsed, selectedUnit.duration_days - 1);
     
     reassignMutation.mutate({
       rotationId: currentRotation.id,
@@ -125,7 +127,7 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
                   <p><strong>Current:</strong> {currentRotation.unit_name} ({currentRotation.duration_days} days)</p>
                   <p><strong>New:</strong> {units?.find(u => u.id === parseInt(selectedUnitId))?.name} ({units?.find(u => u.id === parseInt(selectedUnitId))?.duration_days} days)</p>
                   <p><strong>Start Date:</strong> {currentRotation.start_date}</p>
-                  <p><strong>New End Date:</strong> {selectedUnitId ? format(addDays(new Date(currentRotation.start_date), units?.find(u => u.id === parseInt(selectedUnitId))?.duration_days || 0), 'yyyy-MM-dd') : ''}</p>
+                  <p><strong>New End Date:</strong> {selectedUnitId ? format(addDays(parseISO(currentRotation.start_date), (units?.find(u => u.id === parseInt(selectedUnitId))?.duration_days || 0) - 1), 'yyyy-MM-dd') : ''}</p>
                 </div>
               </div>
             )}

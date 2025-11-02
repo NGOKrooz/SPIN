@@ -106,6 +106,7 @@ export const rotationsAPI = {
   delete: (id) => http.delete(`/rotations/${id}`),
   generate: (startDate) => http.post('/rotations/generate', { start_date: startDate }),
   fixEndDates: () => http.post('/rotations/fix-end-dates'),
+  autoAdvance: () => http.post('/rotations/auto-advance'),
 };
 
 // Reports API
@@ -199,6 +200,7 @@ export const api = {
   updateRotation: (id, data) => rotationsAPI.update(id, data),
   deleteRotation: (id) => rotationsAPI.delete(id),
   generateRotations: (startDate) => rotationsAPI.generate(startDate),
+  autoAdvanceRotations: () => rotationsAPI.autoAdvance(),
 
   // Reports
   getSummaryReport: (params) => reportsAPI.getSummary(params),

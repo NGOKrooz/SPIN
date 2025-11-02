@@ -6,7 +6,7 @@ import ReassignModal from './ReassignModal';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { api } from '../services/api';
-import { formatDate, getBatchColor, getStatusColor, getWorkloadColor } from '../lib/utils';
+import { formatDate, getBatchColor, getStatusColor, getWorkloadColor, isBeforeToday, isAfterToday, includesToday, normalizeDate } from '../lib/utils';
 
 export default function InternDashboard({ intern, onClose }) {
   const [showExtend, setShowExtend] = React.useState(false);
@@ -22,17 +22,17 @@ export default function InternDashboard({ intern, onClose }) {
     queryFn: api.getUnits,
   });
 
-  // Separate completed and upcoming rotations
+  // Separate completed and upcoming rotations using date-only comparisons
   const completedRotations = internSchedule?.filter(rotation => 
-    new Date(rotation.end_date) < new Date()
+    isBeforeToday(rotation.end_date)
   ) || [];
   
   const currentRotations = internSchedule?.filter(rotation => 
-    new Date(rotation.start_date) <= new Date() && new Date(rotation.end_date) >= new Date()
+    includesToday(rotation.start_date, rotation.end_date)
   ) || [];
   
   const upcomingRotations = internSchedule?.filter(rotation => 
-    new Date(rotation.start_date) > new Date()
+    isAfterToday(rotation.start_date)
   ) || [];
 
   // Get units not yet assigned to this intern
@@ -44,9 +44,9 @@ export default function InternDashboard({ intern, onClose }) {
   }, 0);
 
   const currentUnitDays = currentRotations.reduce((total, rotation) => {
-    const startDate = new Date(rotation.start_date);
-    const currentDate = new Date();
-    const daysInCurrentUnit = Math.max(0, Math.floor((currentDate - startDate) / (1000 * 60 * 60 * 24)));
+    const startDate = normalizeDate(rotation.start_date);
+    const currentDate = normalizeDate(new Date());
+    const daysInCurrentUnit = Math.max(0, Math.floor((currentDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
     return total + daysInCurrentUnit;
   }, 0);
 
@@ -156,7 +156,13 @@ export default function InternDashboard({ intern, onClose }) {
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-medium text-blue-600">
-                            {Math.max(0, Math.floor((new Date() - new Date(rotation.start_date)) / (1000 * 60 * 60 * 24)))} / {rotation.duration_days || Math.max(0, Math.floor((new Date(rotation.end_date) - new Date(rotation.start_date)) / (1000 * 60 * 60 * 24)) + 1)} days
+                            {(() => {
+                              const startDate = normalizeDate(rotation.start_date);
+                              const currentDate = normalizeDate(new Date());
+                              const daysElapsed = Math.max(0, Math.floor((currentDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
+                              const totalDays = rotation.duration_days || Math.max(0, Math.floor((normalizeDate(rotation.end_date) - startDate) / (1000 * 60 * 60 * 24)) + 1);
+                              return `${daysElapsed} / ${totalDays} days`;
+                            })()}
                           </p>
                         </div>
                       </div>

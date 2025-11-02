@@ -442,8 +442,16 @@ router.delete('/:id', (req, res) => {
 });
 
 // GET /api/interns/:id/schedule - Get intern's rotation schedule
-router.get('/:id/schedule', (req, res) => {
+router.get('/:id/schedule', async (req, res) => {
   const { id } = req.params;
+  
+  // Auto-advance rotation if needed for this intern
+  try {
+    await autoAdvanceInternRotation(id);
+  } catch (err) {
+    console.error(`Error auto-advancing rotation for intern ${id}:`, err);
+    // Continue even if auto-advance fails
+  }
   
   const query = `
     SELECT 
@@ -466,6 +474,151 @@ router.get('/:id/schedule', (req, res) => {
     res.json(rows);
   });
 });
+
+// Helper function to auto-advance a single intern's rotation
+// Only works with automatic rotations (is_manual_assignment = FALSE)
+// Always ensures there's an upcoming rotation visible
+async function autoAdvanceInternRotation(internId) {
+  const today = format(new Date(), 'yyyy-MM-dd');
+  const todayDate = parseISO(today);
+  
+  // Get all units in order (rotation sequence)
+  const units = await new Promise((resolve, reject) => {
+    db.all('SELECT * FROM units ORDER BY id', [], (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows || []);
+    });
+  });
+  
+  if (units.length === 0) {
+    return false;
+  }
+  
+  // Get the intern
+  const intern = await new Promise((resolve, reject) => {
+    db.get(
+      `SELECT * FROM interns WHERE id = ? AND status IN ('Active', 'Extended')`,
+      [internId],
+      (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      }
+    );
+  });
+  
+  if (!intern) {
+    return false;
+  }
+  
+  // Get all automatic rotations for this intern (ignore manual assignments)
+  const allRotations = await new Promise((resolve, reject) => {
+    db.all(
+      `SELECT * FROM rotations 
+       WHERE intern_id = ? AND is_manual_assignment = FALSE
+       ORDER BY start_date ASC`,
+      [internId],
+      (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      }
+    );
+  });
+  
+  if (allRotations.length === 0) {
+    return false;
+  }
+  
+  // Get the last automatic rotation
+  const lastRotation = allRotations[allRotations.length - 1];
+  const lastEndDate = parseISO(lastRotation.end_date);
+  
+  // Check if there's an upcoming rotation (start_date > today)
+  const upcomingRotations = allRotations.filter(r => 
+    parseISO(r.start_date) > todayDate
+  );
+  
+  // Calculate where next rotation should start (day after last rotation ends)
+  const nextStartDate = addDays(lastEndDate, 1);
+  
+  // Check if we need to generate upcoming rotations
+  let needsUpcomingRotation = false;
+  
+  if (upcomingRotations.length === 0) {
+    // No upcoming rotations, need to create at least one
+    needsUpcomingRotation = true;
+  } else {
+    // Check if the upcoming rotations cover until after the last rotation ends
+    const lastUpcomingEndDate = parseISO(upcomingRotations[upcomingRotations.length - 1].end_date);
+    if (lastUpcomingEndDate <= lastEndDate) {
+      // Upcoming rotations don't go far enough, need more
+      needsUpcomingRotation = true;
+    }
+  }
+  
+  if (needsUpcomingRotation) {
+    // Find which unit the intern was on (from last rotation)
+    let currentUnitIndex = units.findIndex(u => u.id === lastRotation.unit_id);
+    
+    if (currentUnitIndex === -1) {
+      console.warn(`Unit ${lastRotation.unit_id} not found for intern ${internId}`);
+      return false;
+    }
+    
+    // Check if intern's internship has ended
+    const internshipEndDate = addDays(
+      parseISO(intern.start_date),
+      intern.status === 'Extended' ? 365 + (intern.extension_days || 0) : 365
+    );
+    
+    if (parseISO(format(nextStartDate, 'yyyy-MM-dd')) > internshipEndDate) {
+      // Internship has ended
+      return false;
+    }
+    
+    // Get next unit in rotation sequence (cycle back if at end)
+    const nextUnitIndex = (currentUnitIndex + 1) % units.length;
+    const nextUnit = units[nextUnitIndex];
+    
+    // Calculate end date based on unit duration
+    const newEndDate = addDays(nextStartDate, nextUnit.duration_days - 1);
+    const newEndDateStr = format(newEndDate, 'yyyy-MM-dd');
+    const newStartDateStr = format(nextStartDate, 'yyyy-MM-dd');
+    
+    // Check if this would exceed internship end date
+    if (newEndDate > internshipEndDate) {
+      return false;
+    }
+    
+    // Check if this rotation already exists
+    const existingRotation = allRotations.find(r => 
+      r.start_date === newStartDateStr && r.unit_id === nextUnit.id
+    );
+    
+    if (!existingRotation) {
+      // Create the new automatic rotation
+      await new Promise((resolve, reject) => {
+        db.run(
+          `INSERT INTO rotations (intern_id, unit_id, start_date, end_date, is_manual_assignment)
+           VALUES (?, ?, ?, ?, FALSE)`,
+          [internId, nextUnit.id, newStartDateStr, newEndDateStr],
+          function(err) {
+            if (err) reject(err);
+            else {
+              console.log(
+                `✅ Auto-created upcoming rotation for intern ${internId} (${intern.name}): ${nextUnit.name} starting ${newStartDateStr}`
+              );
+              resolve();
+            }
+          }
+        );
+      });
+      
+      return true;
+    }
+  }
+  
+  return false;
+}
 
 // Helper function to generate rotations for a new intern (called asynchronously)
 async function generateRotationsForIntern(internId, batch, start_date) {
