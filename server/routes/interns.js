@@ -466,11 +466,15 @@ router.delete('/:id', (req, res) => {
 router.get('/:id/schedule', async (req, res) => {
   const { id } = req.params;
   
+  console.log(`[schedule] Fetching schedule for intern ${id}`);
+  
   // Auto-advance rotation if needed for this intern
   try {
-    await autoAdvanceInternRotation(id);
+    const result = await autoAdvanceInternRotation(id);
+    console.log(`[schedule] Auto-advance result for intern ${id}:`, result);
   } catch (err) {
-    console.error(`Error auto-advancing rotation for intern ${id}:`, err);
+    console.error(`[schedule] Error auto-advancing rotation for intern ${id}:`, err);
+    console.error(`[schedule] Error stack:`, err.stack);
     // Continue even if auto-advance fails
   }
   
@@ -492,6 +496,15 @@ router.get('/:id/schedule', async (req, res) => {
       return res.status(500).json({ error: 'Failed to fetch schedule' });
     }
     
+    console.log(`[schedule] Returning ${rows.length} rotations for intern ${id}`);
+    console.log(`[schedule] Rotations:`, rows.map(r => ({
+      id: r.id,
+      unit: r.unit_name,
+      start: r.start_date,
+      end: r.end_date,
+      is_manual: r.is_manual_assignment
+    })));
+    
     res.json(rows);
   });
 });
@@ -500,8 +513,10 @@ router.get('/:id/schedule', async (req, res) => {
 // Creates automatic rotations (is_manual_assignment = FALSE) for upcoming assignments
 // Always ensures there's an upcoming rotation visible
 async function autoAdvanceInternRotation(internId) {
+  console.log(`[autoAdvance] Starting auto-advance for intern ${internId}`);
   const today = format(new Date(), 'yyyy-MM-dd');
   const todayDate = parseISO(today);
+  console.log(`[autoAdvance] Today is: ${today}`);
   
   // Get all units in order (rotation sequence)
   const units = await new Promise((resolve, reject) => {
@@ -546,23 +561,31 @@ async function autoAdvanceInternRotation(internId) {
   });
   
   if (allRotationsHistory.length === 0) {
-    console.log(`[autoAdvance] Intern ${internId} has no rotations history`);
+    console.log(`[autoAdvance] Intern ${internId} has no rotations history - cannot auto-advance`);
     return false;
   }
+  
+  console.log(`[autoAdvance] Intern ${internId} has ${allRotationsHistory.length} rotations in history`);
   
   // Get all automatic rotations to check for existing upcoming ones
   // SQLite stores booleans as 0/1, so check for 0 (FALSE) or false
   const automaticRotations = allRotationsHistory.filter(r => {
     const isManual = r.is_manual_assignment;
     // Handle both SQLite (0/1) and JavaScript (false/true) boolean values
-    return isManual === 0 || isManual === false || !isManual;
+    // Automatic rotation means is_manual_assignment is FALSE (0 or false)
+    const isAutomatic = isManual === 0 || isManual === false || String(isManual).toLowerCase() === 'false';
+    return isAutomatic;
   });
   console.log(`[autoAdvance] Intern ${internId}: total rotations=${allRotationsHistory.length}, automatic=${automaticRotations.length}`);
-  console.log(`[autoAdvance] Intern ${internId}: rotation types:`, allRotationsHistory.map(r => ({ 
+  console.log(`[autoAdvance] Intern ${internId}: rotation details:`, allRotationsHistory.map(r => ({ 
     id: r.id, 
     start: r.start_date, 
+    end: r.end_date,
+    unit_id: r.unit_id,
     is_manual: r.is_manual_assignment, 
-    type: typeof r.is_manual_assignment 
+    is_manual_type: typeof r.is_manual_assignment,
+    is_manual_value: String(r.is_manual_assignment),
+    is_automatic: (r.is_manual_assignment === 0 || r.is_manual_assignment === false || String(r.is_manual_assignment).toLowerCase() === 'false')
   })));
   
   // Get the last rotation (manual or automatic) to determine next unit
