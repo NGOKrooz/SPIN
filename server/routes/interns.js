@@ -610,24 +610,15 @@ async function autoAdvanceInternRotation(internId) {
     );
     
     // Calculate where next rotation should start
-    // If last rotation completed, start next one immediately (today or tomorrow)
-    let nextStartDate;
-    if (lastRotationCompleted && lastEndDateStr < today) {
-      // Last rotation ended in the past, start next one today or tomorrow
+    // Always start the next rotation the day after the last one ends
+    // This ensures smooth transitions and proper upcoming rotation visibility
+    let nextStartDate = addDays(lastEndDate, 1);
+    
+    // If the last rotation ended before today, ensure we create rotations starting from today onwards
+    // But prioritize creating at least one rotation that starts AFTER today (for upcoming visibility)
+    if (lastRotationCompleted && nextStartDate < parseISO(today)) {
+      // Last rotation ended long ago, start from today
       nextStartDate = parseISO(today);
-      // If last rotation ended before today, start today
-      // If last rotation ended yesterday, start today
-      const daysSinceEnd = differenceInDays(parseISO(today), lastEndDate);
-      if (daysSinceEnd > 1) {
-        // More than 1 day gap, start immediately
-        nextStartDate = parseISO(today);
-      } else {
-        // Start tomorrow (normal flow)
-        nextStartDate = addDays(lastEndDate, 1);
-      }
-    } else {
-      // Normal flow: start day after last rotation ends
-      nextStartDate = addDays(lastEndDate, 1);
     }
     
     if (parseISO(format(nextStartDate, 'yyyy-MM-dd')) > internshipEndDate) {
