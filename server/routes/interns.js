@@ -80,14 +80,21 @@ router.get('/', (req, res) => {
             // This matches the client-side calculation in InternDashboard
             let daysInInternship = 0;
             if (row.start_date) {
-              const startDate = parseISO(row.start_date);
-              const today = new Date();
-              // Normalize both dates to start of day for accurate comparison
-              startDate.setHours(0, 0, 0, 0);
-              today.setHours(0, 0, 0, 0);
-              const diffDays = differenceInDays(today, startDate);
-              // Add 1 to include today (if start date is today, it's day 1)
-              daysInInternship = Math.max(1, diffDays + 1);
+              try {
+                const startDate = parseISO(row.start_date);
+                const today = new Date();
+                // Normalize both dates to start of day for accurate comparison
+                startDate.setHours(0, 0, 0, 0);
+                today.setHours(0, 0, 0, 0);
+                // Calculate difference in milliseconds, then convert to days
+                const diffMs = today.getTime() - startDate.getTime();
+                const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                // Add 1 to include today (if start date is today, it's day 1)
+                daysInInternship = Math.max(1, diffDays + 1);
+              } catch (dateErr) {
+                console.error(`Error calculating days for intern ${row.id}:`, dateErr);
+                daysInInternship = 0;
+              }
             }
             
             return {
@@ -550,7 +557,11 @@ async function autoAdvanceInternRotation(internId) {
   // Get the last rotation (manual or automatic) to determine next unit
   const lastRotation = allRotationsHistory[allRotationsHistory.length - 1];
   const lastEndDate = parseISO(lastRotation.end_date);
+  const lastEndDateStr = format(lastEndDate, 'yyyy-MM-dd');
   console.log(`[autoAdvance] Intern ${internId}: last rotation end_date=${lastRotation.end_date}, today=${today}`);
+  
+  // Check if the last rotation has completed (ended before today)
+  const lastRotationCompleted = lastEndDateStr < today;
   
   // Check if there's an upcoming automatic rotation (start_date > today)
   const upcomingAutomaticRotations = automaticRotations.filter(r => {
@@ -576,7 +587,12 @@ async function autoAdvanceInternRotation(internId) {
     }
   }
   
-  console.log(`[autoAdvance] Intern ${internId}: needsUpcomingRotation=${needsUpcomingRotation}, lastEndDate=${lastRotation.end_date}, today=${today}`);
+  // If last rotation completed and no upcoming rotation starts today/tomorrow, create one immediately
+  if (lastRotationCompleted && upcomingAutomaticRotations.length === 0) {
+    needsUpcomingRotation = true;
+  }
+  
+  console.log(`[autoAdvance] Intern ${internId}: needsUpcomingRotation=${needsUpcomingRotation}, lastEndDate=${lastRotation.end_date}, today=${today}, lastRotationCompleted=${lastRotationCompleted}`);
   
   if (needsUpcomingRotation) {
     // Find which unit the intern was on (from last rotation, which could be manual)
@@ -593,8 +609,26 @@ async function autoAdvanceInternRotation(internId) {
       intern.status === 'Extended' ? 365 + (intern.extension_days || 0) : 365
     );
     
-    // Calculate where next rotation should start (day after last rotation ends)
-    const nextStartDate = addDays(lastEndDate, 1);
+    // Calculate where next rotation should start
+    // If last rotation completed, start next one immediately (today or tomorrow)
+    let nextStartDate;
+    if (lastRotationCompleted && lastEndDateStr < today) {
+      // Last rotation ended in the past, start next one today or tomorrow
+      nextStartDate = parseISO(today);
+      // If last rotation ended before today, start today
+      // If last rotation ended yesterday, start today
+      const daysSinceEnd = differenceInDays(parseISO(today), lastEndDate);
+      if (daysSinceEnd > 1) {
+        // More than 1 day gap, start immediately
+        nextStartDate = parseISO(today);
+      } else {
+        // Start tomorrow (normal flow)
+        nextStartDate = addDays(lastEndDate, 1);
+      }
+    } else {
+      // Normal flow: start day after last rotation ends
+      nextStartDate = addDays(lastEndDate, 1);
+    }
     
     if (parseISO(format(nextStartDate, 'yyyy-MM-dd')) > internshipEndDate) {
       // Internship has ended
