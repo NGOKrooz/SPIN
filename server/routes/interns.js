@@ -606,6 +606,19 @@ async function autoAdvanceInternRotation(internId) {
   console.log(`[autoAdvance] Intern ${internId}: needsUpcomingRotation=${needsUpcomingRotation}, lastEndDate=${lastRotation.end_date}, today=${today}, lastRotationCompleted=${lastRotationCompleted}`);
   
   if (needsUpcomingRotation) {
+    // Find which units the intern has already completed
+    const completedUnitIds = new Set(
+      allRotationsHistory
+        .filter(r => {
+          const endDate = parseISO(r.end_date);
+          return format(endDate, 'yyyy-MM-dd') < today;
+        })
+        .map(r => r.unit_id)
+    );
+    
+    // Find units the intern hasn't done yet
+    const notDoneUnits = units.filter(u => !completedUnitIds.has(u.id));
+    
     // Find which unit the intern was on (from last rotation, which could be manual)
     let currentUnitIndex = units.findIndex(u => u.id === lastRotation.unit_id);
     
@@ -613,6 +626,8 @@ async function autoAdvanceInternRotation(internId) {
       console.warn(`[autoAdvance] Unit ${lastRotation.unit_id} not found for intern ${internId}`);
       return false;
     }
+    
+    console.log(`[autoAdvance] Intern ${internId}: Completed units: ${Array.from(completedUnitIds).join(', ')}, Not done: ${notDoneUnits.length} units`);
     
     // Check if intern's internship has ended
     const internshipEndDate = addDays(
@@ -645,11 +660,35 @@ async function autoAdvanceInternRotation(internId) {
     let currentStartDate = nextStartDate;
     let unitIndex = currentUnitIndex;
     
+    // Helper function to get next unit (prioritize units not done yet)
+    const getNextUnit = () => {
+      // First, try to find units the intern hasn't done yet
+      if (notDoneUnits.length > 0) {
+        // Find the next unit in the not-done list starting after current unit
+        let startIndex = (currentUnitIndex + 1) % units.length;
+        for (let i = 0; i < units.length; i++) {
+          const checkIndex = (startIndex + i) % units.length;
+          const unit = units[checkIndex];
+          if (notDoneUnits.some(u => u.id === unit.id)) {
+            return { unit, index: checkIndex };
+          }
+        }
+        // If we can't find one after current, just use first not-done unit
+        const firstNotDone = notDoneUnits[0];
+        const firstIndex = units.findIndex(u => u.id === firstNotDone.id);
+        return { unit: firstNotDone, index: firstIndex };
+      }
+      
+      // If all units have been done, cycle through all units
+      unitIndex = (unitIndex + 1) % units.length;
+      return { unit: units[unitIndex], index: unitIndex };
+    };
+    
     // Create at least 3 upcoming rotations to ensure visibility
     while (created < 3 && parseISO(format(currentStartDate, 'yyyy-MM-dd')) <= internshipEndDate) {
-      // Get next unit in rotation sequence (cycle back if at end)
-      unitIndex = (unitIndex + 1) % units.length;
-      const nextUnit = units[unitIndex];
+      // Get next unit (prioritizing units not done yet)
+      const { unit: nextUnit, index: nextUnitIndex } = getNextUnit();
+      unitIndex = nextUnitIndex;
       
       // Calculate end date based on unit duration
       const newEndDate = addDays(currentStartDate, nextUnit.duration_days - 1);
@@ -667,7 +706,8 @@ async function autoAdvanceInternRotation(internId) {
       );
       
       if (!existingRotation) {
-        console.log(`[autoAdvance] Creating new rotation for intern ${internId}: ${nextUnit.name} from ${newStartDateStr} to ${newEndDateStr}`);
+        const isNewUnit = !completedUnitIds.has(nextUnit.id);
+        console.log(`[autoAdvance] Creating new rotation for intern ${internId}: ${nextUnit.name} (${isNewUnit ? 'NEW UNIT' : 'REPEAT'}) from ${newStartDateStr} to ${newEndDateStr}`);
         // Create the new automatic rotation
         await new Promise((resolve, reject) => {
           db.run(
@@ -687,6 +727,9 @@ async function autoAdvanceInternRotation(internId) {
         });
         
         created++;
+      } else {
+        // Rotation exists, skip it but update unitIndex for next iteration
+        console.log(`[autoAdvance] Rotation already exists for intern ${internId}: ${nextUnit.name} starting ${newStartDateStr}`);
       }
       
       // Move to next rotation start date
