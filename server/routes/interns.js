@@ -76,10 +76,24 @@ router.get('/', (req, res) => {
             const extensionDays = row.status === 'Extended' ? (parseInt(row.extension_days) || 0) : 0;
             const totalDuration = baseDuration + extensionDays;
             
+            // Calculate days in internship (including today, so add 1)
+            // This matches the client-side calculation in InternDashboard
+            let daysInInternship = 0;
+            if (row.start_date) {
+              const startDate = parseISO(row.start_date);
+              const today = new Date();
+              // Normalize both dates to start of day for accurate comparison
+              startDate.setHours(0, 0, 0, 0);
+              today.setHours(0, 0, 0, 0);
+              const diffDays = differenceInDays(today, startDate);
+              // Add 1 to include today (if start date is today, it's day 1)
+              daysInInternship = Math.max(1, diffDays + 1);
+            }
+            
             return {
               ...row,
               current_units: row.current_units ? row.current_units.split('|').filter(Boolean) : [],
-              days_since_start: row.start_date ? differenceInDays(new Date(), parseISO(row.start_date)) : 0,
+              days_since_start: daysInInternship,
               total_duration_days: totalDuration
             };
           } catch (mapErr) {
