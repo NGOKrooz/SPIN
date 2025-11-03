@@ -60,21 +60,31 @@ export default function InternDashboard({ intern, onClose }) {
   const assignedUnitIds = internSchedule?.map(r => r.unit_id) || [];
   const remainingUnits = units?.filter(unit => !assignedUnitIds.includes(unit.id)) || [];
 
+  // Calculate total days completed in rotations (completed rotations only)
   const totalDaysCompleted = completedRotations.reduce((total, rotation) => {
     const days = rotation.duration_days || 0;
-    console.log(`[Days] Completed rotation: ${rotation.unit_name}, duration_days=${days}, total=${total + days}`);
     return total + days;
   }, 0);
 
+  // Calculate days in current rotation (capped at rotation duration)
   const currentUnitDays = currentRotations.reduce((total, rotation) => {
     const startDate = normalizeDate(rotation.start_date);
+    const endDate = normalizeDate(rotation.end_date);
     const currentDate = normalizeDate(new Date());
-    const daysInCurrentUnit = Math.max(0, Math.floor((currentDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
-    console.log(`[Days] Current rotation: ${rotation.unit_name}, daysInCurrentUnit=${daysInCurrentUnit}, total=${total + daysInCurrentUnit}`);
+    const rotationDuration = rotation.duration_days || Math.max(0, Math.floor((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
+    const daysElapsed = Math.max(0, Math.floor((currentDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
+    // Cap days at rotation duration (prevents showing 3/2 days)
+    const daysInCurrentUnit = Math.min(daysElapsed, rotationDuration);
     return total + daysInCurrentUnit;
   }, 0);
 
-  console.log(`[Days] Final: completed=${totalDaysCompleted}, current=${currentUnitDays}, total=${totalDaysCompleted + currentUnitDays}`);
+  // Calculate total days in internship (from start_date to today)
+  const totalDaysInInternship = React.useMemo(() => {
+    if (!intern?.start_date) return 0;
+    const startDate = normalizeDate(intern.start_date);
+    const currentDate = normalizeDate(new Date());
+    return Math.max(0, Math.floor((currentDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
+  }, [intern?.start_date]);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -142,8 +152,9 @@ export default function InternDashboard({ intern, onClose }) {
                   <div className="flex items-center space-x-2">
                     <Clock className="h-5 w-5 text-green-600" />
                     <div>
-                      <p className="text-sm font-medium text-gray-600">Days Completed</p>
-                      <p className="text-xl font-bold text-gray-900">{totalDaysCompleted + currentUnitDays}</p>
+                      <p className="text-sm font-medium text-gray-600">Days in Internship</p>
+                      <p className="text-xl font-bold text-gray-900">{totalDaysInInternship}</p>
+                      <p className="text-xs text-gray-500 mt-1">Rotations: {totalDaysCompleted + currentUnitDays} days</p>
                     </div>
                   </div>
                 </CardContent>
@@ -184,10 +195,13 @@ export default function InternDashboard({ intern, onClose }) {
                           <p className="text-sm font-medium text-blue-600">
                             {(() => {
                               const startDate = normalizeDate(rotation.start_date);
+                              const endDate = normalizeDate(rotation.end_date);
                               const currentDate = normalizeDate(new Date());
+                              const totalDays = rotation.duration_days || Math.max(0, Math.floor((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
                               const daysElapsed = Math.max(0, Math.floor((currentDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
-                              const totalDays = rotation.duration_days || Math.max(0, Math.floor((normalizeDate(rotation.end_date) - startDate) / (1000 * 60 * 60 * 24)) + 1);
-                              return `${daysElapsed} / ${totalDays} days`;
+                              // Cap at total days to prevent showing 3/2 days
+                              const cappedDays = Math.min(daysElapsed, totalDays);
+                              return `${cappedDays} / ${totalDays} days`;
                             })()}
                           </p>
                         </div>

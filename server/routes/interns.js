@@ -546,10 +546,8 @@ async function autoAdvanceInternRotation(internId) {
   });
   console.log(`[autoAdvance] Intern ${internId}: found ${upcomingAutomaticRotations.length} upcoming automatic rotations`);
   
-  // Calculate where next rotation should start (day after last rotation ends)
-  const nextStartDate = addDays(lastEndDate, 1);
-  
   // Check if we need to generate upcoming automatic rotations
+  // We always want at least one upcoming rotation visible
   let needsUpcomingRotation = false;
   
   if (upcomingAutomaticRotations.length === 0) {
@@ -564,7 +562,7 @@ async function autoAdvanceInternRotation(internId) {
     }
   }
   
-  console.log(`[autoAdvance] Intern ${internId}: needsUpcomingRotation=${needsUpcomingRotation}`);
+  console.log(`[autoAdvance] Intern ${internId}: needsUpcomingRotation=${needsUpcomingRotation}, lastEndDate=${lastRotation.end_date}, today=${today}`);
   
   if (needsUpcomingRotation) {
     // Find which unit the intern was on (from last rotation, which could be manual)
@@ -581,57 +579,69 @@ async function autoAdvanceInternRotation(internId) {
       intern.status === 'Extended' ? 365 + (intern.extension_days || 0) : 365
     );
     
+    // Calculate where next rotation should start (day after last rotation ends)
+    const nextStartDate = addDays(lastEndDate, 1);
+    
     if (parseISO(format(nextStartDate, 'yyyy-MM-dd')) > internshipEndDate) {
       // Internship has ended
       console.log(`[autoAdvance] Internship ended for intern ${internId}`);
       return false;
     }
     
-    // Get next unit in rotation sequence (cycle back if at end)
-    const nextUnitIndex = (currentUnitIndex + 1) % units.length;
-    const nextUnit = units[nextUnitIndex];
-    console.log(`[autoAdvance] Intern ${internId}: moving from unit ${currentUnitIndex} to ${nextUnitIndex} (${nextUnit.name})`);
+    // Create multiple upcoming rotations to ensure there's always at least one visible
+    let created = 0;
+    let currentStartDate = nextStartDate;
+    let unitIndex = currentUnitIndex;
     
-    // Calculate end date based on unit duration
-    const newEndDate = addDays(nextStartDate, nextUnit.duration_days - 1);
-    const newEndDateStr = format(newEndDate, 'yyyy-MM-dd');
-    const newStartDateStr = format(nextStartDate, 'yyyy-MM-dd');
-    
-    // Check if this would exceed internship end date
-    if (newEndDate > internshipEndDate) {
-      console.log(`[autoAdvance] Rotation would exceed internship end date for intern ${internId}`);
-      return false;
-    }
-    
-    // Check if this rotation already exists
-    const existingRotation = allRotationsHistory.find(r => 
-      r.start_date === newStartDateStr && r.unit_id === nextUnit.id
-    );
-    
-    if (!existingRotation) {
-      console.log(`[autoAdvance] Creating new rotation for intern ${internId}: ${nextUnit.name} from ${newStartDateStr} to ${newEndDateStr}`);
-      // Create the new automatic rotation
-      await new Promise((resolve, reject) => {
-        db.run(
-          `INSERT INTO rotations (intern_id, unit_id, start_date, end_date, is_manual_assignment)
-           VALUES (?, ?, ?, ?, FALSE)`,
-          [internId, nextUnit.id, newStartDateStr, newEndDateStr],
-          function(err) {
-            if (err) reject(err);
-            else {
-              console.log(
-                `✅ Auto-created upcoming rotation for intern ${internId} (${intern.name}): ${nextUnit.name} starting ${newStartDateStr}`
-              );
-              resolve();
-            }
-          }
-        );
-      });
+    // Create at least 3 upcoming rotations to ensure visibility
+    while (created < 3 && parseISO(format(currentStartDate, 'yyyy-MM-dd')) <= internshipEndDate) {
+      // Get next unit in rotation sequence (cycle back if at end)
+      unitIndex = (unitIndex + 1) % units.length;
+      const nextUnit = units[unitIndex];
       
-      return true;
-    } else {
-      console.log(`[autoAdvance] Rotation already exists for intern ${internId} starting ${newStartDateStr}`);
+      // Calculate end date based on unit duration
+      const newEndDate = addDays(currentStartDate, nextUnit.duration_days - 1);
+      const newEndDateStr = format(newEndDate, 'yyyy-MM-dd');
+      const newStartDateStr = format(currentStartDate, 'yyyy-MM-dd');
+      
+      // Check if this would exceed internship end date
+      if (newEndDate > internshipEndDate) {
+        break;
+      }
+      
+      // Check if this rotation already exists
+      const existingRotation = allRotationsHistory.find(r => 
+        r.start_date === newStartDateStr && r.unit_id === nextUnit.id
+      );
+      
+      if (!existingRotation) {
+        console.log(`[autoAdvance] Creating new rotation for intern ${internId}: ${nextUnit.name} from ${newStartDateStr} to ${newEndDateStr}`);
+        // Create the new automatic rotation
+        await new Promise((resolve, reject) => {
+          db.run(
+            `INSERT INTO rotations (intern_id, unit_id, start_date, end_date, is_manual_assignment)
+             VALUES (?, ?, ?, ?, FALSE)`,
+            [internId, nextUnit.id, newStartDateStr, newEndDateStr],
+            function(err) {
+              if (err) reject(err);
+              else {
+                console.log(
+                  `✅ Auto-created upcoming rotation for intern ${internId} (${intern.name}): ${nextUnit.name} starting ${newStartDateStr}`
+                );
+                resolve();
+              }
+            }
+          );
+        });
+        
+        created++;
+      }
+      
+      // Move to next rotation start date
+      currentStartDate = addDays(newEndDate, 1);
     }
+    
+    return created > 0;
   }
   
   return false;
