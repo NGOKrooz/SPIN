@@ -97,7 +97,7 @@ export const unitsAPI = {
   seedDefaults: () => http.post('/units/seed-defaults'),
 };
 
-// Rotations API
+  // Rotations API
 export const rotationsAPI = {
   getAll: (params = {}) => http.get('/rotations', { params }),
   getCurrent: () => http.get('/rotations/current'),
@@ -107,6 +107,11 @@ export const rotationsAPI = {
   generate: (startDate) => http.post('/rotations/generate', { start_date: startDate }),
   fixEndDates: () => http.post('/rotations/fix-end-dates'),
   autoAdvance: () => http.post('/rotations/auto-advance'),
+};
+
+// Auto-advance API for specific intern
+export const autoAdvanceAPI = {
+  triggerForIntern: (internId) => http.post(`/interns/${internId}/auto-advance`),
 };
 
 // Reports API

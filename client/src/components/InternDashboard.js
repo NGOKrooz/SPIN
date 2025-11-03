@@ -215,10 +215,28 @@ export default function InternDashboard({ intern, onClose }) {
             {/* Upcoming Rotations */}
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Calendar className="h-5 w-5" />
-                  <span>Upcoming Rotations ({upcomingRotations.length})</span>
-                </CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center space-x-2">
+                    <Calendar className="h-5 w-5" />
+                    <span>Upcoming Rotations ({upcomingRotations.length})</span>
+                  </CardTitle>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      try {
+                        // Invalidate and refetch schedule - this will trigger auto-advance on server
+                        await queryClient.invalidateQueries({ queryKey: ['intern-schedule', intern.id] });
+                        await queryClient.refetchQueries({ queryKey: ['intern-schedule', intern.id] });
+                      } catch (error) {
+                        console.error('Error refreshing rotations:', error);
+                        alert('Error refreshing rotations. Check console for details.');
+                      }
+                    }}
+                  >
+                    Refresh Rotations
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 {upcomingRotations.length > 0 ? (
