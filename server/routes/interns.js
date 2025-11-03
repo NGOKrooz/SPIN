@@ -627,6 +627,14 @@ async function autoAdvanceInternRotation(internId) {
   }
   
   console.log(`[autoAdvance] Intern ${internId}: needsUpcomingRotation=${needsUpcomingRotation}, lastEndDate=${lastRotation.end_date}, today=${today}, lastRotationCompleted=${lastRotationCompleted}`);
+  console.log(`[autoAdvance] Intern ${internId}: upcomingAutomaticRotations count=${upcomingAutomaticRotations.length}`);
+  
+  if (!needsUpcomingRotation) {
+    console.log(`[autoAdvance] Intern ${internId}: No upcoming rotation needed - already has ${upcomingAutomaticRotations.length} upcoming rotations`);
+    return false;
+  }
+  
+  console.log(`[autoAdvance] Intern ${internId}: Proceeding to create upcoming rotations...`);
   
   if (needsUpcomingRotation) {
     // Find which units the intern has already completed
@@ -759,9 +767,11 @@ async function autoAdvanceInternRotation(internId) {
       currentStartDate = addDays(newEndDate, 1);
     }
     
+    console.log(`[autoAdvance] Intern ${internId}: Created ${created} new rotations`);
     return created > 0;
   }
   
+  console.log(`[autoAdvance] Intern ${internId}: No rotations created (needsUpcomingRotation was false)`);
   return false;
 }
 
