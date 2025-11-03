@@ -551,8 +551,19 @@ async function autoAdvanceInternRotation(internId) {
   }
   
   // Get all automatic rotations to check for existing upcoming ones
-  const automaticRotations = allRotationsHistory.filter(r => !r.is_manual_assignment);
+  // SQLite stores booleans as 0/1, so check for 0 (FALSE) or false
+  const automaticRotations = allRotationsHistory.filter(r => {
+    const isManual = r.is_manual_assignment;
+    // Handle both SQLite (0/1) and JavaScript (false/true) boolean values
+    return isManual === 0 || isManual === false || !isManual;
+  });
   console.log(`[autoAdvance] Intern ${internId}: total rotations=${allRotationsHistory.length}, automatic=${automaticRotations.length}`);
+  console.log(`[autoAdvance] Intern ${internId}: rotation types:`, allRotationsHistory.map(r => ({ 
+    id: r.id, 
+    start: r.start_date, 
+    is_manual: r.is_manual_assignment, 
+    type: typeof r.is_manual_assignment 
+  })));
   
   // Get the last rotation (manual or automatic) to determine next unit
   const lastRotation = allRotationsHistory[allRotationsHistory.length - 1];
@@ -611,14 +622,16 @@ async function autoAdvanceInternRotation(internId) {
     
     // Calculate where next rotation should start
     // Always start the next rotation the day after the last one ends
-    // This ensures smooth transitions and proper upcoming rotation visibility
     let nextStartDate = addDays(lastEndDate, 1);
     
-    // If the last rotation ended before today, ensure we create rotations starting from today onwards
-    // But prioritize creating at least one rotation that starts AFTER today (for upcoming visibility)
-    if (lastRotationCompleted && nextStartDate < parseISO(today)) {
-      // Last rotation ended long ago, start from today
-      nextStartDate = parseISO(today);
+    // IMPORTANT: For upcoming rotations to show, they must start AFTER today
+    // So if nextStartDate is today or in the past, we need to start from tomorrow
+    const nextStartDateStr = format(nextStartDate, 'yyyy-MM-dd');
+    if (nextStartDateStr <= today) {
+      // If the calculated start date is today or in the past, start from tomorrow
+      // This ensures the rotation shows as "upcoming" (start_date > today)
+      nextStartDate = addDays(parseISO(today), 1);
+      console.log(`[autoAdvance] Intern ${internId}: Adjusted nextStartDate from ${nextStartDateStr} to ${format(nextStartDate, 'yyyy-MM-dd')} to ensure upcoming visibility`);
     }
     
     if (parseISO(format(nextStartDate, 'yyyy-MM-dd')) > internshipEndDate) {

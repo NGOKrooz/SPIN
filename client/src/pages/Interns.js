@@ -339,10 +339,6 @@ export default function Interns() {
                   <div className="mt-3 pt-3 border-t border-gray-100">
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
-                        <span className="text-gray-500">Days in internship:</span>
-                        <span className="ml-2 font-medium">{intern.days_since_start || 0}</span>
-                      </div>
-                      <div>
                         <span className="text-gray-500">Batch:</span>
                         <span className="ml-2 font-medium">{intern.batch}</span>
                       </div>
