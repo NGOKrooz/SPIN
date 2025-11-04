@@ -13,6 +13,7 @@ export default function InternDashboard({ intern, onClose }) {
   const [showExtend, setShowExtend] = React.useState(false);
   const [showReassign, setShowReassign] = React.useState(false);
   const [activeRotation, setActiveRotation] = React.useState(null);
+  const [isRefreshing, setIsRefreshing] = React.useState(false);
   const { data: internSchedule } = useQuery({
     queryKey: ['intern-schedule', intern.id],
     queryFn: () => api.getInternSchedule(intern.id),
@@ -223,18 +224,26 @@ export default function InternDashboard({ intern, onClose }) {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={async () => {
+                    disabled={isRefreshing}
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setIsRefreshing(true);
                       try {
+                        console.log('[InternDashboard] Refreshing rotations...');
                         // Invalidate and refetch schedule - this will trigger auto-advance on server
                         await queryClient.invalidateQueries({ queryKey: ['intern-schedule', intern.id] });
                         await queryClient.refetchQueries({ queryKey: ['intern-schedule', intern.id] });
+                        console.log('[InternDashboard] Rotations refreshed successfully');
                       } catch (error) {
-                        console.error('Error refreshing rotations:', error);
+                        console.error('[InternDashboard] Error refreshing rotations:', error);
                         alert('Error refreshing rotations. Check console for details.');
+                      } finally {
+                        setIsRefreshing(false);
                       }
                     }}
                   >
-                    Refresh Rotations
+                    {isRefreshing ? 'Refreshing...' : 'Refresh Rotations'}
                   </Button>
                 </div>
               </CardHeader>

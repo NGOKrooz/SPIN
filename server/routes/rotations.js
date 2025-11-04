@@ -462,7 +462,10 @@ router.delete('/:id', (req, res) => {
 // Only works with automatic rotations (is_manual_assignment = FALSE)
 // Always ensures there's an upcoming rotation visible
 async function autoAdvanceRotations() {
-  const today = format(new Date(), 'yyyy-MM-dd');
+  // Use UTC date to avoid timezone issues in production
+  const now = new Date();
+  const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const today = format(todayUTC, 'yyyy-MM-dd');
   const todayDate = parseISO(today);
   
   // Get all units in order (rotation sequence)
@@ -524,9 +527,14 @@ async function autoAdvanceRotations() {
       
       // Check if there's an upcoming automatic rotation (start_date > today)
       const upcomingAutomaticRotations = automaticRotations.filter(r => {
-        const rotationStartDate = parseISO(r.start_date);
-        // Compare dates (not time) by converting to ISO strings
-        return format(rotationStartDate, 'yyyy-MM-dd') > format(todayDate, 'yyyy-MM-dd');
+        try {
+          // Use string comparison to avoid timezone issues
+          const rotationStartStr = r.start_date ? r.start_date.split('T')[0] : r.start_date;
+          return rotationStartStr > today;
+        } catch (err) {
+          console.error(`Error parsing rotation start date for rotation ${r.id}:`, err);
+          return false;
+        }
       });
       
       // Calculate where next rotation should start (day after last rotation ends)

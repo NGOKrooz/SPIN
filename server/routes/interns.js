@@ -514,9 +514,12 @@ router.get('/:id/schedule', async (req, res) => {
 // Always ensures there's an upcoming rotation visible
 async function autoAdvanceInternRotation(internId) {
   console.log(`[autoAdvance] Starting auto-advance for intern ${internId}`);
-  const today = format(new Date(), 'yyyy-MM-dd');
+  // Use UTC date to avoid timezone issues in production
+  const now = new Date();
+  const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const today = format(todayUTC, 'yyyy-MM-dd');
   const todayDate = parseISO(today);
-  console.log(`[autoAdvance] Today is: ${today}`);
+  console.log(`[autoAdvance] Today is: ${today} (UTC)`);
   
   // Get all units in order (rotation sequence)
   const units = await new Promise((resolve, reject) => {
@@ -595,13 +598,19 @@ async function autoAdvanceInternRotation(internId) {
   console.log(`[autoAdvance] Intern ${internId}: last rotation end_date=${lastRotation.end_date}, today=${today}`);
   
   // Check if the last rotation has completed (ended before today)
+  // Use string comparison to avoid timezone issues
   const lastRotationCompleted = lastEndDateStr < today;
   
   // Check if there's an upcoming automatic rotation (start_date > today)
   const upcomingAutomaticRotations = automaticRotations.filter(r => {
-    const rotationStartDate = parseISO(r.start_date);
-    // Compare dates (not time) by converting to ISO strings
-    return format(rotationStartDate, 'yyyy-MM-dd') > format(todayDate, 'yyyy-MM-dd');
+    try {
+      // Parse and compare dates as strings to avoid timezone issues
+      const rotationStartStr = r.start_date ? r.start_date.split('T')[0] : r.start_date;
+      return rotationStartStr > today;
+    } catch (err) {
+      console.error(`[autoAdvance] Error parsing rotation start date for rotation ${r.id}:`, err);
+      return false;
+    }
   });
   console.log(`[autoAdvance] Intern ${internId}: found ${upcomingAutomaticRotations.length} upcoming automatic rotations`);
   
@@ -644,8 +653,14 @@ async function autoAdvanceInternRotation(internId) {
     const completedUnitIds = new Set(
       allRotationsHistory
         .filter(r => {
-          const endDate = parseISO(r.end_date);
-          return format(endDate, 'yyyy-MM-dd') < today;
+          try {
+            // Use string comparison to avoid timezone issues in production
+            const endDateStr = r.end_date ? r.end_date.split('T')[0] : r.end_date;
+            return endDateStr < today;
+          } catch (err) {
+            console.error(`[autoAdvance] Error parsing rotation end date for rotation ${r.id}:`, err);
+            return false;
+          }
         })
         .map(r => r.unit_id)
     );
@@ -694,9 +709,9 @@ async function autoAdvanceInternRotation(internId) {
     let currentStartDate = nextStartDate;
     let unitIndex = currentUnitIndex;
     
-    // Helper function to get next unit (prioritize units not done yet)
+    // Helper function to get next unit (go through all units only once, no repeating)
     const getNextUnit = () => {
-      // First, try to find units the intern hasn't done yet
+      // Only create rotations for units the intern hasn't done yet
       if (notDoneUnits.length > 0) {
         // Find the next unit in the not-done list starting after current unit
         let startIndex = (currentUnitIndex + 1) % units.length;
@@ -713,15 +728,21 @@ async function autoAdvanceInternRotation(internId) {
         return { unit: firstNotDone, index: firstIndex };
       }
       
-      // If all units have been done, cycle through all units
-      unitIndex = (unitIndex + 1) % units.length;
-      return { unit: units[unitIndex], index: unitIndex };
+      // If all units have been done, stop creating rotations (don't repeat)
+      console.log(`[autoAdvance] Intern ${internId}: All units completed, stopping rotation creation`);
+      return null;
     };
     
-    // Create at least 3 upcoming rotations to ensure visibility
+    // Create upcoming rotations only for units not yet completed (go through all units once)
     while (created < 3 && parseISO(format(currentStartDate, 'yyyy-MM-dd')) <= internshipEndDate) {
-      // Get next unit (prioritizing units not done yet)
-      const { unit: nextUnit, index: nextUnitIndex } = getNextUnit();
+      // Get next unit (only units not done yet)
+      const nextUnitResult = getNextUnit();
+      if (!nextUnitResult) {
+        // All units completed, stop creating rotations
+        console.log(`[autoAdvance] Intern ${internId}: All units completed, stopping at ${created} rotations created`);
+        break;
+      }
+      const { unit: nextUnit, index: nextUnitIndex } = nextUnitResult;
       unitIndex = nextUnitIndex;
       
       // Calculate end date based on unit duration
