@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Textarea } from './ui/textarea';
 import { api } from '../services/api';
 import { useToast } from '../hooks/use-toast';
+import { includesToday } from '../lib/utils';
 
 export default function ExtensionModal({ intern, onClose, onSuccess }) {
   const [formData, setFormData] = useState({
@@ -25,7 +26,8 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
     queryKey: ['intern-schedule', intern.id],
     queryFn: () => api.getInternSchedule(intern.id),
   });
-  const activeUnits = useMemo(() => (schedule || []).filter(r => new Date(r.start_date) <= new Date() && new Date(r.end_date) >= new Date()), [schedule]);
+  // Use timezone-aware date comparison to find active units
+  const activeUnits = useMemo(() => (schedule || []).filter(r => includesToday(r.start_date, r.end_date)), [schedule]);
   
   const currentExtension = intern.extension_days || 0;
   const hasExtension = currentExtension > 0;
