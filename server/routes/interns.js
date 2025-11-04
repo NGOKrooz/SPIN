@@ -621,9 +621,12 @@ async function autoAdvanceInternRotation(internId) {
     }
   }
   
-  // If last rotation completed and no upcoming rotation starts today/tomorrow, create one immediately
+  // CRITICAL: If last rotation completed (ended before today), we MUST create upcoming rotations
+  // This handles the case where an intern finished a rotation days/weeks ago but no new rotations were created
   if (lastRotationCompleted && upcomingAutomaticRotations.length === 0) {
     needsUpcomingRotation = true;
+    const daysAgo = differenceInDays(parseISO(today), lastEndDate);
+    console.log(`[autoAdvance] Intern ${internId}: FORCING rotation creation - last rotation completed ${lastEndDateStr} (${daysAgo} days ago) but no upcoming rotations exist`);
   }
   
   console.log(`[autoAdvance] Intern ${internId}: needsUpcomingRotation=${needsUpcomingRotation}, lastEndDate=${lastRotation.end_date}, today=${today}, lastRotationCompleted=${lastRotationCompleted}`);
@@ -731,31 +734,54 @@ async function autoAdvanceInternRotation(internId) {
         break;
       }
       
-      // Check if this rotation already exists
-      const existingRotation = allRotationsHistory.find(r => 
-        r.start_date === newStartDateStr && r.unit_id === nextUnit.id
-      );
+      // Check if this rotation already exists (check both exact date match and overlapping dates)
+      const existingRotation = allRotationsHistory.find(r => {
+        // Exact match on start date and unit
+        if (r.start_date === newStartDateStr && r.unit_id === nextUnit.id) {
+          return true;
+        }
+        // Also check if there's an overlapping rotation (same unit, overlapping dates)
+        const existingStart = parseISO(r.start_date);
+        const existingEnd = parseISO(r.end_date);
+        const newStart = parseISO(newStartDateStr);
+        const newEnd = parseISO(newEndDateStr);
+        // Check if rotations overlap
+        if (r.unit_id === nextUnit.id && 
+            ((newStart >= existingStart && newStart <= existingEnd) ||
+             (newEnd >= existingStart && newEnd <= existingEnd) ||
+             (newStart <= existingStart && newEnd >= existingEnd))) {
+          return true;
+        }
+        return false;
+      });
       
       if (!existingRotation) {
         const isNewUnit = !completedUnitIds.has(nextUnit.id);
         console.log(`[autoAdvance] Creating new rotation for intern ${internId}: ${nextUnit.name} (${isNewUnit ? 'NEW UNIT' : 'REPEAT'}) from ${newStartDateStr} to ${newEndDateStr}`);
         // Create the new automatic rotation
-        await new Promise((resolve, reject) => {
-          db.run(
-            `INSERT INTO rotations (intern_id, unit_id, start_date, end_date, is_manual_assignment)
-             VALUES (?, ?, ?, ?, FALSE)`,
-            [internId, nextUnit.id, newStartDateStr, newEndDateStr],
-            function(err) {
-              if (err) reject(err);
-              else {
-                console.log(
-                  `✅ Auto-created upcoming rotation for intern ${internId} (${intern.name}): ${nextUnit.name} starting ${newStartDateStr}`
-                );
-                resolve();
+        try {
+          await new Promise((resolve, reject) => {
+            db.run(
+              `INSERT INTO rotations (intern_id, unit_id, start_date, end_date, is_manual_assignment)
+               VALUES (?, ?, ?, ?, FALSE)`,
+              [internId, nextUnit.id, newStartDateStr, newEndDateStr],
+              function(err) {
+                if (err) {
+                  console.error(`[autoAdvance] ERROR creating rotation for intern ${internId}:`, err);
+                  reject(err);
+                } else {
+                  console.log(
+                    `✅ Auto-created upcoming rotation for intern ${internId} (${intern.name}): ${nextUnit.name} starting ${newStartDateStr} to ${newEndDateStr}`
+                  );
+                  resolve();
+                }
               }
-            }
-          );
-        });
+            );
+          });
+        } catch (createError) {
+          console.error(`[autoAdvance] Exception creating rotation for intern ${internId}:`, createError);
+          // Continue trying to create other rotations even if one fails
+        }
         
         created++;
       } else {
