@@ -83,21 +83,31 @@ export function compareDates(date1, date2) {
 }
 
 // Check if a date is before today (date-only comparison)
+// Uses string comparison to avoid timezone issues
 export function isBeforeToday(date) {
-  return compareDates(date, new Date()) < 0;
+  if (!date) return false;
+  const dateStr = typeof date === 'string' ? date.split('T')[0] : new Date(date).toISOString().split('T')[0];
+  const todayStr = new Date().toISOString().split('T')[0];
+  return dateStr < todayStr;
 }
 
 // Check if a date is after today (date-only comparison)
+// Uses string comparison to avoid timezone issues
 export function isAfterToday(date) {
-  return compareDates(date, new Date()) > 0;
+  if (!date) return false;
+  const dateStr = typeof date === 'string' ? date.split('T')[0] : new Date(date).toISOString().split('T')[0];
+  const todayStr = new Date().toISOString().split('T')[0];
+  return dateStr > todayStr;
 }
 
 // Check if a date range includes today
+// Uses string comparison to avoid timezone issues
 export function includesToday(startDate, endDate) {
-  const today = normalizeDate(new Date());
-  const start = normalizeDate(startDate);
-  const end = normalizeDate(endDate);
-  return start <= today && end >= today;
+  if (!startDate || !endDate) return false;
+  const startStr = typeof startDate === 'string' ? startDate.split('T')[0] : new Date(startDate).toISOString().split('T')[0];
+  const endStr = typeof endDate === 'string' ? endDate.split('T')[0] : new Date(endDate).toISOString().split('T')[0];
+  const todayStr = new Date().toISOString().split('T')[0];
+  return startStr <= todayStr && endStr >= todayStr;
 }
 
 export function getStatusColor(status) {

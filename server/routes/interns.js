@@ -691,11 +691,15 @@ async function autoAdvanceInternRotation(internId) {
     // IMPORTANT: For upcoming rotations to show, they must start AFTER today
     // So if nextStartDate is today or in the past, we need to start from tomorrow
     const nextStartDateStr = format(nextStartDate, 'yyyy-MM-dd');
+    console.log(`[autoAdvance] Intern ${internId}: nextStartDate calculated as ${nextStartDateStr}, today is ${today}`);
     if (nextStartDateStr <= today) {
       // If the calculated start date is today or in the past, start from tomorrow
       // This ensures the rotation shows as "upcoming" (start_date > today)
-      nextStartDate = addDays(parseISO(today), 1);
-      console.log(`[autoAdvance] Intern ${internId}: Adjusted nextStartDate from ${nextStartDateStr} to ${format(nextStartDate, 'yyyy-MM-dd')} to ensure upcoming visibility`);
+      const oldStartDate = nextStartDateStr;
+      nextStartDate = addDays(todayUTC, 1);
+      console.log(`[autoAdvance] Intern ${internId}: ⚠️ ADJUSTED nextStartDate from ${oldStartDate} to ${format(nextStartDate, 'yyyy-MM-dd')} to ensure upcoming visibility`);
+    } else {
+      console.log(`[autoAdvance] Intern ${internId}: ✓ nextStartDate ${nextStartDateStr} is after today, no adjustment needed`);
     }
     
     if (parseISO(format(nextStartDate, 'yyyy-MM-dd')) > internshipEndDate) {
@@ -788,19 +792,24 @@ async function autoAdvanceInternRotation(internId) {
               [internId, nextUnit.id, newStartDateStr, newEndDateStr],
               function(err) {
                 if (err) {
-                  console.error(`[autoAdvance] ERROR creating rotation for intern ${internId}:`, err);
+                  console.error(`[autoAdvance] ❌ ERROR creating rotation for intern ${internId}:`, err);
                   reject(err);
                 } else {
                   console.log(
-                    `✅ Auto-created upcoming rotation for intern ${internId} (${intern.name}): ${nextUnit.name} starting ${newStartDateStr} to ${newEndDateStr}`
+                    `[autoAdvance] ✅ Created UPCOMING rotation for intern ${internId} (${intern.name}):`
                   );
+                  console.log(`   - Unit: ${nextUnit.name}`);
+                  console.log(`   - Start: ${newStartDateStr} (> today: ${newStartDateStr > today})`);
+                  console.log(`   - End: ${newEndDateStr}`);
+                  console.log(`   - Duration: ${nextUnit.duration_days} days`);
+                  console.log(`   - Status: ${isNewUnit ? 'NEW UNIT' : 'REPEAT'}`);
                   resolve();
                 }
               }
             );
           });
         } catch (createError) {
-          console.error(`[autoAdvance] Exception creating rotation for intern ${internId}:`, createError);
+          console.error(`[autoAdvance] ❌ Exception creating rotation for intern ${internId}:`, createError);
           // Continue trying to create other rotations even if one fails
         }
         
