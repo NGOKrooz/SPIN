@@ -180,18 +180,18 @@ function insertDefaultSettings() {
 function insertDefaultUnits() {
   return new Promise((resolve, reject) => {
     const defaultUnits = [
-      { name: 'Adult Neurology', duration_days: 2, patient_count: 6 },        // Medium (5-8)
-      { name: 'Acute Stroke', duration_days: 2, patient_count: 10 },          // High (>8)
-      { name: 'Neurosurgery', duration_days: 2, patient_count: 12 },          // High (>8)
-      { name: 'Geriatrics', duration_days: 2, patient_count: 7 },             // Medium (5-8)
-      { name: 'Orthopedic Inpatients', duration_days: 2, patient_count: 11 }, // High (>8)
-      { name: 'Orthopedic Outpatients', duration_days: 2, patient_count: 6 }, // Medium (5-8)
-      { name: 'Electrophysiology', duration_days: 2, patient_count: 3 },      // Low (≤4)
-      { name: 'Exercise Immunology', duration_days: 2, patient_count: 2 },    // Low (≤4)
-      { name: 'Women\'s Health', duration_days: 2, patient_count: 7 },        // Medium (5-8)
-      { name: 'Pediatrics Inpatients', duration_days: 2, patient_count: 10 }, // High (>8)
-      { name: 'Pediatrics Outpatients', duration_days: 2, patient_count: 6 }, // Medium (5-8)
-      { name: 'Cardio Thoracic Unit', duration_days: 2, patient_count: 12 }   // High (>8)
+      { name: 'Adult Neurology', duration_days: 2, patient_count: 0 },
+      { name: 'Acute Stroke', duration_days: 2, patient_count: 0 },
+      { name: 'Neurosurgery', duration_days: 2, patient_count: 0 },
+      { name: 'Geriatrics', duration_days: 2, patient_count: 0 },
+      { name: 'Orthopedic Inpatients', duration_days: 2, patient_count: 0 },
+      { name: 'Orthopedic Outpatients', duration_days: 2, patient_count: 0 },
+      { name: 'Electrophysiology', duration_days: 2, patient_count: 0 },
+      { name: 'Exercise Immunology', duration_days: 2, patient_count: 0 },
+      { name: 'Women\'s Health', duration_days: 2, patient_count: 0 },
+      { name: 'Pediatrics Inpatients', duration_days: 2, patient_count: 0 },
+      { name: 'Pediatrics Outpatients', duration_days: 2, patient_count: 0 },
+      { name: 'Cardio Thoracic Unit', duration_days: 2, patient_count: 0 }
     ];
 
     const stmt = db.prepare(`
