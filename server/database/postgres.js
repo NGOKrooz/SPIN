@@ -250,26 +250,32 @@ async function insertDefaultSettings() {
 
 async function insertDefaultUnits() {
   const defaultUnits = [
-    { name: 'Adult Neurology', duration_days: 2, workload: 'Medium' },
-    { name: 'Acute Stroke', duration_days: 2, workload: 'High' },
-    { name: 'Neurosurgery', duration_days: 2, workload: 'High' },
-    { name: 'Geriatrics', duration_days: 2, workload: 'Medium' },
-    { name: 'Orthopedic Inpatients', duration_days: 2, workload: 'High' },
-    { name: 'Orthopedic Outpatients', duration_days: 2, workload: 'Medium' },
-    { name: 'Electrophysiology', duration_days: 2, workload: 'Low' },
-    { name: 'Exercise Immunology', duration_days: 2, workload: 'Low' },
-    { name: 'Women\'s Health', duration_days: 2, workload: 'Medium' },
-    { name: 'Pediatrics Inpatients', duration_days: 2, workload: 'High' },
-    { name: 'Pediatrics Outpatients', duration_days: 2, workload: 'Medium' },
-    { name: 'Cardio Thoracic Unit', duration_days: 2, workload: 'High' }
+    { name: 'Adult Neurology', duration_days: 2, patient_count: 6 },        // Medium (5-8)
+    { name: 'Acute Stroke', duration_days: 2, patient_count: 10 },          // High (>8)
+    { name: 'Neurosurgery', duration_days: 2, patient_count: 12 },          // High (>8)
+    { name: 'Geriatrics', duration_days: 2, patient_count: 7 },             // Medium (5-8)
+    { name: 'Orthopedic Inpatients', duration_days: 2, patient_count: 11 }, // High (>8)
+    { name: 'Orthopedic Outpatients', duration_days: 2, patient_count: 6 }, // Medium (5-8)
+    { name: 'Electrophysiology', duration_days: 2, patient_count: 3 },      // Low (≤4)
+    { name: 'Exercise Immunology', duration_days: 2, patient_count: 2 },    // Low (≤4)
+    { name: 'Women\'s Health', duration_days: 2, patient_count: 7 },        // Medium (5-8)
+    { name: 'Pediatrics Inpatients', duration_days: 2, patient_count: 10 }, // High (>8)
+    { name: 'Pediatrics Outpatients', duration_days: 2, patient_count: 6 }, // Medium (5-8)
+    { name: 'Cardio Thoracic Unit', duration_days: 2, patient_count: 12 }   // High (>8)
   ];
 
   for (const unit of defaultUnits) {
+    // Calculate workload from patient_count
+    let workload;
+    if (unit.patient_count <= 4) workload = 'Low';
+    else if (unit.patient_count <= 8) workload = 'Medium';
+    else workload = 'High';
+    
     await pool.query(
-      `INSERT INTO units (name, duration_days, workload) 
-       VALUES ($1, $2, $3) 
+      `INSERT INTO units (name, duration_days, patient_count, workload) 
+       VALUES ($1, $2, $3, $4) 
        ON CONFLICT (name) DO NOTHING`,
-      [unit.name, unit.duration_days, unit.workload]
+      [unit.name, unit.duration_days, unit.patient_count, workload]
     );
   }
 }
