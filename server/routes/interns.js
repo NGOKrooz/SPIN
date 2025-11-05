@@ -411,7 +411,8 @@ router.post('/:id/extend', [
         db.get(findActive, [id, unit_id], (e, row) => {
           if (e || !row) return resolve();
           const newEnd = format(addDays(parseISO(row.end_date), parseInt(daysToExtend)), 'yyyy-MM-dd');
-          const upd = 'UPDATE rotations SET end_date = ? WHERE id = ?';
+          // Mark as manual assignment so auto-advance doesn't overwrite the extended rotation
+          const upd = 'UPDATE rotations SET end_date = ?, is_manual_assignment = 1 WHERE id = ?';
           db.run(upd, [newEnd, row.id], () => resolve());
         });
       });
