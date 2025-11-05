@@ -72,7 +72,8 @@ export default function InternDashboard({ intern, onClose }) {
     const startDate = normalizeDate(rotation.start_date);
     const endDate = normalizeDate(rotation.end_date);
     const currentDate = normalizeDate(new Date());
-    const rotationDuration = rotation.duration_days || Math.max(0, Math.floor((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
+    // Always calculate from actual dates to account for extensions
+    const rotationDuration = Math.max(0, Math.floor((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
     const daysElapsed = Math.max(0, Math.floor((currentDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
     // Cap days at rotation duration (prevents showing 3/2 days)
     const daysInCurrentUnit = Math.min(daysElapsed, rotationDuration);
@@ -198,7 +199,8 @@ export default function InternDashboard({ intern, onClose }) {
                               const startDate = normalizeDate(rotation.start_date);
                               const endDate = normalizeDate(rotation.end_date);
                               const currentDate = normalizeDate(new Date());
-                              const totalDays = rotation.duration_days || Math.max(0, Math.floor((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
+                              // Always calculate from actual dates to account for extensions
+                              const totalDays = Math.max(0, Math.floor((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
                               const daysElapsed = Math.max(0, Math.floor((currentDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
                               // Cap at total days to prevent showing 3/2 days
                               const cappedDays = Math.min(daysElapsed, totalDays);

@@ -400,7 +400,9 @@ router.post('/:id/extend', [
       
       // Optionally extend active rotation end_date for selected unit
       const extendActiveRotation = () => new Promise((resolve) => {
-        if (!unit_id || !adjustment_days) return resolve();
+        // Use adjustment_days if provided (for updates), otherwise use extension_days (for first-time extensions)
+        const daysToExtend = adjustment_days || extension_days;
+        if (!unit_id || !daysToExtend) return resolve();
         const findActive = `
           SELECT id, end_date FROM rotations
           WHERE intern_id = ? AND unit_id = ? AND start_date <= date('now') AND end_date >= date('now')
@@ -408,7 +410,7 @@ router.post('/:id/extend', [
         `;
         db.get(findActive, [id, unit_id], (e, row) => {
           if (e || !row) return resolve();
-          const newEnd = format(addDays(parseISO(row.end_date), parseInt(adjustment_days)), 'yyyy-MM-dd');
+          const newEnd = format(addDays(parseISO(row.end_date), parseInt(daysToExtend)), 'yyyy-MM-dd');
           const upd = 'UPDATE rotations SET end_date = ? WHERE id = ?';
           db.run(upd, [newEnd, row.id], () => resolve());
         });
