@@ -72,6 +72,18 @@ if (DB_TYPE === 'postgres') {
         }
       });
 
+      // Add is_manual_assignment column to rotations if it doesn't exist (migration for existing databases)
+      db.run(`
+        ALTER TABLE rotations ADD COLUMN is_manual_assignment BOOLEAN DEFAULT FALSE
+      `, (err) => {
+        // Ignore error if column already exists
+        if (err && !err.message.includes('duplicate column name')) {
+          console.error('Error adding is_manual_assignment column:', err);
+        } else {
+          console.log('is_manual_assignment column added or already exists');
+        }
+      });
+
       // Rotations table
       db.run(`
         CREATE TABLE IF NOT EXISTS rotations (

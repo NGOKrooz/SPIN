@@ -119,6 +119,28 @@ async function initializeDatabase() {
       console.log('Patient count column already exists');
     }
 
+    // Add is_manual_assignment column to rotations if it doesn't exist (migration for existing databases)
+    const manualColumnCheck = await client.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'rotations' AND column_name = 'is_manual_assignment'
+    `);
+    
+    if (manualColumnCheck.rows.length === 0) {
+      try {
+        await client.query(`
+          ALTER TABLE rotations ADD COLUMN is_manual_assignment BOOLEAN DEFAULT FALSE
+        `);
+        console.log('is_manual_assignment column added');
+      } catch (err) {
+        console.error('Error adding is_manual_assignment column:', err);
+        await client.query('ROLLBACK');
+        throw err;
+      }
+    } else {
+      console.log('is_manual_assignment column already exists');
+    }
+
     // Rotations table
     await client.query(`
       CREATE TABLE IF NOT EXISTS rotations (
