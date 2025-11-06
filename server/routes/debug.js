@@ -3,6 +3,15 @@ const express = require('express');
 const db = require('../database/dbWrapper');
 const router = express.Router();
 
+// Import auto-advance function
+let autoAdvanceInternRotation;
+try {
+  const internsRoute = require('./interns');
+  autoAdvanceInternRotation = internsRoute.autoAdvanceInternRotation;
+} catch (err) {
+  console.error('[Debug] Could not import autoAdvanceInternRotation:', err);
+}
+
 // GET /api/debug/env - Check environment variables
 router.get('/env', (req, res) => {
   res.json({
@@ -69,8 +78,23 @@ router.get('/rotations', (req, res) => {
 });
 
 // GET /api/debug/rotations/:internId - Check specific intern's rotations
-router.get('/rotations/:internId', (req, res) => {
+router.get('/rotations/:internId', async (req, res) => {
   const { internId } = req.params;
+  
+  // Trigger auto-advance if enabled
+  const autoRotationEnabled = process.env.AUTO_ROTATION === 'true';
+  if (autoRotationEnabled && autoAdvanceInternRotation) {
+    try {
+      console.log(`[Debug] Triggering auto-advance for intern ${internId}...`);
+      const result = await autoAdvanceInternRotation(internId);
+      console.log(`[Debug] Auto-advance result for intern ${internId}:`, result);
+    } catch (err) {
+      console.error(`[Debug] Error triggering auto-advance for intern ${internId}:`, err);
+      console.error(`[Debug] Error stack:`, err.stack);
+    }
+  } else if (autoRotationEnabled && !autoAdvanceInternRotation) {
+    console.warn(`[Debug] Auto-rotation enabled but function not available`);
+  }
   
   db.all(`
     SELECT 
@@ -94,7 +118,9 @@ router.get('/rotations/:internId', (req, res) => {
       rotations: rows,
       upcoming: rows.filter(r => r.start_date > today),
       current: rows.filter(r => r.start_date <= today && r.end_date >= today),
-      past: rows.filter(r => r.end_date < today)
+      past: rows.filter(r => r.end_date < today),
+      autoRotationEnabled: autoRotationEnabled,
+      note: autoRotationEnabled ? 'Auto-advance was triggered before querying' : 'Auto-rotation is disabled'
     });
   });
 });

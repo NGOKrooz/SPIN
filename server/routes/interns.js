@@ -1028,4 +1028,6 @@ function generateInternRotations(intern, units, startDate, settings) {
 }
 
 
+// Export the auto-advance function for use in other routes
 module.exports = router;
+module.exports.autoAdvanceInternRotation = autoAdvanceInternRotation;
