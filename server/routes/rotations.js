@@ -84,12 +84,15 @@ router.get('/', (req, res) => {
 
 // GET /api/rotations/current - Get current active rotations
 router.get('/current', async (req, res) => {
-  // Auto-advance rotations for interns who have completed their current rotation
-  try {
-    await autoAdvanceRotations();
-  } catch (err) {
-    console.error('Error auto-advancing rotations:', err);
-    // Continue even if auto-advance fails
+  // Auto-advance rotations if enabled
+  const autoRotationEnabled = process.env.AUTO_ROTATION === 'true';
+  if (autoRotationEnabled) {
+    try {
+      await autoAdvanceRotations();
+    } catch (err) {
+      console.error('Error auto-advancing rotations:', err);
+      // Continue even if auto-advance fails
+    }
   }
 
   const query = `

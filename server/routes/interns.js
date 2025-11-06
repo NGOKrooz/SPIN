@@ -466,12 +466,15 @@ router.delete('/:id', (req, res) => {
 router.get('/:id/schedule', async (req, res) => {
   const { id } = req.params;
   
-  // Auto-advance rotation if needed for this intern
-  try {
-    await autoAdvanceInternRotation(id);
-  } catch (err) {
-    console.error(`Error auto-advancing rotation for intern ${id}:`, err);
-    // Continue even if auto-advance fails
+  // Auto-advance rotation if enabled and needed for this intern
+  const autoRotationEnabled = process.env.AUTO_ROTATION === 'true';
+  if (autoRotationEnabled) {
+    try {
+      await autoAdvanceInternRotation(id);
+    } catch (err) {
+      console.error(`Error auto-advancing rotation for intern ${id}:`, err);
+      // Continue even if auto-advance fails
+    }
   }
   
   const query = `
