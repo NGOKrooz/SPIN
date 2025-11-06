@@ -467,7 +467,15 @@ async function autoAdvanceRotations() {
   // Use UTC date to avoid timezone issues in production
   const now = new Date();
   const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const today = format(todayUTC, 'yyyy-MM-dd');
+  
+  let today;
+  try {
+    today = format(todayUTC, 'yyyy-MM-dd');
+  } catch (err) {
+    console.error('[AutoAdvance] Error formatting today date:', err);
+    return { advanced: 0, skipped: 0, errors: 1 };
+  }
+  
   const todayDate = parseISO(today);
   
   // Get all units in order (rotation sequence)
@@ -500,6 +508,27 @@ async function autoAdvanceRotations() {
   
   for (const intern of interns) {
     try {
+      // Validate intern has valid start_date
+      if (!intern.start_date) {
+        console.error(`[AutoAdvance] Intern ${intern.id} (${intern.name}): Missing start_date, skipping`);
+        errors++;
+        continue;
+      }
+      
+      let internStartDate;
+      try {
+        internStartDate = parseISO(intern.start_date);
+        if (isNaN(internStartDate.getTime())) {
+          console.error(`[AutoAdvance] Intern ${intern.id} (${intern.name}): Invalid start_date "${intern.start_date}", skipping`);
+          errors++;
+          continue;
+        }
+      } catch (err) {
+        console.error(`[AutoAdvance] Intern ${intern.id} (${intern.name}): Error parsing start_date "${intern.start_date}":`, err);
+        errors++;
+        continue;
+      }
+      
       // Get ALL rotations for this intern (both manual and automatic) to find the last one
       const allRotationsHistory = await new Promise((resolve, reject) => {
         db.all(
@@ -516,6 +545,7 @@ async function autoAdvanceRotations() {
       
       if (allRotationsHistory.length === 0) {
         // No rotations yet, skip (should be handled by initial generation)
+        console.log(`[AutoAdvance] Intern ${intern.id} (${intern.name}): No rotations yet, skipping`);
         skipped++;
         continue;
       }
@@ -525,11 +555,32 @@ async function autoAdvanceRotations() {
       
       // Get the last rotation (manual or automatic) to determine next unit
       const lastRotation = allRotationsHistory[allRotationsHistory.length - 1];
-      const lastEndDate = parseISO(lastRotation.end_date);
+      
+      // Validate last rotation has valid end_date
+      if (!lastRotation.end_date) {
+        console.error(`[AutoAdvance] Intern ${intern.id}: Last rotation has no end_date, skipping`);
+        errors++;
+        continue;
+      }
+      
+      let lastEndDate;
+      try {
+        lastEndDate = parseISO(lastRotation.end_date);
+        if (isNaN(lastEndDate.getTime())) {
+          console.error(`[AutoAdvance] Intern ${intern.id}: Invalid end_date "${lastRotation.end_date}", skipping`);
+          errors++;
+          continue;
+        }
+      } catch (err) {
+        console.error(`[AutoAdvance] Intern ${intern.id}: Error parsing end_date "${lastRotation.end_date}":`, err);
+        errors++;
+        continue;
+      }
       
       // Check if there's an upcoming automatic rotation (start_date > today)
       const upcomingAutomaticRotations = automaticRotations.filter(r => {
         try {
+          if (!r.start_date) return false;
           // Use string comparison to avoid timezone issues
           const rotationStartStr = r.start_date ? r.start_date.split('T')[0] : r.start_date;
           return rotationStartStr > today;
@@ -540,7 +591,19 @@ async function autoAdvanceRotations() {
       });
       
       // Calculate where next rotation should start (day after last rotation ends)
-      const nextStartDate = addDays(lastEndDate, 1);
+      let nextStartDate;
+      try {
+        nextStartDate = addDays(lastEndDate, 1);
+        if (isNaN(nextStartDate.getTime())) {
+          console.error(`[AutoAdvance] Intern ${intern.id}: Invalid nextStartDate calculated, skipping`);
+          errors++;
+          continue;
+        }
+      } catch (err) {
+        console.error(`[AutoAdvance] Intern ${intern.id}: Error calculating nextStartDate:`, err);
+        errors++;
+        continue;
+      }
       
       // Check if we need to generate upcoming automatic rotations
       // We want at least one upcoming automatic rotation (starting after today)
@@ -551,10 +614,22 @@ async function autoAdvanceRotations() {
         rotationsToCreate = 1;
       } else {
         // Check if the upcoming automatic rotations cover until after the last rotation ends
-        const lastUpcomingEndDate = parseISO(upcomingAutomaticRotations[upcomingAutomaticRotations.length - 1].end_date);
-        if (lastUpcomingEndDate <= lastEndDate) {
-          // Upcoming rotations don't go far enough, need more
-          rotationsToCreate = 1;
+        if (upcomingAutomaticRotations.length > 0) {
+          try {
+            const lastUpcoming = upcomingAutomaticRotations[upcomingAutomaticRotations.length - 1];
+            if (!lastUpcoming.end_date) {
+              rotationsToCreate = 1;
+            } else {
+              const lastUpcomingEndDate = parseISO(lastUpcoming.end_date);
+              if (isNaN(lastUpcomingEndDate.getTime()) || lastUpcomingEndDate <= lastEndDate) {
+                // Upcoming rotations don't go far enough, need more
+                rotationsToCreate = 1;
+              }
+            }
+          } catch (err) {
+            console.error(`[AutoAdvance] Intern ${intern.id}: Error comparing upcoming rotations:`, err);
+            rotationsToCreate = 1;
+          }
         }
       }
       
@@ -569,25 +644,72 @@ async function autoAdvanceRotations() {
         }
         
         // Check if intern's internship has ended
-        const internshipEndDate = addDays(
-          parseISO(intern.start_date),
-          intern.status === 'Extended' ? 365 + (intern.extension_days || 0) : 365
-        );
+        let internshipEndDate;
+        try {
+          internshipEndDate = addDays(
+            internStartDate,
+            intern.status === 'Extended' ? 365 + (intern.extension_days || 0) : 365
+          );
+          if (isNaN(internshipEndDate.getTime())) {
+            console.error(`[AutoAdvance] Intern ${intern.id}: Invalid internshipEndDate calculated, skipping`);
+            errors++;
+            continue;
+          }
+        } catch (err) {
+          console.error(`[AutoAdvance] Intern ${intern.id}: Error calculating internshipEndDate:`, err);
+          errors++;
+          continue;
+        }
         
         // Generate the next rotation(s)
         let currentStartDate = nextStartDate;
         let unitIndex = currentUnitIndex;
         let created = 0;
         
-        while (created < rotationsToCreate && parseISO(format(currentStartDate, 'yyyy-MM-dd')) <= internshipEndDate) {
+        while (created < rotationsToCreate) {
+          // Validate currentStartDate before comparing
+          let currentStartDateStr;
+          try {
+            currentStartDateStr = format(currentStartDate, 'yyyy-MM-dd');
+            const currentStartDateParsed = parseISO(currentStartDateStr);
+            if (isNaN(currentStartDateParsed.getTime()) || currentStartDateParsed > internshipEndDate) {
+              break;
+            }
+          } catch (err) {
+            console.error(`[AutoAdvance] Intern ${intern.id}: Error validating currentStartDate:`, err);
+            break;
+          }
           // Get next unit in rotation sequence (cycle back if at end)
           unitIndex = (unitIndex + 1) % units.length;
           const nextUnit = units[unitIndex];
           
+          // Validate currentStartDate before using it
+          if (isNaN(currentStartDate.getTime())) {
+            console.error(`[AutoAdvance] Intern ${intern.id}: Invalid currentStartDate, breaking loop`);
+            break;
+          }
+          
           // Calculate end date based on unit duration
-          const newEndDate = addDays(currentStartDate, nextUnit.duration_days - 1);
-          const newEndDateStr = format(newEndDate, 'yyyy-MM-dd');
-          const newStartDateStr = format(currentStartDate, 'yyyy-MM-dd');
+          let newEndDate;
+          try {
+            newEndDate = addDays(currentStartDate, nextUnit.duration_days - 1);
+            if (isNaN(newEndDate.getTime())) {
+              console.error(`[AutoAdvance] Intern ${intern.id}: Invalid newEndDate calculated, skipping`);
+              break;
+            }
+          } catch (err) {
+            console.error(`[AutoAdvance] Intern ${intern.id}: Error calculating newEndDate:`, err);
+            break;
+          }
+          
+          let newEndDateStr, newStartDateStr;
+          try {
+            newEndDateStr = format(newEndDate, 'yyyy-MM-dd');
+            newStartDateStr = format(currentStartDate, 'yyyy-MM-dd');
+          } catch (err) {
+            console.error(`[AutoAdvance] Intern ${intern.id}: Error formatting dates:`, err);
+            break;
+          }
           
           // Check if this would exceed internship end date
           if (newEndDate > internshipEndDate) {
@@ -618,7 +740,16 @@ async function autoAdvanceRotations() {
           }
           
           // Next rotation starts the day after this one ends
-          currentStartDate = addDays(newEndDate, 1);
+          try {
+            currentStartDate = addDays(newEndDate, 1);
+            if (isNaN(currentStartDate.getTime())) {
+              console.error(`[AutoAdvance] Intern ${intern.id}: Invalid currentStartDate after addDays, breaking`);
+              break;
+            }
+          } catch (err) {
+            console.error(`[AutoAdvance] Intern ${intern.id}: Error calculating next currentStartDate:`, err);
+            break;
+          }
         }
         
         if (created === 0) {
