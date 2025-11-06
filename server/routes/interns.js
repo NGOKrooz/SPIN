@@ -468,9 +468,13 @@ router.get('/:id/schedule', async (req, res) => {
   
   // Auto-advance rotation if enabled and needed for this intern
   const autoRotationEnabled = process.env.AUTO_ROTATION === 'true';
+  console.log(`[Schedule] AUTO_ROTATION=${process.env.AUTO_ROTATION}, enabled=${autoRotationEnabled}`);
+  
   if (autoRotationEnabled) {
     try {
-      await autoAdvanceInternRotation(id);
+      console.log(`[Schedule] Running auto-advance for intern ${id}...`);
+      const result = await autoAdvanceInternRotation(id);
+      console.log(`[Schedule] Auto-advance result:`, result);
     } catch (err) {
       console.error(`Error auto-advancing rotation for intern ${id}:`, err);
       // Continue even if auto-advance fails
@@ -503,11 +507,15 @@ router.get('/:id/schedule', async (req, res) => {
 // Creates automatic rotations (is_manual_assignment = FALSE) for upcoming assignments
 // Always ensures there's an upcoming rotation visible
 async function autoAdvanceInternRotation(internId) {
+  console.log(`[AutoAdvance] Starting for intern ${internId}`);
+  
   // Use UTC date to avoid timezone issues in production
   const now = new Date();
   const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const today = format(todayUTC, 'yyyy-MM-dd');
   const todayDate = parseISO(today);
+  
+  console.log(`[AutoAdvance] Today: ${today}`);
   
   // Get all units in order (rotation sequence)
   const units = await new Promise((resolve, reject) => {
@@ -518,8 +526,11 @@ async function autoAdvanceInternRotation(internId) {
   });
   
   if (units.length === 0) {
+    console.log(`[AutoAdvance] No units found in database`);
     return false;
   }
+  
+  console.log(`[AutoAdvance] Found ${units.length} units`);
   
   // Get the intern
   const intern = await new Promise((resolve, reject) => {
@@ -534,8 +545,11 @@ async function autoAdvanceInternRotation(internId) {
   });
   
   if (!intern) {
+    console.log(`[AutoAdvance] Intern ${internId} not found or not active`);
     return false;
   }
+  
+  console.log(`[AutoAdvance] Found intern: ${intern.name}, start_date: ${intern.start_date}`);
   
   // Get ALL rotations for this intern (both manual and automatic) to find the last one
   const allRotationsHistory = await new Promise((resolve, reject) => {
@@ -552,8 +566,12 @@ async function autoAdvanceInternRotation(internId) {
   });
   
   if (allRotationsHistory.length === 0) {
+    console.log(`[AutoAdvance] Intern ${internId} has no rotations yet - cannot auto-advance without initial rotation`);
+    console.log(`[AutoAdvance] Suggestion: Create at least one manual rotation or use auto-generation on intern creation`);
     return false;
   }
+  
+  console.log(`[AutoAdvance] Intern ${internId} has ${allRotationsHistory.length} total rotations`);
   
   // Get all automatic rotations to check for existing upcoming ones
   // SQLite stores booleans as 0/1, so check for 0 (FALSE) or false
@@ -565,26 +583,35 @@ async function autoAdvanceInternRotation(internId) {
     return isAutomatic;
   });
   
+  console.log(`[AutoAdvance] Found ${automaticRotations.length} automatic rotations out of ${allRotationsHistory.length} total`);
+  
   // Get the last rotation (manual or automatic) to determine next unit
   const lastRotation = allRotationsHistory[allRotationsHistory.length - 1];
   const lastEndDate = parseISO(lastRotation.end_date);
   const lastEndDateStr = format(lastEndDate, 'yyyy-MM-dd');
   
+  console.log(`[AutoAdvance] Last rotation: Unit ${lastRotation.unit_id}, ends ${lastEndDateStr}, today is ${today}`);
+  
   // Check if the last rotation has completed (ended before today)
   // Use string comparison to avoid timezone issues
   const lastRotationCompleted = lastEndDateStr < today;
+  
+  console.log(`[AutoAdvance] Last rotation completed: ${lastRotationCompleted}`);
   
   // Check if there's an upcoming automatic rotation (start_date > today)
   const upcomingAutomaticRotations = automaticRotations.filter(r => {
     try {
       // Parse and compare dates as strings to avoid timezone issues
       const rotationStartStr = r.start_date ? r.start_date.split('T')[0] : r.start_date;
-      return rotationStartStr > today;
+      const isUpcoming = rotationStartStr > today;
+      return isUpcoming;
     } catch (err) {
       console.error(`[autoAdvance] Error parsing rotation start date for rotation ${r.id}:`, err);
       return false;
     }
   });
+  
+  console.log(`[AutoAdvance] Found ${upcomingAutomaticRotations.length} upcoming automatic rotations`);
   
   // Check if we need to generate upcoming automatic rotations
   // We always want at least one upcoming rotation visible
@@ -609,8 +636,11 @@ async function autoAdvanceInternRotation(internId) {
   }
   
   if (!needsUpcomingRotation) {
+    console.log(`[AutoAdvance] No upcoming rotation needed - already has ${upcomingAutomaticRotations.length} upcoming rotations`);
     return false;
   }
+  
+  console.log(`[AutoAdvance] Need to create upcoming rotations - proceeding...`);
   
   if (needsUpcomingRotation) {
     // Find which units the intern has already completed
@@ -746,29 +776,34 @@ async function autoAdvanceInternRotation(internId) {
               [internId, nextUnit.id, newStartDateStr, newEndDateStr],
               function(err) {
                 if (err) {
-                  console.error(`Error creating rotation for intern ${internId}:`, err);
+                  console.error(`[AutoAdvance] ❌ Error creating rotation for intern ${internId}:`, err);
                   reject(err);
                 } else {
+                  console.log(`[AutoAdvance] ✅ Created rotation: ${nextUnit.name} from ${newStartDateStr} to ${newEndDateStr}`);
                   resolve();
                 }
               }
             );
           });
         } catch (createError) {
-          console.error(`Exception creating rotation for intern ${internId}:`, createError);
+          console.error(`[AutoAdvance] ❌ Exception creating rotation for intern ${internId}:`, createError);
           // Continue trying to create other rotations even if one fails
         }
         
         created++;
+      } else {
+        console.log(`[AutoAdvance] Rotation already exists: ${nextUnit.name} starting ${newStartDateStr}`);
       }
       
       // Move to next rotation start date
       currentStartDate = addDays(newEndDate, 1);
     }
     
+    console.log(`[AutoAdvance] ✅ Created ${created} new upcoming rotations for intern ${internId}`);
     return created > 0;
   }
   
+  console.log(`[AutoAdvance] No rotations created for intern ${internId}`);
   return false;
 }
 

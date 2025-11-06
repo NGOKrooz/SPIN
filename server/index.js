@@ -77,6 +77,7 @@ app.use('/api/rotations', require('./routes/rotations'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/settings', require('./routes/settings').router);
 app.use('/api/config', require('./routes/config'));
+app.use('/api/debug', require('./routes/debug'));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
