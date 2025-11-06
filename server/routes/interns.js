@@ -566,9 +566,55 @@ async function autoAdvanceInternRotation(internId) {
   });
   
   if (allRotationsHistory.length === 0) {
-    console.log(`[AutoAdvance] Intern ${internId} has no rotations yet - cannot auto-advance without initial rotation`);
-    console.log(`[AutoAdvance] Suggestion: Create at least one manual rotation or use auto-generation on intern creation`);
-    return false;
+    console.log(`[AutoAdvance] Intern ${internId} has no rotations yet - creating first rotation from intern start_date`);
+    
+    // Create the first rotation starting from intern's start_date
+    if (units.length === 0) {
+      console.log(`[AutoAdvance] No units available, cannot create first rotation`);
+      return false;
+    }
+    
+    // Get the first unit
+    const firstUnit = units[0];
+    
+    // Start from intern's start_date, or today if start_date is in the past
+    let firstRotationStart = parseISO(intern.start_date);
+    const todayDateObj = parseISO(today);
+    
+    // If start_date is in the past, start from today
+    if (firstRotationStart < todayDateObj) {
+      firstRotationStart = todayDateObj;
+    }
+    
+    const firstRotationStartStr = format(firstRotationStart, 'yyyy-MM-dd');
+    const firstRotationEnd = addDays(firstRotationStart, firstUnit.duration_days - 1);
+    const firstRotationEndStr = format(firstRotationEnd, 'yyyy-MM-dd');
+    
+    try {
+      await new Promise((resolve, reject) => {
+        db.run(
+          `INSERT INTO rotations (intern_id, unit_id, start_date, end_date, is_manual_assignment)
+           VALUES (?, ?, ?, ?, FALSE)`,
+          [internId, firstUnit.id, firstRotationStartStr, firstRotationEndStr],
+          function(err) {
+            if (err) {
+              console.error(`[AutoAdvance] Error creating first rotation for intern ${internId}:`, err);
+              reject(err);
+            } else {
+              console.log(`[AutoAdvance] ✅ Created first rotation: ${firstUnit.name} from ${firstRotationStartStr} to ${firstRotationEndStr}`);
+              resolve();
+            }
+          }
+        );
+      });
+      
+      // Now create upcoming rotations after this first one
+      // Recursively call this function to create upcoming rotations
+      return await autoAdvanceInternRotation(internId);
+    } catch (err) {
+      console.error(`[AutoAdvance] Failed to create first rotation for intern ${internId}:`, err);
+      return false;
+    }
   }
   
   console.log(`[AutoAdvance] Intern ${internId} has ${allRotationsHistory.length} total rotations`);
