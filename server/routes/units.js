@@ -12,48 +12,6 @@ const validateUnit = [
   body('patient_count').optional().isInt({ min: 0 }).withMessage('Patient count must be a non-negative integer')
 ];
 
-// GET /api/units/schema - Check database schema
-router.get('/schema', (req, res) => {
-  const query = "PRAGMA table_info(units)";
-  db.all(query, [], (err, rows) => {
-    if (err) {
-      console.error('Error checking schema:', err);
-      return res.status(500).json({ error: 'Failed to check schema' });
-    }
-    console.log('Units table schema:', rows);
-    res.json(rows);
-  });
-});
-
-// POST /api/units/:id/test-patient-count - Test patient count update
-router.post('/:id/test-patient-count', (req, res) => {
-  const { id } = req.params;
-  const { patient_count } = req.body;
-  
-  console.log('Testing patient count update:', { id, patient_count });
-  
-  const query = `UPDATE units SET patient_count = ? WHERE id = ?`;
-  db.run(query, [patient_count, id], function(err) {
-    if (err) {
-      console.error('Error updating patient count:', err);
-      return res.status(500).json({ error: 'Failed to update patient count' });
-    }
-    
-    console.log('Patient count updated successfully:', this.changes);
-    
-    // Fetch the updated unit to verify
-    db.get('SELECT id, name, patient_count, workload FROM units WHERE id = ?', [id], (err, row) => {
-      if (err) {
-        console.error('Error fetching updated unit:', err);
-        return res.status(500).json({ error: 'Failed to fetch updated unit' });
-      }
-      
-      console.log('Updated unit data:', row);
-      res.json({ message: 'Patient count updated successfully', unit: row });
-    });
-  });
-});
-
 // GET /api/units - Get all units
 router.get('/', (req, res) => {
   const query = `
@@ -81,13 +39,6 @@ router.get('/', (req, res) => {
       console.error('Error fetching units:', err);
       return res.status(500).json({ error: 'Failed to fetch units' });
     }
-    
-    console.log('Fetched units data:', rows.map(row => ({ 
-      id: row.id, 
-      name: row.name, 
-      patient_count: row.patient_count,
-      workload: row.workload 
-    })));
     
     const units = rows.map(row => {
       // Auto-calculate workload based on patient count if available
@@ -223,28 +174,36 @@ router.post('/', validateUnit, (req, res) => {
 // POST /api/units/seed-defaults - Seed default units (idempotent)
 router.post('/seed-defaults', async (req, res) => {
   const defaultUnits = [
-    { name: 'Adult Neurology', duration_days: 2, workload: 'Medium' },
-    { name: 'Acute Stroke', duration_days: 2, workload: 'High' },
-    { name: 'Neurosurgery', duration_days: 2, workload: 'High' },
-    { name: 'Geriatrics', duration_days: 2, workload: 'Medium' },
-    { name: 'Orthopedic Inpatients', duration_days: 2, workload: 'High' },
-    { name: 'Orthopedic Outpatients', duration_days: 2, workload: 'Medium' },
-    { name: 'Electrophysiology', duration_days: 2, workload: 'Low' },
-    { name: 'Exercise Immunology', duration_days: 2, workload: 'Low' },
-    { name: "Women's Health", duration_days: 2, workload: 'Medium' },
-    { name: 'Pediatrics Inpatients', duration_days: 2, workload: 'High' },
-    { name: 'Pediatrics Outpatients', duration_days: 2, workload: 'Medium' },
-    { name: 'Cardio Thoracic Unit', duration_days: 2, workload: 'High' }
+    { name: 'Adult Neurology', duration_days: 2, patient_count: 0 },
+    { name: 'Acute Stroke', duration_days: 2, patient_count: 0 },
+    { name: 'Neurosurgery', duration_days: 2, patient_count: 0 },
+    { name: 'Geriatrics', duration_days: 2, patient_count: 0 },
+    { name: 'Orthopedic Inpatients', duration_days: 2, patient_count: 0 },
+    { name: 'Orthopedic Outpatients', duration_days: 2, patient_count: 0 },
+    { name: 'Electrophysiology', duration_days: 2, patient_count: 0 },
+    { name: 'Exercise Immunology', duration_days: 2, patient_count: 0 },
+    { name: "Women's Health", duration_days: 2, patient_count: 0 },
+    { name: 'Pediatrics Inpatients', duration_days: 2, patient_count: 0 },
+    { name: 'Pediatrics Outpatients', duration_days: 2, patient_count: 0 },
+    { name: 'Cardio Thoracic Unit', duration_days: 2, patient_count: 0 }
   ];
 
   // Use a function to handle INSERT OR IGNORE for both SQLite and PostgreSQL
   const insertUnit = async (unit) => {
     return new Promise((resolve, reject) => {
-      const query = isPostgres 
-        ? `INSERT INTO units (name, duration_days, workload, description, patient_count) VALUES ($1, $2, $3, '', 0) ON CONFLICT (name) DO NOTHING`
-        : `INSERT OR IGNORE INTO units (name, duration_days, workload, description, patient_count) VALUES (?, ?, ?, '', 0)`;
+      // Calculate workload from patient_count
+      let workload;
+      if (unit.patient_count <= 4) workload = 'Low';
+      else if (unit.patient_count <= 8) workload = 'Medium';
+      else workload = 'High';
       
-      const params = isPostgres ? [unit.name, unit.duration_days, unit.workload] : [unit.name, unit.duration_days, unit.workload];
+      const query = isPostgres 
+        ? `INSERT INTO units (name, duration_days, workload, description, patient_count) VALUES ($1, $2, $3, '', $4) ON CONFLICT (name) DO NOTHING`
+        : `INSERT OR IGNORE INTO units (name, duration_days, workload, description, patient_count) VALUES (?, ?, ?, '', ?)`;
+      
+      const params = isPostgres 
+        ? [unit.name, unit.duration_days, workload, unit.patient_count] 
+        : [unit.name, unit.duration_days, workload, unit.patient_count];
       
       db.run(query, params, (err) => {
         if (err) reject(err);
@@ -272,12 +231,20 @@ router.post('/seed-defaults', async (req, res) => {
   
   const stmt = db.prepare(`
     INSERT OR IGNORE INTO units (name, duration_days, workload, description, patient_count)
-    VALUES (?, ?, ?, '', 0)
+    VALUES (?, ?, ?, '', ?)
   `);
 
   db.serialize(() => {
     try {
-      defaultUnits.forEach(u => stmt.run(u.name, u.duration_days, u.workload));
+      defaultUnits.forEach(u => {
+        // Calculate workload from patient_count
+        let workload;
+        if (u.patient_count <= 4) workload = 'Low';
+        else if (u.patient_count <= 8) workload = 'Medium';
+        else workload = 'High';
+        
+        stmt.run(u.name, u.duration_days, workload, u.patient_count);
+      });
       stmt.finalize((err) => {
         if (err) {
           console.error('Error seeding units:', err);
@@ -310,8 +277,6 @@ router.put('/:id', validateUnit, (req, res) => {
     else if (count <= 8) finalWorkload = 'Medium';
     else finalWorkload = 'High';
   }
-  
-  console.log('Updating unit:', { id, name, duration_days, workload, description, patient_count });
   
   const query = `
     UPDATE units 

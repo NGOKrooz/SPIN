@@ -2,7 +2,7 @@ const express = require('express');
 const db = require('../database/dbWrapper');
 const ExcelJS = require('exceljs');
 const puppeteer = require('puppeteer');
-const { format, parseISO, startOfMonth, endOfMonth } = require('date-fns');
+const { format, parseISO, differenceInDays } = require('date-fns');
 
 const router = express.Router();
 

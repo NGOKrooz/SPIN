@@ -1,6 +1,5 @@
 const DB_TYPE = process.env.DATABASE_URL ? 'postgres' : (process.env.DB_TYPE || 'sqlite');
 const { getDatabase } = require('./init');
-const queryHelper = require('./queryHelper');
 
 const db = getDatabase();
 const isPostgres = DB_TYPE === 'postgres';

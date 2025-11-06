@@ -1,35 +1,8 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const db = require('../database/dbWrapper');
-const { parseISO, differenceInDays } = require('date-fns');
 
 const router = express.Router();
-
-// Helper function to get batch off day for a specific date
-function getBatchOffDay(batch, date, scheduleSettings) {
-  const scheduleStartDate = parseISO(scheduleSettings.schedule_start_date || '2024-01-01');
-  const daysSinceStart = differenceInDays(parseISO(date), scheduleStartDate);
-  const weekNumber = Math.floor(daysSinceStart / 7) + 1;
-  
-  // Determine if it's weeks 1&2 or weeks 3&4 (cycles every 4 weeks)
-  const cycleWeek = ((weekNumber - 1) % 4) + 1;
-  const isWeek1Or2 = cycleWeek <= 2;
-  
-  if (batch === 'A') {
-    return isWeek1Or2 ? scheduleSettings.batch_a_off_day_week1 : scheduleSettings.batch_a_off_day_week3;
-  } else if (batch === 'B') {
-    return isWeek1Or2 ? scheduleSettings.batch_b_off_day_week1 : scheduleSettings.batch_b_off_day_week3;
-  }
-  
-  return null;
-}
-
-// Helper function to check if a batch is off on a specific date
-function isBatchOffOnDate(batch, date, scheduleSettings) {
-  const offDay = getBatchOffDay(batch, date, scheduleSettings);
-  const dayOfWeek = new Date(date).toLocaleDateString('en-US', { weekday: 'long' });
-  return offDay === dayOfWeek;
-}
 
 // Validation middleware
 const validateSetting = [
@@ -217,8 +190,6 @@ router.put('/batch-schedule', [
       if (err && !hasError) {
         hasError = true;
         console.error('Error updating batch schedule:', err);
-        console.error('Query:', query);
-        console.error('Params:', [update.value, update.key]);
         errorMessages.push(err.message || String(err));
         return res.status(500).json({ 
           error: 'Failed to update batch schedule',
@@ -859,11 +830,9 @@ router.put('/:key', [
     WHERE key = ?
   `;
   
-  db.run(query, [value, key], function(err) {
+    db.run(query, [value, key], function(err) {
     if (err) {
       console.error('Error updating setting:', err);
-      console.error('Query:', query);
-      console.error('Params:', [value, key]);
       return res.status(500).json({ 
         error: 'Failed to update setting',
         details: err.message || String(err)
@@ -878,4 +847,4 @@ router.put('/:key', [
   });
 });
 
-module.exports = { router, getBatchOffDay, isBatchOffOnDate };
+module.exports = { router };

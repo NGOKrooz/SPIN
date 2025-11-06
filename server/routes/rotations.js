@@ -1,8 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const db = require('../database/dbWrapper');
-const { addDays, format, parseISO, differenceInDays, startOfWeek, endOfWeek, isWithinInterval } = require('date-fns');
-const { isBatchOffOnDate } = require('./settings');
+const { addDays, format, parseISO, differenceInDays } = require('date-fns');
 
 const router = express.Router();
 
@@ -604,15 +603,10 @@ async function autoAdvanceRotations() {
                 `INSERT INTO rotations (intern_id, unit_id, start_date, end_date, is_manual_assignment)
                  VALUES (?, ?, ?, ?, FALSE)`,
                 [intern.id, nextUnit.id, newStartDateStr, newEndDateStr],
-                function(err) {
-                  if (err) reject(err);
-                  else {
-                    console.log(
-                      `✅ Auto-created upcoming rotation for intern ${intern.id} (${intern.name}): ${nextUnit.name} starting ${newStartDateStr}`
-                    );
-                    resolve();
-                  }
-                }
+              function(err) {
+                if (err) reject(err);
+                else resolve();
+              }
               );
             });
             
@@ -686,32 +680,6 @@ function generateInternRotations(intern, units, startDate, settings) {
   }
   
   return rotations;
-}
-
-// Helper function to adjust rotation dates to account for batch off days
-function adjustRotationDatesForOffDays(startDate, endDate, batch, settings) {
-  let adjustedStart = startDate;
-  let adjustedEnd = endDate;
-  
-  // Check if rotation starts on an off day and adjust
-  if (isBatchOffOnDate(batch, format(startDate, 'yyyy-MM-dd'), settings)) {
-    adjustedStart = addDays(startDate, 1);
-  }
-  
-  // Check if rotation ends on an off day and adjust
-  if (isBatchOffOnDate(batch, format(endDate, 'yyyy-MM-dd'), settings)) {
-    adjustedEnd = addDays(endDate, 1);
-  }
-  
-  // Ensure we don't go backwards
-  if (adjustedStart > adjustedEnd) {
-    adjustedEnd = adjustedStart;
-  }
-  
-  return {
-    start: adjustedStart,
-    end: adjustedEnd
-  };
 }
 
 module.exports = router;
