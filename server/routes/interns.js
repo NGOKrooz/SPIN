@@ -503,6 +503,52 @@ router.get('/:id/schedule', async (req, res) => {
   });
 });
 
+// POST /api/interns/:id/force-auto-advance - Manually trigger auto-advance (for testing/debugging)
+router.post('/:id/force-auto-advance', async (req, res) => {
+  const { id } = req.params;
+  
+  try {
+    console.log(`[ForceAutoAdvance] Manually triggering auto-advance for intern ${id}`);
+    const result = await autoAdvanceInternRotation(id);
+    
+    // Get updated schedule
+    const query = `
+      SELECT 
+        r.*,
+        u.name as unit_name,
+        u.duration_days,
+        u.workload
+      FROM rotations r
+      JOIN units u ON r.unit_id = u.id
+      WHERE r.intern_id = ?
+      ORDER BY r.start_date
+    `;
+    
+    db.all(query, [id], (err, rows) => {
+      if (err) {
+        console.error('Error fetching schedule:', err);
+        return res.status(500).json({ error: 'Failed to fetch schedule' });
+      }
+      
+      res.json({
+        success: true,
+        autoAdvanceResult: result,
+        rotations: rows,
+        count: rows.length,
+        message: result ? 'Rotations created successfully' : 'No new rotations needed'
+      });
+    });
+  } catch (err) {
+    console.error(`[ForceAutoAdvance] Error:`, err);
+    console.error(`[ForceAutoAdvance] Stack:`, err.stack);
+    res.status(500).json({ 
+      error: 'Failed to force auto-advance',
+      details: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
+  }
+});
+
 // Helper function to auto-advance a single intern's rotation
 // Creates automatic rotations (is_manual_assignment = FALSE) for upcoming assignments
 // Always ensures there's an upcoming rotation visible
