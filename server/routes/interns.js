@@ -680,7 +680,14 @@ async function autoAdvanceInternRotation(internId) {
     }
   }
 
-  // If any rotation (manual or automatic) already starts after today, we're good
+  // Re-evaluate automatic rotations after possibly seeding the first one
+  const automaticRotations = allRotationsHistory.filter(r => {
+    const isManual = r.is_manual_assignment;
+    const isAutomatic = isManual === 0 || isManual === false || String(isManual).toLowerCase() === 'false';
+    return isAutomatic;
+  });
+
+  // If any automatic rotation already starts after today, we're good
   const hasUpcomingRotation = automaticRotations.some(rotation => {
     try {
       if (!rotation.start_date) return false;
@@ -697,18 +704,8 @@ async function autoAdvanceInternRotation(internId) {
     return false;
   }
   
-  // Get all automatic rotations to check for existing upcoming ones
-  // SQLite stores booleans as 0/1, so check for 0 (FALSE) or false
-  const automaticRotations = allRotationsHistory.filter(r => {
-    const isManual = r.is_manual_assignment;
-    // Handle both SQLite (0/1) and JavaScript (false/true) boolean values
-    // Automatic rotation means is_manual_assignment is FALSE (0 or false)
-    const isAutomatic = isManual === 0 || isManual === false || String(isManual).toLowerCase() === 'false';
-    return isAutomatic;
-  });
-  
-  console.log(`[AutoAdvance] Found ${automaticRotations.length} automatic rotations out of ${allRotationsHistory.length} total`);
-  
+  // Get the last rotation (manual or automatic) to determine next unit
+  const lastRotation = allRotationsHistory[allRotationsHistory.length - 1];
   const lastEndDate = parseISO(lastRotation.end_date);
   const lastEndDateStr = format(lastEndDate, 'yyyy-MM-dd');
   
