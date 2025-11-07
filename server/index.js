@@ -4,6 +4,13 @@ const path = require('path');
 const fs = require('fs');
 require('dotenv').config();
 
+// Default autorotation to true if not defined
+const autoRotation = process.env.AUTO_ROTATION
+  ? process.env.AUTO_ROTATION === 'true'
+  : true;
+
+console.log('🌀 Autorotation status:', autoRotation);
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -199,3 +206,6 @@ process.on('uncaughtException', (error) => {
 });
 
 startServer();
+
+// Export autoRotation for use in other modules
+module.exports = { autoRotation };
