@@ -559,7 +559,6 @@ async function autoAdvanceInternRotation(internId) {
   const now = new Date();
   const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const today = format(todayUTC, 'yyyy-MM-dd');
-  const todayDate = parseISO(today);
   
   console.log(`[AutoAdvance] Today: ${today}`);
   
@@ -618,15 +617,9 @@ async function autoAdvanceInternRotation(internId) {
     return false;
   }
 
-  let internStartDate;
-  try {
-    internStartDate = parseISO(intern.start_date);
-    if (isNaN(internStartDate.getTime())) {
-      console.error(`[AutoAdvance] Intern ${internId} (${intern.name}): Invalid start_date "${intern.start_date}"`);
-      return false;
-    }
-  } catch (err) {
-    console.error(`[AutoAdvance] Intern ${internId} (${intern.name}): Error parsing start_date "${intern.start_date}":`, err);
+  let internStartDate = parseDateSafe(intern.start_date);
+  if (!internStartDate) {
+    console.error(`[AutoAdvance] Intern ${internId} (${intern.name}): Invalid start_date "${intern.start_date}"`);
     return false;
   }
 
@@ -641,7 +634,7 @@ async function autoAdvanceInternRotation(internId) {
     }
 
     const firstUnit = units[0];
-    const todayDateObj = parseISO(today);
+    const todayDateObj = parseDateSafe(today);
     let firstRotationStart = internStartDate < todayDateObj ? addDays(todayDateObj, 1) : internStartDate;
     const firstRotationStartStr = format(firstRotationStart, 'yyyy-MM-dd');
     const firstRotationEnd = addDays(firstRotationStart, firstUnit.duration_days - 1);
@@ -679,12 +672,11 @@ async function autoAdvanceInternRotation(internId) {
     }
   }
 
-  // Determine the most recent rotation by end_date
   const sortedRotations = allRotationsHistory
     .filter(r => r.end_date)
     .sort((a, b) => {
-      const endA = parseISO(a.end_date);
-      const endB = parseISO(b.end_date);
+      const endA = parseDateSafe(a.end_date);
+      const endB = parseDateSafe(b.end_date);
       return endA.getTime() - endB.getTime();
     });
 
@@ -694,28 +686,36 @@ async function autoAdvanceInternRotation(internId) {
   }
 
   const lastRotationSorted = sortedRotations[sortedRotations.length - 1];
-  const lastEndDate = parseISO(lastRotationSorted.end_date);
+  const lastEndDate = parseDateSafe(lastRotationSorted.end_date);
 
-  // Calculate next rotation start date (day after last end date)
+  if (!lastEndDate) {
+    console.error(`[AutoAdvance] Intern ${internId}: Last rotation has invalid end_date "${lastRotationSorted.end_date}"`);
+    return false;
+  }
+
   let nextStartDate = addDays(lastEndDate, 1);
-  const todayDateObj = parseISO(today);
-  if (nextStartDate <= todayDateObj) {
+  const todayDateObj = parseDateSafe(today);
+  if (todayDateObj && nextStartDate <= todayDateObj) {
     nextStartDate = addDays(todayDateObj, 1);
   }
   const nextStartDateStr = format(nextStartDate, 'yyyy-MM-dd');
 
-  // Check if a rotation already exists starting on that date
-  const duplicateRotation = sortedRotations.some(r => {
+  const existingUpcoming = sortedRotations.find(r => {
     if (!r.start_date) return false;
-    const startStr = r.start_date.split('T')[0];
-    return startStr === nextStartDateStr;
+    const start = parseDateSafe(r.start_date);
+    return start && start >= nextStartDate;
   });
-  if (duplicateRotation) {
-    console.log(`[AutoAdvance] Rotation already scheduled starting ${nextStartDateStr} for intern ${internId}`);
-    return false;
+
+  if (existingUpcoming) {
+    const existingStart = parseDateSafe(existingUpcoming.start_date);
+    if (existingStart && existingStart <= lastEndDate) {
+      console.log(`[AutoAdvance] Found ongoing rotation starting ${format(existingStart, 'yyyy-MM-dd')} – continuing sequence.`);
+    } else {
+      console.log(`[AutoAdvance] Rotation already scheduled starting ${existingStart ? format(existingStart, 'yyyy-MM-dd') : existingUpcoming.start_date} for intern ${internId} – skipping auto creation.`);
+      return false;
+    }
   }
 
-  // Determine which unit should be next in sequence
   let currentUnitIndex = lastRotationSorted.unit_id ? units.findIndex(u => u.id === lastRotationSorted.unit_id) : -1;
   if (currentUnitIndex === -1) {
     console.warn(`[AutoAdvance] Unit ${lastRotationSorted.unit_id} not found for intern ${internId}; defaulting to first unit`);
@@ -724,7 +724,6 @@ async function autoAdvanceInternRotation(internId) {
   const nextUnitIndex = (currentUnitIndex + 1) % units.length;
   const nextUnit = units[nextUnitIndex];
 
-  // Ensure internship hasn't ended
   const internshipEndDate = addDays(
     internStartDate,
     intern.status === 'Extended' ? 365 + (intern.extension_days || 0) : 365
@@ -891,6 +890,21 @@ function generateInternRotations(intern, units, startDate, settings) {
   return rotations;
 }
 
+const parseDateSafe = (value) => {
+  if (!value) return null;
+  try {
+    let date = parseISO(value);
+    if (isNaN(date)) {
+      date = new Date(value);
+    }
+    if (isNaN(date)) {
+      return null;
+    }
+    return date;
+  } catch (err) {
+    return null;
+  }
+};
 
 // Export the auto-advance function for use in other routes
 module.exports = router;
