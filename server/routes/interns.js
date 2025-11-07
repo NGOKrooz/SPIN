@@ -611,17 +611,36 @@ async function autoAdvanceInternRotation(internId) {
     );
   });
   
+  console.log(`[AutoAdvance] Intern ${internId} has ${allRotationsHistory.length} total rotations`);
+
+  // Determine last rotation (manual or automatic); if none exist, seed from intern start date.
   let lastRotation = allRotationsHistory[allRotationsHistory.length - 1] || null;
 
+  // Validate intern start date (needed when seeding)
+  if (!intern.start_date) {
+    console.error(`[AutoAdvance] Intern ${internId} (${intern.name}): Missing start_date, cannot create rotations`);
+    return false;
+  }
+
+  let internStartDate;
+  try {
+    internStartDate = parseISO(intern.start_date);
+    if (isNaN(internStartDate.getTime())) {
+      console.error(`[AutoAdvance] Intern ${internId} (${intern.name}): Invalid start_date "${intern.start_date}"`);
+      return false;
+    }
+  } catch (err) {
+    console.error(`[AutoAdvance] Intern ${internId} (${intern.name}): Error parsing start_date "${intern.start_date}":`, err);
+    return false;
+  }
+
   if (!lastRotation) {
-    console.log(`[AutoAdvance] Intern ${internId} has no rotations history - starting from intern start_date ${intern.start_date}`);
+    console.log(`[AutoAdvance] Intern ${internId} has no rotations history - treating start_date as last end date`);
     lastRotation = {
       end_date: intern.start_date,
       unit_id: null,
-      is_manual_assignment: false
+      is_manual_assignment: false,
     };
-  } else {
-    console.log(`[AutoAdvance] Intern ${internId} has ${allRotationsHistory.length} total rotations`);
   }
 
   // If any rotation (manual or automatic) already starts after today, we're good
@@ -653,17 +672,7 @@ async function autoAdvanceInternRotation(internId) {
   
   console.log(`[AutoAdvance] Found ${automaticRotations.length} automatic rotations out of ${allRotationsHistory.length} total`);
   
-  // Get the last rotation (manual or automatic) to determine next unit
-  let lastEndDate;
-  try {
-    lastEndDate = parseISO(lastRotation.end_date);
-    if (isNaN(lastEndDate.getTime())) {
-      throw new Error('Invalid date');
-    }
-  } catch (err) {
-    console.warn(`[AutoAdvance] Intern ${internId}: Unable to parse last rotation end_date "${lastRotation.end_date}" (${err.message}). Using intern start_date instead.`);
-    lastEndDate = parseISO(intern.start_date);
-  }
+  const lastEndDate = parseISO(lastRotation.end_date);
   const lastEndDateStr = format(lastEndDate, 'yyyy-MM-dd');
   
   console.log(`[AutoAdvance] Last rotation: Unit ${lastRotation.unit_id}, ends ${lastEndDateStr}, today is ${today}`);
@@ -698,19 +707,9 @@ async function autoAdvanceInternRotation(internId) {
     needsUpcomingRotation = true;
   } else {
     // Check if the upcoming automatic rotations cover until after the last rotation ends
-    try {
-      const lastUpcoming = upcomingAutomaticRotations[upcomingAutomaticRotations.length - 1];
-      if (!lastUpcoming.end_date) {
-        needsUpcomingRotation = true;
-      } else {
-        const lastUpcomingEndDate = parseISO(lastUpcoming.end_date);
-        if (isNaN(lastUpcomingEndDate.getTime()) || lastUpcomingEndDate <= lastEndDate) {
-          // Upcoming rotations don't go far enough, need more
-          needsUpcomingRotation = true;
-        }
-      }
-    } catch (err) {
-      console.error(`[AutoAdvance] Intern ${internId}: Error checking upcoming rotations:`, err);
+    const lastUpcomingEndDate = parseISO(upcomingAutomaticRotations[upcomingAutomaticRotations.length - 1].end_date);
+    if (lastUpcomingEndDate <= lastEndDate) {
+      // Upcoming rotations don't go far enough, need more
       needsUpcomingRotation = true;
     }
   }
@@ -749,11 +748,11 @@ async function autoAdvanceInternRotation(internId) {
     const notDoneUnits = units.filter(u => !completedUnitIds.has(u.id));
     
     // Find which unit the intern was on (from last rotation, which could be manual)
-    let currentUnitIndex = lastRotation.unit_id ? units.findIndex(u => u.id === lastRotation.unit_id) : -1;
+    let currentUnitIndex = units.findIndex(u => u.id === lastRotation.unit_id);
     
     if (currentUnitIndex === -1) {
-      currentUnitIndex = 0;
-      console.log(`[AutoAdvance] Intern ${internId}: No previous unit found, starting from first unit ${units[0].name}`);
+      console.warn(`[AutoAdvance] Unit ${lastRotation.unit_id} not found for intern ${internId}; defaulting to first unit`);
+      currentUnitIndex = -1;
     }
     
     console.log(`[autoAdvance] Intern ${internId}: Completed units: ${Array.from(completedUnitIds).join(', ')}, Not done: ${notDoneUnits.length} units`);
