@@ -664,6 +664,23 @@ async function autoAdvanceInternRotation(internId) {
   }
   
   console.log(`[AutoAdvance] Intern ${internId} has ${allRotationsHistory.length} total rotations`);
+
+  // If any rotation (manual or automatic) already starts after today, we're good
+  const hasUpcomingRotation = allRotationsHistory.some(rotation => {
+    try {
+      if (!rotation.start_date) return false;
+      const rotationStartStr = rotation.start_date.split('T')[0];
+      return rotationStartStr > today;
+    } catch (err) {
+      console.error(`[AutoAdvance] Error parsing start date for rotation ${rotation.id}:`, err);
+      return false;
+    }
+  });
+
+  if (hasUpcomingRotation) {
+    console.log(`[AutoAdvance] Upcoming rotation already exists (manual or automatic) for intern ${internId}`);
+    return false;
+  }
   
   // Get all automatic rotations to check for existing upcoming ones
   // SQLite stores booleans as 0/1, so check for 0 (FALSE) or false
