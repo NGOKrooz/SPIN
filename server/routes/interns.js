@@ -673,257 +673,94 @@ async function autoAdvanceInternRotation(internId) {
         is_manual_assignment: 0,
       });
 
-      lastRotation = allRotationsHistory[allRotationsHistory.length - 1];
     } catch (err) {
       console.error(`[AutoAdvance] Failed to create first rotation for intern ${internId}:`, err);
       return false;
     }
   }
 
-  // Re-evaluate automatic rotations after possibly seeding the first one
-  const automaticRotations = allRotationsHistory.filter(r => {
-    const isManual = r.is_manual_assignment;
-    const isAutomatic = isManual === 0 || isManual === false || String(isManual).toLowerCase() === 'false';
-    return isAutomatic;
-  });
+  // Determine the most recent rotation by end_date
+  const sortedRotations = allRotationsHistory
+    .filter(r => r.end_date)
+    .sort((a, b) => {
+      const endA = parseISO(a.end_date);
+      const endB = parseISO(b.end_date);
+      return endA.getTime() - endB.getTime();
+    });
 
-  // If any automatic rotation already starts after today, we're good
-  const hasUpcomingRotation = automaticRotations.some(rotation => {
-    try {
-      if (!rotation.start_date) return false;
-      const rotationStartStr = rotation.start_date.split('T')[0];
-      return rotationStartStr > today;
-    } catch (err) {
-      console.error(`[AutoAdvance] Error parsing start date for automatic rotation ${rotation.id}:`, err);
-      return false;
-    }
-  });
-
-  if (hasUpcomingRotation) {
-    console.log(`[AutoAdvance] Upcoming automatic rotation already exists for intern ${internId}`);
+  if (sortedRotations.length === 0) {
+    console.error(`[AutoAdvance] Intern ${internId}: Unable to determine last rotation after seeding`);
     return false;
   }
-  
-  // Get the last rotation (manual or automatic) to determine next unit
-  const lastRotation = allRotationsHistory[allRotationsHistory.length - 1];
-  const lastEndDate = parseISO(lastRotation.end_date);
-  const lastEndDateStr = format(lastEndDate, 'yyyy-MM-dd');
-  
-  console.log(`[AutoAdvance] Last rotation: Unit ${lastRotation.unit_id}, ends ${lastEndDateStr}, today is ${today}`);
-  
-  // Check if the last rotation has completed (ended before today)
-  // Use string comparison to avoid timezone issues
-  const lastRotationCompleted = lastEndDateStr < today;
-  
-  console.log(`[AutoAdvance] Last rotation completed: ${lastRotationCompleted}`);
-  
-  // Check if there's an upcoming automatic rotation (start_date > today)
-  const upcomingAutomaticRotations = automaticRotations.filter(r => {
-    try {
-      // Parse and compare dates as strings to avoid timezone issues
-      const rotationStartStr = r.start_date ? r.start_date.split('T')[0] : r.start_date;
-      const isUpcoming = rotationStartStr > today;
-      return isUpcoming;
-    } catch (err) {
-      console.error(`[autoAdvance] Error parsing rotation start date for rotation ${r.id}:`, err);
-      return false;
-    }
+
+  const lastRotationSorted = sortedRotations[sortedRotations.length - 1];
+  const lastEndDate = parseISO(lastRotationSorted.end_date);
+
+  // Calculate next rotation start date (day after last end date)
+  let nextStartDate = addDays(lastEndDate, 1);
+  const todayDateObj = parseISO(today);
+  if (nextStartDate <= todayDateObj) {
+    nextStartDate = addDays(todayDateObj, 1);
+  }
+  const nextStartDateStr = format(nextStartDate, 'yyyy-MM-dd');
+
+  // Check if a rotation already exists starting on that date
+  const duplicateRotation = sortedRotations.some(r => {
+    if (!r.start_date) return false;
+    const startStr = r.start_date.split('T')[0];
+    return startStr === nextStartDateStr;
   });
-  
-  console.log(`[AutoAdvance] Found ${upcomingAutomaticRotations.length} upcoming automatic rotations`);
-  
-  // Check if we need to generate upcoming automatic rotations
-  // We always want at least one upcoming rotation visible
-  let needsUpcomingRotation = false;
-  
-  if (upcomingAutomaticRotations.length === 0) {
-    // No upcoming automatic rotations, need to create at least one
-    needsUpcomingRotation = true;
-  } else {
-    // Check if the upcoming automatic rotations cover until after the last rotation ends
-    const lastUpcomingEndDate = parseISO(upcomingAutomaticRotations[upcomingAutomaticRotations.length - 1].end_date);
-    if (lastUpcomingEndDate <= lastEndDate) {
-      // Upcoming rotations don't go far enough, need more
-      needsUpcomingRotation = true;
-    }
-  }
-  
-  // CRITICAL: If last rotation completed (ended before today), we MUST create upcoming rotations
-  // This handles the case where an intern finished a rotation days/weeks ago but no new rotations were created
-  if (lastRotationCompleted && upcomingAutomaticRotations.length === 0) {
-    needsUpcomingRotation = true;
-  }
-  
-  if (!needsUpcomingRotation) {
-    console.log(`[AutoAdvance] No upcoming rotation needed - already has ${upcomingAutomaticRotations.length} upcoming rotations`);
+  if (duplicateRotation) {
+    console.log(`[AutoAdvance] Rotation already scheduled starting ${nextStartDateStr} for intern ${internId}`);
     return false;
   }
-  
-  console.log(`[AutoAdvance] Need to create upcoming rotations - proceeding...`);
-  
-  if (needsUpcomingRotation) {
-    // Find which units the intern has already completed
-    const completedUnitIds = new Set(
-      allRotationsHistory
-        .filter(r => {
-          try {
-            // Use string comparison to avoid timezone issues in production
-            const endDateStr = r.end_date ? r.end_date.split('T')[0] : r.end_date;
-            return endDateStr < today;
-          } catch (err) {
-            console.error(`[autoAdvance] Error parsing rotation end date for rotation ${r.id}:`, err);
-            return false;
-          }
-        })
-        .map(r => r.unit_id)
-    );
-    
-    // Find units the intern hasn't done yet
-    const notDoneUnits = units.filter(u => !completedUnitIds.has(u.id));
-    
-    // Find which unit the intern was on (from last rotation, which could be manual)
-    let currentUnitIndex = units.findIndex(u => u.id === lastRotation.unit_id);
-    
-    if (currentUnitIndex === -1) {
-      console.warn(`[AutoAdvance] Unit ${lastRotation.unit_id} not found for intern ${internId}; defaulting to first unit`);
-      currentUnitIndex = -1;
-    }
-    
-    console.log(`[autoAdvance] Intern ${internId}: Completed units: ${Array.from(completedUnitIds).join(', ')}, Not done: ${notDoneUnits.length} units`);
-    
-    // Check if intern's internship has ended
-    const internshipEndDate = addDays(
-      parseISO(intern.start_date),
-      intern.status === 'Extended' ? 365 + (intern.extension_days || 0) : 365
-    );
-    
-    // Calculate where next rotation should start
-    // Always start the next rotation the day after the last one ends
-    let nextStartDate = addDays(lastEndDate, 1);
-    
-    // IMPORTANT: For upcoming rotations to show, they must start AFTER today
-    // So if nextStartDate is today or in the past, we need to start from tomorrow
-    const nextStartDateStr = format(nextStartDate, 'yyyy-MM-dd');
-    if (nextStartDateStr <= today) {
-      // If the calculated start date is today or in the past, start from tomorrow
-      // This ensures the rotation shows as "upcoming" (start_date > today)
-      nextStartDate = addDays(todayUTC, 1);
-    }
-    
-    if (parseISO(format(nextStartDate, 'yyyy-MM-dd')) > internshipEndDate) {
-      // Internship has ended
-      return false;
-    }
-    
-    // Create multiple upcoming rotations to ensure there's always at least one visible
-    let created = 0;
-    let currentStartDate = nextStartDate;
-    let unitIndex = currentUnitIndex;
-    
-    // Helper function to get next unit (go through all units only once, no repeating)
-    const getNextUnit = () => {
-      // Only create rotations for units the intern hasn't done yet
-      if (notDoneUnits.length > 0) {
-        // Find the next unit in the not-done list starting after current unit
-        let startIndex = (currentUnitIndex + 1) % units.length;
-        for (let i = 0; i < units.length; i++) {
-          const checkIndex = (startIndex + i) % units.length;
-          const unit = units[checkIndex];
-          if (notDoneUnits.some(u => u.id === unit.id)) {
-            return { unit, index: checkIndex };
-          }
-        }
-        // If we can't find one after current, just use first not-done unit
-        const firstNotDone = notDoneUnits[0];
-        const firstIndex = units.findIndex(u => u.id === firstNotDone.id);
-        return { unit: firstNotDone, index: firstIndex };
-      }
-      
-      // If all units have been done, stop creating rotations (don't repeat)
-      return null;
-    };
-    
-    // Create upcoming rotations only for units not yet completed (go through all units once)
-    while (created < 3 && parseISO(format(currentStartDate, 'yyyy-MM-dd')) <= internshipEndDate) {
-      // Get next unit (only units not done yet)
-      const nextUnitResult = getNextUnit();
-      if (!nextUnitResult) {
-        // All units completed, stop creating rotations
-        break;
-      }
-      const { unit: nextUnit, index: nextUnitIndex } = nextUnitResult;
-      unitIndex = nextUnitIndex;
-      
-      // Calculate end date based on unit duration
-      const newEndDate = addDays(currentStartDate, nextUnit.duration_days - 1);
-      const newEndDateStr = format(newEndDate, 'yyyy-MM-dd');
-      const newStartDateStr = format(currentStartDate, 'yyyy-MM-dd');
-      
-      // Check if this would exceed internship end date
-      if (newEndDate > internshipEndDate) {
-        break;
-      }
-      
-      // Check if this rotation already exists (check both exact date match and overlapping dates)
-      const existingRotation = allRotationsHistory.find(r => {
-        // Exact match on start date and unit
-        if (r.start_date === newStartDateStr && r.unit_id === nextUnit.id) {
-          return true;
-        }
-        // Also check if there's an overlapping rotation (same unit, overlapping dates)
-        const existingStart = parseISO(r.start_date);
-        const existingEnd = parseISO(r.end_date);
-        const newStart = parseISO(newStartDateStr);
-        const newEnd = parseISO(newEndDateStr);
-        // Check if rotations overlap
-        if (r.unit_id === nextUnit.id && 
-            ((newStart >= existingStart && newStart <= existingEnd) ||
-             (newEnd >= existingStart && newEnd <= existingEnd) ||
-             (newStart <= existingStart && newEnd >= existingEnd))) {
-          return true;
-        }
-        return false;
-      });
-      
-      if (!existingRotation) {
-        // Create the new automatic rotation
-        try {
-          await new Promise((resolve, reject) => {
-            db.run(
-              `INSERT INTO rotations (intern_id, unit_id, start_date, end_date, is_manual_assignment)
-               VALUES (?, ?, ?, ?, FALSE)`,
-              [internId, nextUnit.id, newStartDateStr, newEndDateStr],
-              function(err) {
-                if (err) {
-                  console.error(`[AutoAdvance] ❌ Error creating rotation for intern ${internId}:`, err);
-                  reject(err);
-                } else {
-                  console.log(`[AutoAdvance] ✅ Created rotation: ${nextUnit.name} from ${newStartDateStr} to ${newEndDateStr}`);
-                  resolve();
-                }
-              }
-            );
-          });
-        } catch (createError) {
-          console.error(`[AutoAdvance] ❌ Exception creating rotation for intern ${internId}:`, createError);
-          // Continue trying to create other rotations even if one fails
-        }
-        
-        created++;
-      } else {
-        console.log(`[AutoAdvance] Rotation already exists: ${nextUnit.name} starting ${newStartDateStr}`);
-      }
-      
-      // Move to next rotation start date
-      currentStartDate = addDays(newEndDate, 1);
-    }
-    
-    console.log(`[AutoAdvance] ✅ Created ${created} new upcoming rotations for intern ${internId}`);
-    return created > 0;
+
+  // Determine which unit should be next in sequence
+  let currentUnitIndex = lastRotationSorted.unit_id ? units.findIndex(u => u.id === lastRotationSorted.unit_id) : -1;
+  if (currentUnitIndex === -1) {
+    console.warn(`[AutoAdvance] Unit ${lastRotationSorted.unit_id} not found for intern ${internId}; defaulting to first unit`);
+    currentUnitIndex = -1;
   }
-  
-  console.log(`[AutoAdvance] No rotations created for intern ${internId}`);
-  return false;
+  const nextUnitIndex = (currentUnitIndex + 1) % units.length;
+  const nextUnit = units[nextUnitIndex];
+
+  // Ensure internship hasn't ended
+  const internshipEndDate = addDays(
+    internStartDate,
+    intern.status === 'Extended' ? 365 + (intern.extension_days || 0) : 365
+  );
+  if (nextStartDate > internshipEndDate) {
+    console.log(`[AutoAdvance] Internship ended for intern ${internId}; stopping auto-advance`);
+    return false;
+  }
+
+  const nextEndDate = addDays(nextStartDate, nextUnit.duration_days - 1);
+  const nextEndDateStr = format(nextEndDate, 'yyyy-MM-dd');
+
+  try {
+    await new Promise((resolve, reject) => {
+      db.run(
+        `INSERT INTO rotations (intern_id, unit_id, start_date, end_date, is_manual_assignment)
+         VALUES (?, ?, ?, ?, FALSE)`,
+        [internId, nextUnit.id, nextStartDateStr, nextEndDateStr],
+        function(err) {
+          if (err) {
+            console.error(`[AutoAdvance] ❌ Error creating rotation for intern ${internId}:`, err);
+            reject(err);
+          } else {
+            console.log(`[AutoAdvance] ✅ Created automatic rotation: ${nextUnit.name} from ${nextStartDateStr} to ${nextEndDateStr}`);
+            resolve();
+          }
+        }
+      );
+    });
+
+    return true;
+  } catch (err) {
+    console.error(`[AutoAdvance] ❌ Exception creating rotation for intern ${internId}:`, err);
+    return false;
+  }
+
 }
 
 // Helper function to generate rotations for a new intern (called asynchronously)
