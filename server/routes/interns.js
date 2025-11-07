@@ -613,10 +613,6 @@ async function autoAdvanceInternRotation(internId) {
   
   console.log(`[AutoAdvance] Intern ${internId} has ${allRotationsHistory.length} total rotations`);
 
-  // Determine last rotation (manual or automatic); if none exist, seed from intern start date.
-  let lastRotation = allRotationsHistory[allRotationsHistory.length - 1] || null;
-
-  // Validate intern start date (needed when seeding)
   if (!intern.start_date) {
     console.error(`[AutoAdvance] Intern ${internId} (${intern.name}): Missing start_date, cannot create rotations`);
     return false;
@@ -634,13 +630,54 @@ async function autoAdvanceInternRotation(internId) {
     return false;
   }
 
+  let lastRotation = allRotationsHistory[allRotationsHistory.length - 1] || null;
+
   if (!lastRotation) {
-    console.log(`[AutoAdvance] Intern ${internId} has no rotations history - treating start_date as last end date`);
-    lastRotation = {
-      end_date: intern.start_date,
-      unit_id: null,
-      is_manual_assignment: false,
-    };
+    console.log(`[AutoAdvance] Intern ${internId} has no rotations history - creating first automatic rotation`);
+
+    if (units.length === 0) {
+      console.log(`[AutoAdvance] No units available, cannot create first rotation`);
+      return false;
+    }
+
+    const firstUnit = units[0];
+    const todayDateObj = parseISO(today);
+    let firstRotationStart = internStartDate < todayDateObj ? addDays(todayDateObj, 1) : internStartDate;
+    const firstRotationStartStr = format(firstRotationStart, 'yyyy-MM-dd');
+    const firstRotationEnd = addDays(firstRotationStart, firstUnit.duration_days - 1);
+    const firstRotationEndStr = format(firstRotationEnd, 'yyyy-MM-dd');
+
+    try {
+      await new Promise((resolve, reject) => {
+        db.run(
+          `INSERT INTO rotations (intern_id, unit_id, start_date, end_date, is_manual_assignment)
+           VALUES (?, ?, ?, ?, FALSE)`,
+          [internId, firstUnit.id, firstRotationStartStr, firstRotationEndStr],
+          function(err) {
+            if (err) {
+              console.error(`[AutoAdvance] Error creating first rotation for intern ${internId}:`, err);
+              reject(err);
+            } else {
+              console.log(`[AutoAdvance] ✅ Created first rotation: ${firstUnit.name} from ${firstRotationStartStr} to ${firstRotationEndStr}`);
+              resolve();
+            }
+          }
+        );
+      });
+
+      allRotationsHistory.push({
+        intern_id: internId,
+        unit_id: firstUnit.id,
+        start_date: firstRotationStartStr,
+        end_date: firstRotationEndStr,
+        is_manual_assignment: 0,
+      });
+
+      lastRotation = allRotationsHistory[allRotationsHistory.length - 1];
+    } catch (err) {
+      console.error(`[AutoAdvance] Failed to create first rotation for intern ${internId}:`, err);
+      return false;
+    }
   }
 
   // If any rotation (manual or automatic) already starts after today, we're good
