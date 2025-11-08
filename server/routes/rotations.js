@@ -849,7 +849,9 @@ function generateInternRotations(intern, units, startDate, settings, internIndex
     ? 365 + (intern.extension_days || 0) 
     : 365;
   
-  let currentDate = parseISO(intern.start_date);
+  // Use the provided startDate if available, otherwise use intern's start_date
+  // This allows generating rotations from a specific date (e.g., today) rather than intern's original start date
+  let currentDate = startDate || parseISO(intern.start_date);
   const endDate = addDays(currentDate, internshipDuration);
   
   // Calculate base total rotation days (sum of all unit durations)
