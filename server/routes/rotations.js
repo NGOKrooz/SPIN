@@ -332,6 +332,9 @@ router.post('/generate', async (req, res) => {
       });
     });
     
+    // 🎲 Shuffle units slightly for randomness (but consistent within this batch)
+    const shuffledUnits = [...units].sort(() => Math.random() - 0.5);
+    
     // Get settings
     const settingsQuery = 'SELECT key, value FROM settings';
     const settings = await new Promise((resolve, reject) => {
@@ -343,12 +346,15 @@ router.post('/generate', async (req, res) => {
     
     const generatedRotations = [];
     
-    for (const intern of interns) {
+    // 🎯 Each intern gets a different starting unit based on their index
+    for (let internIndex = 0; internIndex < interns.length; internIndex++) {
+      const intern = interns[internIndex];
       const internRotations = generateInternRotations(
         intern, 
-        units, 
+        shuffledUnits, 
         parseISO(rotationStartDate),
-        settings
+        settings,
+        internIndex  // Pass intern index for offset calculation
       );
       generatedRotations.push(...internRotations);
     }
@@ -490,10 +496,10 @@ async function autoAdvanceRotations() {
     return { advanced: 0, skipped: 0, errors: 0 };
   }
   
-  // Get all active interns
+  // Get all active interns (ordered consistently for index calculation)
   const interns = await new Promise((resolve, reject) => {
     db.all(
-      `SELECT * FROM interns WHERE status IN ('Active', 'Extended')`,
+      `SELECT * FROM interns WHERE status IN ('Active', 'Extended') ORDER BY id`,
       [],
       (err, rows) => {
         if (err) reject(err);
@@ -506,7 +512,8 @@ async function autoAdvanceRotations() {
   let skipped = 0;
   let errors = 0;
   
-  for (const intern of interns) {
+  for (let internIndex = 0; internIndex < interns.length; internIndex++) {
+    const intern = interns[internIndex];
     try {
       // Validate intern has valid start_date
       if (!intern.start_date) {
@@ -677,21 +684,21 @@ async function autoAdvanceRotations() {
             break;
           }
           
-          // 🎯 Balanced round-robin: Pick next unit based on (internId + rotationCount) % totalUnits
-          // This ensures even distribution and prevents all interns from clustering on the same units
-          const rotationCount = allRotationsHistory.length;
-          const nextUnitIndex = (intern.id + rotationCount) % units.length;
-          const nextUnit = units[nextUnitIndex];
+          // 🎯 Use intern's index to maintain their unique rotation offset
+          // Create ordered units starting from their designated offset
+          const startUnitIndex = internIndex % units.length;
+          const orderedUnits = [
+            ...units.slice(startUnitIndex),
+            ...units.slice(0, startUnitIndex)
+          ];
           
-          // Optional: 15% chance to add variety by shifting to next unit
-          // This reduces predictable patterns when multiple interns finish simultaneously
-          const finalUnit = (Math.random() < 0.15) 
-            ? units[(nextUnitIndex + 1) % units.length]
-            : nextUnit;
+          // Pick the next unit in their rotation sequence
+          const rotationCount = allRotationsHistory.length;
+          const nextUnitInSequence = orderedUnits[rotationCount % orderedUnits.length];
           
           // 🎯 Calculate extended duration for this unit
           // For extended interns, each unit rotation gets proportionally more days
-          const extendedUnitDuration = Math.round(finalUnit.duration_days * extensionMultiplier / cycles);
+          const extendedUnitDuration = Math.round(nextUnitInSequence.duration_days * extensionMultiplier / cycles);
           
           // Validate currentStartDate before using it
           if (isNaN(currentStartDate.getTime())) {
@@ -728,7 +735,7 @@ async function autoAdvanceRotations() {
           
           // Check if this rotation already exists
           const existingRotation = allRotationsHistory.find(r => 
-            r.start_date === newStartDateStr && r.unit_id === finalUnit.id
+            r.start_date === newStartDateStr && r.unit_id === nextUnitInSequence.id
           );
           
           if (!existingRotation) {
@@ -737,7 +744,7 @@ async function autoAdvanceRotations() {
               db.run(
                 `INSERT INTO rotations (intern_id, unit_id, start_date, end_date, is_manual_assignment)
                  VALUES (?, ?, ?, ?, FALSE)`,
-                [intern.id, finalUnit.id, newStartDateStr, newEndDateStr],
+                [intern.id, nextUnitInSequence.id, newStartDateStr, newEndDateStr],
               function(err) {
                 if (err) reject(err);
                 else resolve();
@@ -779,7 +786,7 @@ async function autoAdvanceRotations() {
 }
 
 // Helper function to generate rotations for a single intern
-function generateInternRotations(intern, units, startDate, settings) {
+function generateInternRotations(intern, units, startDate, settings, internIndex = 0) {
   const rotations = [];
   const internshipDuration = intern.status === 'Extended' 
     ? 365 + (intern.extension_days || 0) 
@@ -798,13 +805,20 @@ function generateInternRotations(intern, units, startDate, settings) {
   // Calculate how many full cycles we can fit
   const cycles = Math.ceil(extensionMultiplier);
   
+  // 🎯 Reorder units so each intern starts at a different offset
+  // Intern 0 starts at unit[0], Intern 1 starts at unit[1], etc.
+  const startUnitIndex = internIndex % units.length;
+  const orderedUnits = [
+    ...units.slice(startUnitIndex),  // Units from start position to end
+    ...units.slice(0, startUnitIndex) // Wrap around: units from beginning to start position
+  ];
+  
   let rotationIndex = 0;
   
-  while (currentDate < endDate && rotationIndex < units.length * cycles) {
-    // 🎯 Balanced round-robin distribution: (internId + rotationCount) % totalUnits
-    // This ensures interns start at different units and cycle through evenly
-    const unitIndex = (intern.id + rotationIndex) % units.length;
-    const unit = units[unitIndex];
+  while (currentDate < endDate && rotationIndex < orderedUnits.length * cycles) {
+    // Pick the next unit in the reordered sequence
+    const unitIndex = rotationIndex % orderedUnits.length;
+    const unit = orderedUnits[unitIndex];
     
     // Start date is current date (immediate, no gaps)
     const rotationStart = currentDate;

@@ -11,58 +11,117 @@ Previously, all interns started their rotations at the same unit (typically Unit
 
 ## The Solution (Now)
 
-### Core Formula
+### Core Approach: Unit Reordering + Index-Based Offset
+
+Instead of using a formula, we **reorder the entire units array** for each intern based on their index:
+
 ```javascript
-unitIndex = (internId + rotationCount) % totalUnits
+// 1. Shuffle units slightly for variety (once per batch)
+const shuffledUnits = units.sort(() => Math.random() - 0.5);
+
+// 2. Each intern gets a different starting offset
+const startUnitIndex = internIndex % units.length;
+
+// 3. Reorder units array for this intern
+const orderedUnits = [
+  ...units.slice(startUnitIndex),      // From start position to end
+  ...units.slice(0, startUnitIndex)     // Wrap around: beginning to start
+];
+
+// 4. Intern cycles through their ordered units sequentially
+for (let i = 0; i < orderedUnits.length; i++) {
+  const unit = orderedUnits[i];
+  // Create rotation...
+}
 ```
 
-This formula ensures:
+This ensures:
 - **Even distribution**: Each intern starts at a different unit
-- **Fair cycling**: All units are utilized equally over time
-- **Automatic balancing**: No manual intervention needed
+- **Complete coverage**: Every intern rotates through ALL units
+- **Staggered timing**: No clustering or overlapping
+- **Light randomness**: Shuffled units prevent fixed patterns
 
 ### Example Distribution
-With 5 units and 3 interns:
+With 5 units (shuffled: [U3, U1, U5, U2, U4]) and 3 interns:
 
-| Intern | Rotation 1 | Rotation 2 | Rotation 3 | Rotation 4 | Rotation 5 |
-|--------|------------|------------|------------|------------|------------|
-| Intern 1 (ID=1) | Unit 2 | Unit 3 | Unit 4 | Unit 5 | Unit 1 |
-| Intern 2 (ID=2) | Unit 3 | Unit 4 | Unit 5 | Unit 1 | Unit 2 |
-| Intern 3 (ID=3) | Unit 4 | Unit 5 | Unit 1 | Unit 2 | Unit 3 |
+| Intern | Start Offset | Rotation 1 | Rotation 2 | Rotation 3 | Rotation 4 | Rotation 5 |
+|--------|--------------|------------|------------|------------|------------|------------|
+| Intern 0 | Offset 0 | U3 | U1 | U5 | U2 | U4 |
+| Intern 1 | Offset 1 | U1 | U5 | U2 | U4 | U3 |
+| Intern 2 | Offset 2 | U5 | U2 | U4 | U3 | U1 |
 
 Notice how:
-- Each intern starts at a different unit
-- The distribution is staggered, preventing clustering
-- All units get equal coverage
+- Each intern starts at a **different unit**
+- Each intern visits **all units** in their own order
+- The distribution is **perfectly staggered**
+- Units are **shuffled** to avoid predictable patterns
 
 ## Implementation Details
 
-### 1. Initial Rotation Generation (`generateInternRotations`)
-When generating rotations for a new intern, the system uses:
+### 1. Batch Rotation Generation (`/api/rotations/generate`)
+When generating rotations for all interns:
+
 ```javascript
-const unitIndex = (intern.id + rotationIndex) % units.length;
+// Shuffle units once for the entire batch
+const shuffledUnits = [...units].sort(() => Math.random() - 0.5);
+
+// Loop through interns with index
+for (let internIndex = 0; internIndex < interns.length; internIndex++) {
+  const intern = interns[internIndex];
+  const rotations = generateInternRotations(
+    intern, 
+    shuffledUnits, 
+    startDate, 
+    settings,
+    internIndex  // Pass index for offset calculation
+  );
+}
 ```
 
-This ensures that interns with different IDs start at different units.
+### 2. Individual Intern Rotation (`generateInternRotations`)
+For each intern, reorder units based on their index:
 
-### 2. Auto-Advance Rotations (`autoAdvanceRotations`)
+```javascript
+// Calculate starting offset
+const startUnitIndex = internIndex % units.length;
+
+// Reorder units array
+const orderedUnits = [
+  ...units.slice(startUnitIndex),   // Units from offset to end
+  ...units.slice(0, startUnitIndex) // Units from start to offset
+];
+
+// Cycle through ordered units sequentially
+for (let i = 0; i < orderedUnits.length; i++) {
+  const unit = orderedUnits[i];
+  // Create rotation with this unit...
+}
+```
+
+### 3. Auto-Advance Rotations (`autoAdvanceRotations`)
 When automatically advancing interns to their next rotation:
+
 ```javascript
-const rotationCount = allRotationsHistory.length;
-const nextUnitIndex = (intern.id + rotationCount) % units.length;
+// Get all interns ordered consistently
+const interns = await getActiveInterns(); // Ordered by ID
+
+// For each intern, use their index
+for (let internIndex = 0; internIndex < interns.length; internIndex++) {
+  const intern = interns[internIndex];
+  
+  // Reorder units based on their index
+  const startUnitIndex = internIndex % units.length;
+  const orderedUnits = [
+    ...units.slice(startUnitIndex),
+    ...units.slice(0, startUnitIndex)
+  ];
+  
+  // Pick next unit in their sequence
+  const nextUnit = orderedUnits[rotationCount % orderedUnits.length];
+}
 ```
 
-This maintains consistency with the initial generation formula.
-
-### 3. Optional Randomization (15% Chance)
-To add variety and reduce predictable patterns when multiple interns finish simultaneously:
-```javascript
-const finalUnit = (Math.random() < 0.15) 
-  ? units[(nextUnitIndex + 1) % units.length]
-  : nextUnit;
-```
-
-This 15% chance introduces slight variation without disrupting the overall balance.
+This maintains consistency with the initial generation, ensuring each intern continues their unique rotation pattern.
 
 ## Extension System: Proportional Duration Increase
 
@@ -150,46 +209,75 @@ const extendedUnitDuration = Math.round(unit.duration_days * extensionMultiplier
 
 ### File: `server/routes/rotations.js`
 
-1. **Lines 780-788**: Added proportional extension calculation in `generateInternRotations`
-   ```javascript
-   const baseRotationDays = units.reduce((sum, unit) => sum + unit.duration_days, 0);
-   const extensionMultiplier = internshipDuration / baseRotationDays;
-   const cycles = Math.ceil(extensionMultiplier);
-   ```
+#### 1. Batch Generation Updates (`/generate` endpoint)
+**Lines 335-360**: Shuffle units and pass intern index
+```javascript
+// Shuffle units once for the entire batch
+const shuffledUnits = [...units].sort(() => Math.random() - 0.5);
 
-2. **Line 795**: Updated unit selection in `generateInternRotations`
-   - Old: `const unitIndex = rotationIndex % units.length;`
-   - New: `const unitIndex = (intern.id + rotationIndex) % units.length;`
+// Loop with index
+for (let internIndex = 0; internIndex < interns.length; internIndex++) {
+  const intern = interns[internIndex];
+  const rotations = generateInternRotations(
+    intern, 
+    shuffledUnits, 
+    startDate, 
+    settings,
+    internIndex  // NEW: Pass intern index
+  );
+}
+```
 
-3. **Line 803**: Calculate extended duration per unit in `generateInternRotations`
-   ```javascript
-   const extendedUnitDuration = Math.round(unit.duration_days * extensionMultiplier / cycles);
-   ```
+#### 2. Updated `generateInternRotations` Function
+**Line 788**: Added `internIndex` parameter
+- Old: `function generateInternRotations(intern, units, startDate, settings)`
+- New: `function generateInternRotations(intern, units, startDate, settings, internIndex = 0)`
 
-4. **Lines 657-660**: Added proportional extension calculation in `autoAdvanceRotations`
-   ```javascript
-   const baseRotationDays = units.reduce((sum, unit) => sum + unit.duration_days, 0);
-   const extensionMultiplier = internshipDuration / baseRotationDays;
-   const cycles = Math.ceil(extensionMultiplier);
-   ```
+**Lines 807-813**: Reorder units based on intern index
+```javascript
+const startUnitIndex = internIndex % units.length;
+const orderedUnits = [
+  ...units.slice(startUnitIndex),
+  ...units.slice(0, startUnitIndex)
+];
+```
 
-5. **Lines 680-690**: Updated unit selection in `autoAdvanceRotations` with balanced formula
-   ```javascript
-   const rotationCount = allRotationsHistory.length;
-   const nextUnitIndex = (intern.id + rotationCount) % units.length;
-   const finalUnit = (Math.random() < 0.15) 
-     ? units[(nextUnitIndex + 1) % units.length]
-     : nextUnit;
-   ```
+**Line 820**: Use reordered units
+- Old: `const unit = units[unitIndex];`
+- New: `const unit = orderedUnits[unitIndex];`
 
-6. **Line 694**: Calculate extended duration for auto-advance rotations
-   ```javascript
-   const extendedUnitDuration = Math.round(finalUnit.duration_days * extensionMultiplier / cycles);
-   ```
+#### 3. Proportional Extension System
+**Lines 797-805**: Extension multiplier calculation
+```javascript
+const baseRotationDays = units.reduce((sum, unit) => sum + unit.duration_days, 0);
+const extensionMultiplier = internshipDuration / baseRotationDays;
+const cycles = Math.ceil(extensionMultiplier);
+```
 
-7. **Line 705**: Use extended duration when calculating end dates
-   - Old: `addDays(currentStartDate, finalUnit.duration_days - 1)`
-   - New: `addDays(currentStartDate, extendedUnitDuration - 1)`
+**Line 827**: Apply extended duration
+```javascript
+const extendedUnitDuration = Math.round(unit.duration_days * extensionMultiplier / cycles);
+```
+
+#### 4. Auto-Advance Updates
+**Lines 500-516**: Loop with intern index
+```javascript
+const interns = await getActiveInterns(); // Ordered by ID
+for (let internIndex = 0; internIndex < interns.length; internIndex++) {
+  const intern = interns[internIndex];
+  // ...
+}
+```
+
+**Lines 687-697**: Use intern index for unit selection
+```javascript
+const startUnitIndex = internIndex % units.length;
+const orderedUnits = [
+  ...units.slice(startUnitIndex),
+  ...units.slice(0, startUnitIndex)
+];
+const nextUnitInSequence = orderedUnits[rotationCount % orderedUnits.length];
+```
 
 ## Usage
 
