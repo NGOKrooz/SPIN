@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const db = require('../database/dbWrapper');
 const { addDays, format, parseISO, differenceInDays } = require('date-fns');
+const { getNextUnitForIntern } = require('./rotations');
 
 const router = express.Router();
 
@@ -577,6 +578,18 @@ async function autoAdvanceInternRotation(internId) {
   
   console.log(`[AutoAdvance] Found ${units.length} units`);
   
+  // Get all active interns (ordered consistently for round-robin indexing)
+  const allInterns = await new Promise((resolve, reject) => {
+    db.all(
+      `SELECT * FROM interns WHERE status IN ('Active', 'Extended') ORDER BY id ASC`,
+      [],
+      (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      }
+    );
+  });
+  
   // Get the intern
   const intern = await new Promise((resolve, reject) => {
     db.get(
@@ -623,7 +636,22 @@ async function autoAdvanceInternRotation(internId) {
     return false;
   }
 
-  let lastRotation = allRotationsHistory[allRotationsHistory.length - 1] || null;
+  // Get the last rotation (ordered by end_date DESC to get the most recent)
+  const lastRotationQuery = await new Promise((resolve, reject) => {
+    db.get(
+      `SELECT * FROM rotations 
+       WHERE intern_id = ?
+       ORDER BY end_date DESC
+       LIMIT 1`,
+      [internId],
+      (err, row) => {
+        if (err) reject(err);
+        else resolve(row || null);
+      }
+    );
+  });
+  
+  let lastRotation = lastRotationQuery;
 
   if (!lastRotation) {
     console.log(`[AutoAdvance] Intern ${internId} has no rotations history - creating first automatic rotation`);
@@ -633,7 +661,14 @@ async function autoAdvanceInternRotation(internId) {
       return false;
     }
 
-    const firstUnit = units[0];
+    // Use round-robin logic to get the first unit for this intern
+    const firstUnit = await getNextUnitForIntern(internId, units, allInterns, null);
+    
+    if (!firstUnit) {
+      console.log(`[AutoAdvance] No available unit for intern ${internId}`);
+      return false;
+    }
+    
     const todayDateObj = parseDateSafe(today);
     let firstRotationStart = internStartDate < todayDateObj ? addDays(todayDateObj, 1) : internStartDate;
     const firstRotationStartStr = format(firstRotationStart, 'yyyy-MM-dd');
@@ -716,13 +751,13 @@ async function autoAdvanceInternRotation(internId) {
     }
   }
 
-  let currentUnitIndex = lastRotationSorted.unit_id ? units.findIndex(u => u.id === lastRotationSorted.unit_id) : -1;
-  if (currentUnitIndex === -1) {
-    console.warn(`[AutoAdvance] Unit ${lastRotationSorted.unit_id} not found for intern ${internId}; defaulting to first unit`);
-    currentUnitIndex = -1;
+  // Use flexible, fair round-robin logic to get next unit
+  const nextUnit = await getNextUnitForIntern(internId, units, allInterns, lastRotation);
+  
+  if (!nextUnit) {
+    console.warn(`[AutoAdvance] No available unit for intern ${internId}`);
+    return false;
   }
-  const nextUnitIndex = (currentUnitIndex + 1) % units.length;
-  const nextUnit = units[nextUnitIndex];
 
   const internshipEndDate = addDays(
     internStartDate,

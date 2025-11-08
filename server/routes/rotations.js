@@ -343,7 +343,7 @@ router.post('/generate', async (req, res) => {
     
     const generatedRotations = [];
     
-    // 🎯 Round-robin: Each intern gets a different starting unit based on their index
+    // Round-robin: Each intern gets a different starting unit based on their index
     // Intern 0 starts at Unit 0, Intern 1 starts at Unit 1, etc.
     // When all units are used, it cycles back to Unit 0
     for (let internIndex = 0; internIndex < interns.length; internIndex++) {
@@ -465,6 +465,41 @@ router.delete('/:id', (req, res) => {
   });
 });
 
+// Helper function to get the next unit for an intern using flexible, fair round-robin logic
+// Ensures each intern starts at a different unit and cycles through units fairly
+async function getNextUnitForIntern(internId, units, interns, lastRotation) {
+  if (!units.length) return null;
+
+  // Find intern's index in the ordered list
+  const internIndex = interns.findIndex(i => i.id === internId);
+  if (internIndex === -1) return null;
+
+  // Get count of units
+  const unitCount = units.length;
+
+  // Base offset ensures each intern starts on a different unit
+  const baseOffset = internIndex % unitCount;
+
+  // Determine which unit comes next
+  let nextUnitIndex;
+  if (!lastRotation) {
+    // No rotation yet → assign starting offset
+    nextUnitIndex = baseOffset;
+  } else {
+    // Find the last unit's index
+    const lastUnitIndex = units.findIndex(u => u.id === lastRotation.unit_id);
+    if (lastUnitIndex === -1) {
+      // Last unit not found, fall back to base offset
+      nextUnitIndex = baseOffset;
+    } else {
+      // Move to next unit in sequence, wrapping around
+      nextUnitIndex = (lastUnitIndex + 1) % unitCount;
+    }
+  }
+
+  return units[nextUnitIndex];
+}
+
 // Helper function to automatically advance interns to their next rotation
 // Only works with automatic rotations (is_manual_assignment = FALSE)
 // Always ensures there's an upcoming rotation visible
@@ -549,6 +584,26 @@ async function autoAdvanceRotations() {
         );
       });
       
+      // Get all automatic rotations to check for existing upcoming ones
+      const automaticRotations = allRotationsHistory.filter(r => !r.is_manual_assignment);
+      
+      // Get the last rotation (ordered by end_date DESC to get the most recent)
+      const lastRotationQuery = await new Promise((resolve, reject) => {
+        db.get(
+          `SELECT * FROM rotations 
+           WHERE intern_id = ?
+           ORDER BY end_date DESC
+           LIMIT 1`,
+          [intern.id],
+          (err, row) => {
+            if (err) reject(err);
+            else resolve(row || null);
+          }
+        );
+      });
+      
+      const lastRotation = lastRotationQuery;
+      
       if (allRotationsHistory.length === 0) {
         // No rotations yet, skip (should be handled by initial generation)
         console.log(`[AutoAdvance] Intern ${intern.id} (${intern.name}): No rotations yet, skipping`);
@@ -556,31 +611,30 @@ async function autoAdvanceRotations() {
         continue;
       }
       
-      // Get all automatic rotations to check for existing upcoming ones
-      const automaticRotations = allRotationsHistory.filter(r => !r.is_manual_assignment);
-      
-      // Get the last rotation (manual or automatic) to determine next unit
-      const lastRotation = allRotationsHistory[allRotationsHistory.length - 1];
-      
-      // Validate last rotation has valid end_date
-      if (!lastRotation.end_date) {
-        console.error(`[AutoAdvance] Intern ${intern.id}: Last rotation has no end_date, skipping`);
-        errors++;
-        continue;
-      }
-      
+      // Validate last rotation has valid end_date (if it exists)
       let lastEndDate;
-      try {
-        lastEndDate = parseISO(lastRotation.end_date);
-        if (isNaN(lastEndDate.getTime())) {
-          console.error(`[AutoAdvance] Intern ${intern.id}: Invalid end_date "${lastRotation.end_date}", skipping`);
+      if (lastRotation) {
+        if (!lastRotation.end_date) {
+          console.error(`[AutoAdvance] Intern ${intern.id}: Last rotation has no end_date, skipping`);
           errors++;
           continue;
         }
-      } catch (err) {
-        console.error(`[AutoAdvance] Intern ${intern.id}: Error parsing end_date "${lastRotation.end_date}":`, err);
-        errors++;
-        continue;
+        
+        try {
+          lastEndDate = parseISO(lastRotation.end_date);
+          if (isNaN(lastEndDate.getTime())) {
+            console.error(`[AutoAdvance] Intern ${intern.id}: Invalid end_date "${lastRotation.end_date}", skipping`);
+            errors++;
+            continue;
+          }
+        } catch (err) {
+          console.error(`[AutoAdvance] Intern ${intern.id}: Error parsing end_date "${lastRotation.end_date}":`, err);
+          errors++;
+          continue;
+        }
+      } else {
+        // No last rotation found, use intern's start date
+        lastEndDate = internStartDate;
       }
       
       // Check if there's an upcoming automatic rotation (start_date > today)
@@ -668,6 +722,7 @@ async function autoAdvanceRotations() {
         // Generate the next rotation(s)
         let currentStartDate = nextStartDate;
         let created = 0;
+        let currentLastRotation = lastRotation; // Track last rotation as we create new ones
         
         while (created < rotationsToCreate) {
           // Validate currentStartDate before comparing
@@ -683,22 +738,17 @@ async function autoAdvanceRotations() {
             break;
           }
           
-          // 🎯 Use intern's index to maintain their unique rotation offset
-          // Create ordered units starting from their designated offset
-          const startUnitIndex = internIndex % units.length;
-          const orderedUnits = [
-            ...units.slice(startUnitIndex),
-            ...units.slice(0, startUnitIndex)
-          ];
+          // Use flexible, fair round-robin logic to get next unit
+          const nextUnit = await getNextUnitForIntern(intern.id, units, interns, currentLastRotation);
           
-          // Pick the next unit in their rotation sequence
-          // Count only automatic rotations to maintain proper round-robin sequence
-          const automaticRotationCount = automaticRotations.length;
-          const nextUnitInSequence = orderedUnits[automaticRotationCount % orderedUnits.length];
+          if (!nextUnit) {
+            console.warn(`[AutoAdvance] No available unit for intern ${intern.id} (${intern.name}), skipping`);
+            break;
+          }
           
-          // 🎯 Calculate extended duration for this unit
+          // Calculate extended duration for this unit
           // For extended interns, each unit rotation gets proportionally more days
-          const extendedUnitDuration = Math.round(nextUnitInSequence.duration_days * extensionMultiplier / cycles);
+          const extendedUnitDuration = Math.round(nextUnit.duration_days * extensionMultiplier / cycles);
           
           // Validate currentStartDate before using it
           if (isNaN(currentStartDate.getTime())) {
@@ -735,7 +785,7 @@ async function autoAdvanceRotations() {
           
           // Check if this rotation already exists
           const existingRotation = allRotationsHistory.find(r => 
-            r.start_date === newStartDateStr && r.unit_id === nextUnitInSequence.id
+            r.start_date === newStartDateStr && r.unit_id === nextUnit.id
           );
           
           if (!existingRotation) {
@@ -744,7 +794,7 @@ async function autoAdvanceRotations() {
               db.run(
                 `INSERT INTO rotations (intern_id, unit_id, start_date, end_date, is_manual_assignment)
                  VALUES (?, ?, ?, ?, FALSE)`,
-                [intern.id, nextUnitInSequence.id, newStartDateStr, newEndDateStr],
+                [intern.id, nextUnit.id, newStartDateStr, newEndDateStr],
               function(err) {
                 if (err) reject(err);
                 else resolve();
@@ -754,6 +804,13 @@ async function autoAdvanceRotations() {
             
             created++;
             advanced++;
+            
+            // Update currentLastRotation to the newly created rotation for next iteration
+            currentLastRotation = {
+              id: null, // We don't have the ID, but we have the unit_id
+              unit_id: nextUnit.id,
+              end_date: newEndDateStr
+            };
           }
           
           // Next rotation starts the day after this one ends
@@ -798,14 +855,14 @@ function generateInternRotations(intern, units, startDate, settings, internIndex
   // Calculate base total rotation days (sum of all unit durations)
   const baseRotationDays = units.reduce((sum, unit) => sum + unit.duration_days, 0);
   
-  // 🎯 Calculate extension multiplier to distribute extra days across all units
+  // Calculate extension multiplier to distribute extra days across all units
   // For extended interns, each unit duration is proportionally increased
   const extensionMultiplier = internshipDuration / baseRotationDays;
   
   // Calculate how many full cycles we can fit
   const cycles = Math.ceil(extensionMultiplier);
   
-  // 🎯 Reorder units so each intern starts at a different offset
+  // Reorder units so each intern starts at a different offset
   // Intern 0 starts at unit[0], Intern 1 starts at unit[1], etc.
   const startUnitIndex = internIndex % units.length;
   const orderedUnits = [
@@ -823,7 +880,7 @@ function generateInternRotations(intern, units, startDate, settings, internIndex
     // Start date is current date (immediate, no gaps)
     const rotationStart = currentDate;
     
-    // 🎯 Calculate extended duration for this unit
+    // Calculate extended duration for this unit
     // For extended interns, each unit gets proportionally more days
     const extendedUnitDuration = Math.round(unit.duration_days * extensionMultiplier / cycles);
     
@@ -853,3 +910,4 @@ function generateInternRotations(intern, units, startDate, settings, internIndex
 }
 
 module.exports = router;
+module.exports.getNextUnitForIntern = getNextUnitForIntern;
