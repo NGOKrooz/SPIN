@@ -309,11 +309,11 @@ router.post('/generate', async (req, res) => {
     const { start_date } = req.body;
     const rotationStartDate = start_date || format(new Date(), 'yyyy-MM-dd');
     
-    // Get all active interns
+    // Get all active interns - order by id for consistent round-robin indexing
     const internsQuery = `
       SELECT * FROM interns 
       WHERE status IN ('Active', 'Extended')
-      ORDER BY start_date, batch
+      ORDER BY id ASC
     `;
     
     const interns = await new Promise((resolve, reject) => {
@@ -323,17 +323,14 @@ router.post('/generate', async (req, res) => {
       });
     });
     
-    // Get all units
-    const unitsQuery = 'SELECT * FROM units ORDER BY id';
+    // Get all units - order by id for consistent round-robin sequence
+    const unitsQuery = 'SELECT * FROM units ORDER BY id ASC';
     const units = await new Promise((resolve, reject) => {
       db.all(unitsQuery, [], (err, rows) => {
         if (err) reject(err);
         else resolve(rows);
       });
     });
-    
-    // 🎲 Shuffle units slightly for randomness (but consistent within this batch)
-    const shuffledUnits = [...units].sort(() => Math.random() - 0.5);
     
     // Get settings
     const settingsQuery = 'SELECT key, value FROM settings';
@@ -346,12 +343,14 @@ router.post('/generate', async (req, res) => {
     
     const generatedRotations = [];
     
-    // 🎯 Each intern gets a different starting unit based on their index
+    // 🎯 Round-robin: Each intern gets a different starting unit based on their index
+    // Intern 0 starts at Unit 0, Intern 1 starts at Unit 1, etc.
+    // When all units are used, it cycles back to Unit 0
     for (let internIndex = 0; internIndex < interns.length; internIndex++) {
       const intern = interns[internIndex];
       const internRotations = generateInternRotations(
         intern, 
-        shuffledUnits, 
+        units, 
         parseISO(rotationStartDate),
         settings,
         internIndex  // Pass intern index for offset calculation
@@ -693,8 +692,9 @@ async function autoAdvanceRotations() {
           ];
           
           // Pick the next unit in their rotation sequence
-          const rotationCount = allRotationsHistory.length;
-          const nextUnitInSequence = orderedUnits[rotationCount % orderedUnits.length];
+          // Count only automatic rotations to maintain proper round-robin sequence
+          const automaticRotationCount = automaticRotations.length;
+          const nextUnitInSequence = orderedUnits[automaticRotationCount % orderedUnits.length];
           
           // 🎯 Calculate extended duration for this unit
           // For extended interns, each unit rotation gets proportionally more days
