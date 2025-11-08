@@ -800,11 +800,30 @@ async function autoAdvanceInternRotation(internId) {
 // Helper function to generate rotations for a new intern (called asynchronously)
 async function generateRotationsForIntern(internId, batch, start_date) {
   try {
-    // Get all units
+    // Get all active interns ordered by ID for round-robin indexing
+    const allInterns = await new Promise((resolve, reject) => {
+      db.all(
+        `SELECT * FROM interns WHERE status IN ('Active', 'Extended') ORDER BY id ASC`,
+        [],
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows || []);
+        }
+      );
+    });
+    
+    // Find the new intern's index for round-robin assignment
+    const internIndex = allInterns.findIndex(i => i.id === internId);
+    if (internIndex === -1) {
+      console.error(`[GenerateRotations] Intern ${internId} not found in active interns list`);
+      return;
+    }
+    
+    // Get all units ordered by ID for consistent round-robin sequence
     const units = await new Promise((resolve, reject) => {
-      db.all('SELECT * FROM units ORDER BY id', [], (err, rows) => {
+      db.all('SELECT * FROM units ORDER BY id ASC', [], (err, rows) => {
         if (err) reject(err);
-        else resolve(rows);
+        else resolve(rows || []);
       });
     });
     
@@ -839,11 +858,13 @@ async function generateRotationsForIntern(internId, batch, start_date) {
       extension_days: 0
     };
     
+    // Pass internIndex for round-robin assignment
     const rotations = generateInternRotations(
       internData,
       units,
       parseISO(start_date),
-      settings
+      settings,
+      internIndex
     );
     
     // Insert generated rotations
@@ -868,39 +889,50 @@ async function generateRotationsForIntern(internId, batch, start_date) {
 }
 
 // Helper function to generate rotations for a single intern
-function generateInternRotations(intern, units, startDate, settings) {
+function generateInternRotations(intern, units, startDate, settings, internIndex = 0) {
   const rotations = [];
-  
-  if (!units || units.length === 0) {
-    console.warn('No units available for rotation generation');
-    return rotations;
-  }
-  
-  // Calculate internship duration based on units (one rotation through all units)
-  // Internship ends after completing all units once, not after 365 days
-  const totalRotationDays = units.reduce((sum, unit) => sum + unit.duration_days, 0);
-  
-  // If extended, add extension days
-  const extensionDays = intern.status === 'Extended' ? (intern.extension_days || 0) : 0;
-  const internshipDuration = totalRotationDays + extensionDays;
+  const internshipDuration = intern.status === 'Extended' 
+    ? 365 + (intern.extension_days || 0) 
+    : 365;
   
   let currentDate = parseISO(intern.start_date);
   const endDate = addDays(currentDate, internshipDuration);
   
-  // Generate rotations through all units once (plus any extension cycles if needed)
+  // Calculate base total rotation days (sum of all unit durations)
+  const baseRotationDays = units.reduce((sum, unit) => sum + unit.duration_days, 0);
+  
+  // Calculate extension multiplier to distribute extra days across all units
+  // For extended interns, each unit duration is proportionally increased
+  const extensionMultiplier = internshipDuration / baseRotationDays;
+  
+  // Calculate how many full cycles we can fit
+  const cycles = Math.ceil(extensionMultiplier);
+  
+  // Reorder units so each intern starts at a different offset (round-robin)
+  // Intern 0 starts at unit[0], Intern 1 starts at unit[1], etc.
+  const startUnitIndex = internIndex % units.length;
+  const orderedUnits = [
+    ...units.slice(startUnitIndex),  // Units from start position to end
+    ...units.slice(0, startUnitIndex) // Wrap around: units from beginning to start position
+  ];
+  
   let rotationIndex = 0;
   
-  // Go through all units at least once
-  while (currentDate < endDate && rotationIndex < units.length * 1000) { // Safety limit
-    const unitIndex = rotationIndex % units.length;
-    const unit = units[unitIndex];
+  while (currentDate < endDate && rotationIndex < orderedUnits.length * cycles) {
+    // Pick the next unit in the reordered sequence
+    const unitIndex = rotationIndex % orderedUnits.length;
+    const unit = orderedUnits[unitIndex];
     
     // Start date is current date (immediate, no gaps)
     const rotationStart = currentDate;
     
-    // Calculate end date based on unit duration (includes off days)
+    // Calculate extended duration for this unit
+    // For extended interns, each unit gets proportionally more days
+    const extendedUnitDuration = Math.round(unit.duration_days * extensionMultiplier / cycles);
+    
+    // Calculate end date based on extended unit duration (includes off days)
     // Duration is the number of calendar days, including off days
-    let rotationEnd = addDays(rotationStart, unit.duration_days - 1);
+    let rotationEnd = addDays(rotationStart, extendedUnitDuration - 1);
     
     // Ensure rotation doesn't exceed internship end date
     const actualEnd = rotationEnd > endDate ? endDate : rotationEnd;
@@ -915,11 +947,6 @@ function generateInternRotations(intern, units, startDate, settings) {
     // Next rotation starts immediately after this one ends (no gaps)
     currentDate = addDays(actualEnd, 1);
     rotationIndex++;
-    
-    // If we've completed all units once and there's no extension, stop
-    if (rotationIndex === units.length && extensionDays === 0) {
-      break;
-    }
   }
   
   return rotations;
