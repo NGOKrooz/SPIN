@@ -266,9 +266,9 @@ router.post('/', validateIntern, (req, res) => {
           });
         } else {
           // Check if auto-generate on create is enabled (from JSON settings)
-          db.get('SELECT value FROM settings WHERE key = ?', ['auto-generation'], (err, setting) => {
+          db.get('SELECT value FROM settings WHERE key = ?', ['auto_generation'], (err, setting) => {
             if (err) {
-              console.error('Error checking auto-generation setting:', err);
+              console.error('[CreateIntern] Error checking auto-generation setting:', err);
               return res.status(201).json({
                 id: internId,
                 name,
