@@ -284,7 +284,6 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                           <p className="text-sm font-medium text-blue-600">
                             {(() => {
                               const startDate = normalizeDate(rotation.start_date);
-                              const endDate = normalizeDate(rotation.end_date);
                               const currentDate = normalizeDate(new Date());
                               // Always calculate from actual dates to account for extensions
                               const totalDays = getRotationDuration(rotation);

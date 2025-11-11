@@ -4,6 +4,21 @@ const db = require('../database/dbWrapper');
 
 const router = express.Router();
 
+const defaultUnits = [
+  { name: 'Adult Neurology', duration_days: 2, patient_count: 0 },
+  { name: 'Acute Stroke', duration_days: 2, patient_count: 0 },
+  { name: 'Neurosurgery', duration_days: 2, patient_count: 0 },
+  { name: 'Geriatrics', duration_days: 2, patient_count: 0 },
+  { name: 'Orthopedic Inpatients', duration_days: 2, patient_count: 0 },
+  { name: 'Orthopedic Outpatients', duration_days: 2, patient_count: 0 },
+  { name: 'Electrophysiology', duration_days: 2, patient_count: 0 },
+  { name: 'Exercise Immunology', duration_days: 2, patient_count: 0 },
+  { name: "Women's Health", duration_days: 2, patient_count: 0 },
+  { name: 'Pediatrics Inpatients', duration_days: 2, patient_count: 0 },
+  { name: 'Pediatrics Outpatients', duration_days: 2, patient_count: 0 },
+  { name: 'Cardio Thoracic Unit', duration_days: 2, patient_count: 0 }
+];
+
 // Validation middleware
 const validateUnit = [
   body('name').trim().isLength({ min: 2, max: 100 }).withMessage('Name must be 2-100 characters'),
