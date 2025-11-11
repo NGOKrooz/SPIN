@@ -2,7 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const db = require('../database/dbWrapper');
 const { addDays, format, parseISO, differenceInDays } = require('date-fns');
-const { getNextUnitForIntern } = require('./rotations');
+const { getNextUnitForIntern, getRoundRobinCounter, setRoundRobinCounter } = require('./rotations');
 
 const router = express.Router();
 
@@ -853,7 +853,7 @@ async function generateRotationsForIntern(internId, batch, start_date) {
       );
     });
     
-    // Find the new intern's index for round-robin assignment
+    // Find the new intern's index for fallback round-robin assignment
     const internIndex = allInterns.findIndex(i => i.id === internId);
     if (internIndex === -1) {
       console.error(`[GenerateRotations] Intern ${internId} not found in active interns list`);
@@ -889,7 +889,22 @@ async function generateRotationsForIntern(internId, batch, start_date) {
         }
       });
     });
-    
+    if (units.length === 0) {
+      console.warn('[GenerateRotations] No units available, skipping rotation creation');
+      return;
+    }
+
+    let startOffset = internIndex % units.length;
+    let roundRobinCounter;
+
+    try {
+      roundRobinCounter = await getRoundRobinCounter();
+      startOffset = roundRobinCounter % units.length;
+    } catch (counterErr) {
+      console.error('[GenerateRotations] Failed to read round robin counter, using intern index fallback:', counterErr);
+      roundRobinCounter = null;
+    }
+
     // Generate rotations for this intern
     const internData = {
       id: internId,
@@ -905,7 +920,7 @@ async function generateRotationsForIntern(internId, batch, start_date) {
       units,
       parseISO(start_date),
       settings,
-      internIndex
+      startOffset
     );
     
     // Insert generated rotations
@@ -922,6 +937,14 @@ async function generateRotationsForIntern(internId, batch, start_date) {
         );
       });
     }
+
+    if (roundRobinCounter !== null) {
+      try {
+        await setRoundRobinCounter(roundRobinCounter + 1);
+      } catch (counterErr) {
+        console.error('[GenerateRotations] Failed to advance round robin counter after creating rotations:', counterErr);
+      }
+    }
     
   } catch (genErr) {
     console.error('Error auto-generating rotations:', genErr);
@@ -930,15 +953,19 @@ async function generateRotationsForIntern(internId, batch, start_date) {
 }
 
 // Helper function to generate rotations for a single intern
-function generateInternRotations(intern, units, startDate, settings, internIndex = 0) {
+function generateInternRotations(intern, units, startDate, settings, startOffset = 0) {
   const rotations = [];
   
+  if (!units.length) {
+    return rotations;
+  }
+
   // Use the provided startDate if available, otherwise use intern's start_date
   let currentDate = startDate || parseISO(intern.start_date);
   
   // Reorder units so each intern starts at a different offset (round-robin)
   // Intern 0 starts at unit[0], Intern 1 starts at unit[1], etc.
-  const startUnitIndex = internIndex % units.length;
+  const startUnitIndex = startOffset % units.length;
   const orderedUnits = [
     ...units.slice(startUnitIndex),  // Units from start position to end
     ...units.slice(0, startUnitIndex) // Wrap around: units from beginning to start position

@@ -323,6 +323,15 @@ router.post('/generate', async (req, res) => {
       });
     });
     
+    // Get all intern ids (including completed) to maintain global round-robin order
+    const internIdsQuery = 'SELECT id FROM interns ORDER BY id ASC';
+    const allInternsOrdered = await new Promise((resolve, reject) => {
+      db.all(internIdsQuery, [], (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+    
     // Get all units - order by id for consistent round-robin sequence
     const unitsQuery = 'SELECT * FROM units ORDER BY id ASC';
     const units = await new Promise((resolve, reject) => {
@@ -342,12 +351,15 @@ router.post('/generate', async (req, res) => {
     });
     
     const generatedRotations = [];
+    let roundRobinCounter = await getRoundRobinCounter();
     
     // Round-robin: Each intern gets a different starting unit based on their index
     // Intern 0 starts at Unit 0, Intern 1 starts at Unit 1, etc.
     // When all units are used, it cycles back to Unit 0
-    for (let internIndex = 0; internIndex < interns.length; internIndex++) {
-      const intern = interns[internIndex];
+    for (const intern of interns) {
+      if (units.length === 0) continue;
+      const internIndex = roundRobinCounter % units.length;
+      roundRobinCounter++;
       const internRotations = generateInternRotations(
         intern, 
         units, 
@@ -357,6 +369,8 @@ router.post('/generate', async (req, res) => {
       );
       generatedRotations.push(...internRotations);
     }
+    
+    await setRoundRobinCounter(roundRobinCounter);
     
     // Clear existing future rotations
     const clearQuery = `
@@ -470,34 +484,82 @@ router.delete('/:id', (req, res) => {
 async function getNextUnitForIntern(internId, units, interns, lastRotation) {
   if (!units.length) return null;
 
-  // Find intern's index in the ordered list
-  const internIndex = interns.findIndex(i => i.id === internId);
-  if (internIndex === -1) return null;
-
-  // Get count of units
   const unitCount = units.length;
 
-  // Base offset ensures each intern starts on a different unit
-  const baseOffset = internIndex % unitCount;
-
-  // Determine which unit comes next
-  let nextUnitIndex;
+  // When there is no previous rotation, use the persistent round-robin counter
   if (!lastRotation) {
-    // No rotation yet → assign starting offset
-    nextUnitIndex = baseOffset;
-  } else {
-    // Find the last unit's index
-    const lastUnitIndex = units.findIndex(u => u.id === lastRotation.unit_id);
-    if (lastUnitIndex === -1) {
-      // Last unit not found, fall back to base offset
-      nextUnitIndex = baseOffset;
-    } else {
-      // Move to next unit in sequence, wrapping around
-      nextUnitIndex = (lastUnitIndex + 1) % unitCount;
+    try {
+      const currentOffset = await getRoundRobinCounter();
+      const nextUnitIndex = currentOffset % unitCount;
+      await setRoundRobinCounter(currentOffset + 1);
+      return units[nextUnitIndex];
+    } catch (err) {
+      console.error('[getNextUnitForIntern] Failed to use round robin counter:', err);
+      // Fall through to legacy intern-index offset logic if counter fails
+      const internIndex = interns.findIndex(i => i.id === internId);
+      const baseOffset = internIndex >= 0 ? internIndex % unitCount : 0;
+      return units[baseOffset];
     }
   }
 
+  // There is an existing rotation; continue to the next unit in sequence
+  const lastUnitIndex = units.findIndex(u => u.id === lastRotation.unit_id);
+  if (lastUnitIndex === -1) {
+    // Last unit no longer exists – fall back to round-robin counter
+    const currentOffset = await getRoundRobinCounter();
+    const nextUnitIndex = currentOffset % unitCount;
+    await setRoundRobinCounter(currentOffset + 1);
+    return units[nextUnitIndex];
+  }
+
+  const nextUnitIndex = (lastUnitIndex + 1) % unitCount;
   return units[nextUnitIndex];
+}
+
+async function getRoundRobinCounter() {
+  return new Promise((resolve, reject) => {
+    db.get(
+      `SELECT value FROM settings WHERE key = 'round_robin_offset'`,
+      [],
+      (err, row) => {
+        if (err) return reject(err);
+        const value = row && row.value !== undefined ? parseInt(row.value, 10) : 0;
+        resolve(Number.isFinite(value) ? value : 0);
+      }
+    );
+  });
+}
+
+async function setRoundRobinCounter(value) {
+  const counterValue = String(value);
+  return new Promise((resolve, reject) => {
+    db.get(
+      `SELECT key FROM settings WHERE key = 'round_robin_offset'`,
+      [],
+      (err, row) => {
+        if (err) return reject(err);
+        if (row) {
+          db.run(
+            `UPDATE settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = 'round_robin_offset'`,
+            [counterValue],
+            function(updateErr) {
+              if (updateErr) reject(updateErr);
+              else resolve();
+            }
+          );
+        } else {
+          db.run(
+            `INSERT INTO settings (key, value, description, updated_at) VALUES ('round_robin_offset', ?, 'Tracks next starting unit for round-robin', CURRENT_TIMESTAMP)`,
+            [counterValue],
+            function(insertErr) {
+              if (insertErr) reject(insertErr);
+              else resolve();
+            }
+          );
+        }
+      }
+    );
+  });
 }
 
 // Helper function to automatically advance interns to their next rotation
@@ -526,6 +588,18 @@ async function autoAdvanceRotations() {
     });
   });
   
+  // Get all interns (including completed) to maintain consistent round-robin order
+  const allInternsOrdered = await new Promise((resolve, reject) => {
+    db.all(
+      `SELECT id FROM interns ORDER BY id`,
+      [],
+      (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      }
+    );
+  });
+
   if (units.length === 0) {
     return { advanced: 0, skipped: 0, errors: 0 };
   }
@@ -722,7 +796,7 @@ async function autoAdvanceRotations() {
       
       if (rotationsToCreate > 0) {
         // Check if this would be the last unit
-        const nextUnit = await getNextUnitForIntern(intern.id, units, interns, lastRotation);
+        const nextUnit = await getNextUnitForIntern(intern.id, units, allInternsOrdered, lastRotation);
         
         if (!nextUnit) {
           console.warn(`[AutoAdvance] No available unit for intern ${intern.id} (${intern.name})`);
@@ -807,15 +881,19 @@ async function autoAdvanceRotations() {
 }
 
 // Helper function to generate rotations for a single intern
-function generateInternRotations(intern, units, startDate, settings, internIndex = 0) {
+function generateInternRotations(intern, units, startDate, settings, startOffset = 0) {
   const rotations = [];
   
+  if (!units.length) {
+    return rotations;
+  }
+
   // Use the provided startDate if available, otherwise use intern's start_date
   let currentDate = startDate || parseISO(intern.start_date);
   
   // Reorder units so each intern starts at a different offset (round-robin)
   // Intern 0 starts at unit[0], Intern 1 starts at unit[1], etc.
-  const startUnitIndex = internIndex % units.length;
+  const startUnitIndex = startOffset % units.length;
   const orderedUnits = [
     ...units.slice(startUnitIndex),  // Units from start position to end
     ...units.slice(0, startUnitIndex) // Wrap around: units from beginning to start position
@@ -858,3 +936,5 @@ function generateInternRotations(intern, units, startDate, settings, internIndex
 
 module.exports = router;
 module.exports.getNextUnitForIntern = getNextUnitForIntern;
+module.exports.getRoundRobinCounter = getRoundRobinCounter;
+module.exports.setRoundRobinCounter = setRoundRobinCounter;
