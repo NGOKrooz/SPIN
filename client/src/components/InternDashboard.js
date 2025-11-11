@@ -123,6 +123,12 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
     return Math.max(0, Math.floor((currentDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
   }, [currentIntern?.start_date]);
 
+  const invalidateInternLists = React.useCallback(() => {
+    queryClient.invalidateQueries({
+      predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === 'interns',
+    });
+  }, [queryClient]);
+
   const handleExtensionSuccess = React.useCallback((result) => {
     setShowExtend(false);
     if (result) {
@@ -147,9 +153,9 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
     }
 
     queryClient.invalidateQueries({ queryKey: ['intern-schedule', intern.id] });
-    queryClient.invalidateQueries({ queryKey: ['interns'] });
+    invalidateInternLists();
     queryClient.invalidateQueries({ queryKey: ['intern', intern.id] });
-  }, [intern.id, internState?.extension_days, onInternUpdated, queryClient]);
+  }, [intern.id, internState?.extension_days, invalidateInternLists, onInternUpdated, queryClient]);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">

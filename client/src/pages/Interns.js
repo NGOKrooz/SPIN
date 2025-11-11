@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import React, { useMemo, useState, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Edit, Trash2, Calendar, Phone, User, Clock, Eye } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -50,23 +50,11 @@ export default function Interns() {
     },
   });
 
-  const extendMutation = useMutation({
-    mutationFn: ({ id, days }) => api.extendInternship(id, days),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['interns'] });
-      toast({
-        title: 'Success',
-        description: 'Internship extended successfully',
-      });
-    },
-    onError: (error) => {
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to extend internship',
-        variant: 'destructive',
-      });
-    },
-  });
+  const invalidateInternLists = useCallback(() => {
+    queryClient.invalidateQueries({
+      predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === 'interns',
+    });
+  }, [queryClient]);
 
   // derive status on client: Completed if past planned duration (365 + extension_days), Extended if extension applied
   const mapWithDerivedStatus = (list) => (list || []).map((i) => {
@@ -111,6 +99,12 @@ export default function Interns() {
   const handleExtensionClose = () => {
     setExtendingIntern(null);
   };
+
+  const extendedCount = useMemo(() => {
+    return (derivedInterns || []).filter(
+      (i) => i.derivedStatus === 'Extended' || i.status === 'Extended' || (i.extension_days || 0) > 0
+    ).length;
+  }, [derivedInterns]);
 
   if (isLoading) {
     return (
@@ -239,9 +233,7 @@ export default function Interns() {
               <Clock className="h-5 w-5 text-yellow-600" />
               <div>
                 <p className="text-sm font-medium text-gray-600">Extended</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {interns?.filter(i => i.status === 'Extended').length || 0}
-                </p>
+                <p className="text-2xl font-bold text-gray-900">{extendedCount}</p>
               </div>
             </div>
           </CardContent>
@@ -387,8 +379,14 @@ export default function Interns() {
           intern={extendingIntern}
           onClose={handleExtensionClose}
           onSuccess={() => {
-            queryClient.invalidateQueries({ queryKey: ['interns'] });
+            invalidateInternLists();
+            queryClient.invalidateQueries({ queryKey: ['intern', extendingIntern.id] });
             handleExtensionClose();
+            setTimeout(() => {
+              queryClient.refetchQueries({
+                predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === 'interns',
+              });
+            }, 0);
           }}
         />
       )}
@@ -401,7 +399,7 @@ export default function Interns() {
           onInternUpdated={(updated) => {
             if (!updated) return;
             setViewingIntern(prev => (prev && prev.id === updated.id ? { ...prev, ...updated } : prev));
-            queryClient.invalidateQueries({ queryKey: ['interns'] });
+            invalidateInternLists();
           }}
         />
       )}
