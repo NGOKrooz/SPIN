@@ -25,6 +25,9 @@ RUN cd client && npm ci --no-audit --fund=false
 # Copy source code
 COPY . .
 
+# Ensure CI does not fail on warnings during build
+ENV CI=false
+
 # Build the client
 RUN cd client && npm run build
 

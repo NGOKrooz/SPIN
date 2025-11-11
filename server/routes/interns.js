@@ -399,16 +399,29 @@ router.post('/:id/extend', [
       // Optionally extend active rotation end_date for selected unit
       const extendActiveRotation = () => new Promise((resolve) => {
         // Use adjustment_days if provided (for updates), otherwise use extension_days (for first-time extensions)
-        const daysToExtend = adjustment_days || extension_days;
-        if (!unit_id || !daysToExtend) return resolve();
+        const daysToExtendRaw = typeof adjustment_days === 'number' ? adjustment_days : extension_days;
+        const daysToExtend = parseInt(daysToExtendRaw, 10);
+        if (!daysToExtend || Number.isNaN(daysToExtend)) return resolve();
+
         const findActive = `
           SELECT id, end_date FROM rotations
-          WHERE intern_id = ? AND unit_id = ? AND start_date <= date('now') AND end_date >= date('now')
+          WHERE intern_id = ? AND start_date <= date('now') AND end_date >= date('now')
           ORDER BY start_date DESC LIMIT 1
         `;
-        db.get(findActive, [id, unit_id], (e, row) => {
-          if (e || !row) return resolve();
-          const newEnd = format(addDays(parseISO(row.end_date), parseInt(daysToExtend)), 'yyyy-MM-dd');
+
+        db.get(findActive, [id], (e, row) => {
+          if (e || !row || !row.end_date) return resolve();
+
+          let endDate;
+          try {
+            endDate = parseISO(row.end_date);
+            if (isNaN(endDate.getTime())) throw new Error('Invalid date');
+          } catch (parseErr) {
+            console.error('Error parsing rotation end_date during extension:', parseErr);
+            return resolve();
+          }
+
+          const newEnd = format(addDays(endDate, daysToExtend), 'yyyy-MM-dd');
           // Mark as manual assignment so auto-advance doesn't overwrite the extended rotation
           const upd = 'UPDATE rotations SET end_date = ?, is_manual_assignment = 1 WHERE id = ?';
           db.run(upd, [newEnd, row.id], () => resolve());

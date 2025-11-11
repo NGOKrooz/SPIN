@@ -173,20 +173,6 @@ router.post('/', validateUnit, (req, res) => {
 
 // POST /api/units/seed-defaults - Seed default units (idempotent)
 router.post('/seed-defaults', async (req, res) => {
-  const defaultUnits = [
-    { name: 'Adult Neurology', duration_days: 2, patient_count: 0 },
-    { name: 'Acute Stroke', duration_days: 2, patient_count: 0 },
-    { name: 'Neurosurgery', duration_days: 2, patient_count: 0 },
-    { name: 'Geriatrics', duration_days: 2, patient_count: 0 },
-    { name: 'Orthopedic Inpatients', duration_days: 2, patient_count: 0 },
-    { name: 'Orthopedic Outpatients', duration_days: 2, patient_count: 0 },
-    { name: 'Electrophysiology', duration_days: 2, patient_count: 0 },
-    { name: 'Exercise Immunology', duration_days: 2, patient_count: 0 },
-    { name: "Women's Health", duration_days: 2, patient_count: 0 },
-    { name: 'Pediatrics Inpatients', duration_days: 2, patient_count: 0 },
-    { name: 'Pediatrics Outpatients', duration_days: 2, patient_count: 0 },
-    { name: 'Cardio Thoracic Unit', duration_days: 2, patient_count: 0 }
-  ];
 
   // Use a function to handle INSERT OR IGNORE for both SQLite and PostgreSQL
   const insertUnit = async (unit) => {
