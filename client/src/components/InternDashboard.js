@@ -6,9 +6,9 @@ import ReassignModal from './ReassignModal';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { api } from '../services/api';
-import { formatDate, getBatchColor, getStatusColor, getWorkloadColor, isBeforeToday, isAfterToday, includesToday, normalizeDate } from '../lib/utils';
+import { formatDate, getBatchColor, getStatusColor, getWorkloadColor, isBeforeToday, isAfterToday, includesToday, normalizeDate, calculateDaysBetween } from '../lib/utils';
 
-export default function InternDashboard({ intern, onClose }) {
+export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   const queryClient = useQueryClient();
   const [showExtend, setShowExtend] = React.useState(false);
   const [showReassign, setShowReassign] = React.useState(false);
@@ -84,9 +84,21 @@ export default function InternDashboard({ intern, onClose }) {
   const assignedUnitIds = internSchedule?.map(r => r.unit_id) || [];
   const remainingUnits = units?.filter(unit => !assignedUnitIds.includes(unit.id)) || [];
 
+  const getRotationDuration = React.useCallback((rotation) => {
+    if (!rotation?.start_date || !rotation?.end_date) {
+      return rotation?.duration_days || 0;
+    }
+    try {
+      return calculateDaysBetween(rotation.start_date, rotation.end_date);
+    } catch (err) {
+      console.error('[InternDashboard] Failed to calculate rotation duration:', err);
+      return rotation?.duration_days || 0;
+    }
+  }, []);
+
   // Calculate total days completed in rotations (completed rotations only)
   const totalDaysCompleted = completedRotations.reduce((total, rotation) => {
-    const days = rotation.duration_days || 0;
+    const days = getRotationDuration(rotation);
     return total + days;
   }, 0);
 
@@ -114,16 +126,30 @@ export default function InternDashboard({ intern, onClose }) {
   const handleExtensionSuccess = React.useCallback((result) => {
     setShowExtend(false);
     if (result) {
+      const updatedStatus = result.status ?? 'Extended';
+      const updatedExtensionDays = typeof result.extension_days === 'number'
+        ? result.extension_days
+        : internState?.extension_days ?? 0;
+
       setInternState(prev => ({
         ...prev,
-        status: result.status ?? prev?.status ?? 'Extended',
-        extension_days: typeof result.extension_days === 'number' ? result.extension_days : prev?.extension_days,
+        status: updatedStatus,
+        extension_days: updatedExtensionDays,
       }));
+
+      if (typeof onInternUpdated === 'function') {
+        onInternUpdated({
+          id: intern.id,
+          status: updatedStatus,
+          extension_days: updatedExtensionDays,
+        });
+      }
     }
+
     queryClient.invalidateQueries({ queryKey: ['intern-schedule', intern.id] });
     queryClient.invalidateQueries({ queryKey: ['interns'] });
     queryClient.invalidateQueries({ queryKey: ['intern', intern.id] });
-  }, [intern.id, queryClient]);
+  }, [intern.id, internState?.extension_days, onInternUpdated, queryClient]);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -237,7 +263,7 @@ export default function InternDashboard({ intern, onClose }) {
                               const endDate = normalizeDate(rotation.end_date);
                               const currentDate = normalizeDate(new Date());
                               // Always calculate from actual dates to account for extensions
-                              const totalDays = Math.max(0, Math.floor((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
+                              const totalDays = getRotationDuration(rotation);
                               const daysElapsed = Math.max(0, Math.floor((currentDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
                               // Cap at total days to prevent showing 3/2 days
                               const cappedDays = Math.min(daysElapsed, totalDays);
@@ -299,7 +325,7 @@ export default function InternDashboard({ intern, onClose }) {
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-medium text-yellow-600">
-                            {rotation.duration_days || Math.max(0, Math.floor((new Date(rotation.end_date) - new Date(rotation.start_date)) / (1000 * 60 * 60 * 24)) + 1)} days
+                            {getRotationDuration(rotation)} days
                           </p>
                           <span className="text-xs text-gray-500">
                             {rotation.workload} workload
@@ -335,7 +361,7 @@ export default function InternDashboard({ intern, onClose }) {
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-medium text-green-600">
-                            {rotation.duration_days || Math.max(0, Math.floor((new Date(rotation.end_date) - new Date(rotation.start_date)) / (1000 * 60 * 60 * 24)) + 1)} days completed
+                            {getRotationDuration(rotation)} days completed
                           </p>
                           <span className="text-xs text-gray-500">
                             {rotation.workload} workload

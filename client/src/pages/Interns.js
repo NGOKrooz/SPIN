@@ -398,6 +398,11 @@ export default function Interns() {
         <InternDashboard
           intern={viewingIntern}
           onClose={() => setViewingIntern(null)}
+          onInternUpdated={(updated) => {
+            if (!updated) return;
+            setViewingIntern(prev => (prev && prev.id === updated.id ? { ...prev, ...updated } : prev));
+            queryClient.invalidateQueries({ queryKey: ['interns'] });
+          }}
         />
       )}
     </div>
