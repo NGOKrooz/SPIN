@@ -14,6 +14,29 @@ export default function InternDashboard({ intern, onClose }) {
   const [showReassign, setShowReassign] = React.useState(false);
   const [activeRotation, setActiveRotation] = React.useState(null);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
+  const [internState, setInternState] = React.useState(intern);
+
+  const { data: internDetails } = useQuery({
+    queryKey: ['intern', intern.id],
+    queryFn: () => api.getIntern(intern.id),
+    initialData: intern,
+  });
+
+  React.useEffect(() => {
+    setInternState(intern);
+  }, [intern]);
+
+  React.useEffect(() => {
+    if (internDetails) {
+      setInternState(prev => ({
+        ...prev,
+        ...internDetails,
+      }));
+    }
+  }, [internDetails]);
+
+  const currentIntern = internState || intern;
+
   const { data: internSchedule } = useQuery({
     queryKey: ['intern-schedule', intern.id],
     queryFn: () => api.getInternSchedule(intern.id),
@@ -82,11 +105,25 @@ export default function InternDashboard({ intern, onClose }) {
 
   // Calculate total days in internship (from start_date to today)
   const totalDaysInInternship = React.useMemo(() => {
-    if (!intern?.start_date) return 0;
-    const startDate = normalizeDate(intern.start_date);
+    if (!currentIntern?.start_date) return 0;
+    const startDate = normalizeDate(currentIntern.start_date);
     const currentDate = normalizeDate(new Date());
     return Math.max(0, Math.floor((currentDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
-  }, [intern?.start_date]);
+  }, [currentIntern?.start_date]);
+
+  const handleExtensionSuccess = React.useCallback((result) => {
+    setShowExtend(false);
+    if (result) {
+      setInternState(prev => ({
+        ...prev,
+        status: result.status ?? prev?.status ?? 'Extended',
+        extension_days: typeof result.extension_days === 'number' ? result.extension_days : prev?.extension_days,
+      }));
+    }
+    queryClient.invalidateQueries({ queryKey: ['intern-schedule', intern.id] });
+    queryClient.invalidateQueries({ queryKey: ['interns'] });
+    queryClient.invalidateQueries({ queryKey: ['intern', intern.id] });
+  }, [intern.id, queryClient]);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -96,7 +133,7 @@ export default function InternDashboard({ intern, onClose }) {
             <div>
               <CardTitle className="flex items-center space-x-2">
                 <User className="h-5 w-5" />
-                <span>{intern.name}'s Dashboard</span>
+                <span>{currentIntern?.name}'s Dashboard</span>
               </CardTitle>
               <CardDescription>
                 Complete internship overview and rotation details
@@ -130,10 +167,10 @@ export default function InternDashboard({ intern, onClose }) {
               <Card>
                 <CardContent className="p-4">
                   <div className="flex items-center space-x-2">
-                    <div className={`w-3 h-3 rounded-full ${getBatchColor(intern.batch)}`}></div>
+                    <div className={`w-3 h-3 rounded-full ${getBatchColor(currentIntern?.batch)}`}></div>
                     <div>
                       <p className="text-sm font-medium text-gray-600">Batch</p>
-                      <p className="text-xl font-bold text-gray-900">{intern.batch}</p>
+                      <p className="text-xl font-bold text-gray-900">{currentIntern?.batch}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -144,7 +181,7 @@ export default function InternDashboard({ intern, onClose }) {
                     <Calendar className="h-5 w-5 text-blue-600" />
                     <div>
                       <p className="text-sm font-medium text-gray-600">Start Date</p>
-                      <p className="text-xl font-bold text-gray-900">{formatDate(intern.start_date)}</p>
+                      <p className="text-xl font-bold text-gray-900">{formatDate(currentIntern?.start_date)}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -164,10 +201,10 @@ export default function InternDashboard({ intern, onClose }) {
               <Card>
                 <CardContent className="p-4">
                   <div className="flex items-center space-x-2">
-                    <span className={`w-3 h-3 rounded-full ${getStatusColor(intern.status)}`}></span>
+                    <span className={`w-3 h-3 rounded-full ${getStatusColor(currentIntern?.status)}`}></span>
                     <div>
                       <p className="text-sm font-medium text-gray-600">Status</p>
-                      <p className="text-xl font-bold text-gray-900">{intern.status}</p>
+                      <p className="text-xl font-bold text-gray-900">{currentIntern?.status}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -350,14 +387,9 @@ export default function InternDashboard({ intern, onClose }) {
         </Card>
         {showExtend && (
           <ExtensionModal
-            intern={intern}
+            intern={currentIntern}
             onClose={() => setShowExtend(false)}
-            onSuccess={() => {
-              setShowExtend(false);
-              // Invalidate and refetch the schedule data
-              queryClient.invalidateQueries({ queryKey: ['intern-schedule', intern.id] });
-              queryClient.invalidateQueries({ queryKey: ['interns'] });
-            }}
+            onSuccess={handleExtensionSuccess}
           />
         )}
         {showReassign && activeRotation && (

@@ -34,12 +34,12 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
 
   const extendMutation = useMutation({
     mutationFn: ({ id, data }) => api.extendInternship(id, data),
-    onSuccess: () => {
+    onSuccess: (result) => {
       toast({
         title: 'Success',
         description: 'Internship extended successfully',
       });
-      onSuccess();
+      onSuccess(result);
     },
     onError: (error) => {
       toast({
