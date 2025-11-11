@@ -58,12 +58,21 @@ export default function Interns() {
 
   // derive status on client: Completed if past planned duration (365 + extension_days), Extended if extension applied
   const mapWithDerivedStatus = (list) => (list || []).map((i) => {
-    const total = i.total_duration_days ?? (365 + (i.extension_days || 0));
+    const extensionDays = Number(i.extension_days) || 0;
+    const total = i.total_duration_days ?? (365 + extensionDays);
     const days = i.days_since_start ?? 0;
-    let derived = 'Active';
-    if ((i.extension_days || 0) > 0 && i.status === 'Extended') derived = 'Extended';
-    if (days >= total) derived = 'Completed';
-    return { ...i, derivedStatus: derived };
+
+    let derived = i.status || 'Active';
+
+    if (extensionDays > 0 && derived !== 'Completed') {
+      derived = 'Extended';
+    }
+
+    if (days >= total || derived === 'Completed' || i.status === 'Completed') {
+      derived = 'Completed';
+    }
+
+    return { ...i, derivedStatus: derived, extension_days: extensionDays };
   });
 
   let derivedInterns = mapWithDerivedStatus(interns);
@@ -102,7 +111,7 @@ export default function Interns() {
 
   const extendedCount = useMemo(() => {
     return (derivedInterns || []).filter(
-      (i) => i.derivedStatus === 'Extended' || i.status === 'Extended' || (i.extension_days || 0) > 0
+      (i) => i.derivedStatus === 'Extended' || (i.extension_days || 0) > 0
     ).length;
   }, [derivedInterns]);
 

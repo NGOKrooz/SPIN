@@ -36,6 +36,14 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   }, [internDetails]);
 
   const currentIntern = internState || intern;
+  const extensionDays = Number(currentIntern?.extension_days) || 0;
+  const derivedStatus = React.useMemo(() => {
+    if (!currentIntern) return 'Active';
+    if (currentIntern.status === 'Completed') return 'Completed';
+    if (currentIntern.status === 'Extended') return 'Extended';
+    if (extensionDays > 0) return 'Extended';
+    return currentIntern.status || 'Active';
+  }, [currentIntern, extensionDays]);
 
   const { data: internSchedule } = useQuery({
     queryKey: ['intern-schedule', intern.id],
@@ -135,7 +143,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
       const updatedStatus = result.status ?? 'Extended';
       const updatedExtensionDays = typeof result.extension_days === 'number'
         ? result.extension_days
-        : internState?.extension_days ?? 0;
+        : Number(internState?.extension_days) || 0;
 
       setInternState(prev => ({
         ...prev,
@@ -153,8 +161,13 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
     }
 
     queryClient.invalidateQueries({ queryKey: ['intern-schedule', intern.id] });
+    queryClient.refetchQueries({ queryKey: ['intern-schedule', intern.id] });
     invalidateInternLists();
+    queryClient.refetchQueries({
+      predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === 'interns',
+    });
     queryClient.invalidateQueries({ queryKey: ['intern', intern.id] });
+    queryClient.refetchQueries({ queryKey: ['intern', intern.id] });
   }, [intern.id, internState?.extension_days, invalidateInternLists, onInternUpdated, queryClient]);
 
   return (
@@ -233,10 +246,15 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
               <Card>
                 <CardContent className="p-4">
                   <div className="flex items-center space-x-2">
-                    <span className={`w-3 h-3 rounded-full ${getStatusColor(currentIntern?.status)}`}></span>
+                    <span className={`w-3 h-3 rounded-full ${getStatusColor(derivedStatus)}`}></span>
                     <div>
                       <p className="text-sm font-medium text-gray-600">Status</p>
-                      <p className="text-xl font-bold text-gray-900">{currentIntern?.status}</p>
+                      <p className="text-xl font-bold text-gray-900">
+                        {derivedStatus}
+                        {extensionDays > 0 && (
+                          <span className="ml-2 text-sm text-yellow-600">+{extensionDays} days</span>
+                        )}
+                      </p>
                     </div>
                   </div>
                 </CardContent>
