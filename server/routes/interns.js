@@ -572,7 +572,8 @@ router.post('/:id/extend', [
               }
             }
             
-            // If still not found, get the most recent rotation for this unit
+            // If still not found, get the most recent rotation for this unit (regardless of when it ended)
+            // This ensures we always extend the correct unit if unit_id is provided
             if (!rotation) {
               rotation = await getAsync(
                 `
@@ -585,7 +586,14 @@ router.post('/:id/extend', [
               );
               
               if (rotation) {
-                console.log(`[ExtendInternship] Found most recent rotation for unit_id: id=${rotation.id}, unit_id=${rotation.unit_id}, end_date=${rotation.end_date}`);
+                const rotEndDate = normalizeDbDate(rotation.end_date);
+                if (rotEndDate) {
+                  const rotEndStr = format(rotEndDate, 'yyyy-MM-dd');
+                  const daysSinceEnd = Math.floor((parseISO(todayStr).getTime() - rotEndDate.getTime()) / (1000 * 60 * 60 * 24));
+                  console.log(`[ExtendInternship] ✅ Found most recent rotation for unit_id (ended ${daysSinceEnd} days ago): id=${rotation.id}, unit_id=${rotation.unit_id}, end_date=${rotEndStr}`);
+                } else {
+                  console.log(`[ExtendInternship] Found most recent rotation for unit_id: id=${rotation.id}, unit_id=${rotation.unit_id}, end_date=${rotation.end_date}`);
+                }
               }
             }
           } catch (unitErr) {
