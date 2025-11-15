@@ -767,31 +767,80 @@ async function autoAdvanceRotations() {
         }
       }
       
-      // Check if intern has completed all units
+      // Check if intern has completed all units AND has no active/upcoming rotations
       const completedUnits = new Set(automaticRotations.map(r => r.unit_id));
       
-      if (completedUnits.size >= units.length) {
-        console.log(`[AutoAdvance] Intern ${intern.id} has completed all ${units.length} units`);
+      // Check for current or upcoming rotations (intern is still active)
+      const hasActiveOrUpcomingRotations = allRotationsHistory.some(r => {
+        if (!r.start_date || !r.end_date) return false;
+        try {
+          const startDate = parseISO(r.start_date);
+          const endDate = parseISO(r.end_date);
+          if (!startDate || !endDate || isNaN(startDate.getTime()) || isNaN(endDate.getTime())) return false;
+          
+          const startStr = format(startDate, 'yyyy-MM-dd');
+          const endStr = format(endDate, 'yyyy-MM-dd');
+          
+          // Current rotation (today is between start and end)
+          if (startStr <= today && endStr >= today) return true;
+          
+          // Upcoming rotation (start date is after today)
+          if (startStr > today) return true;
+          
+          return false;
+        } catch (err) {
+          return false;
+        }
+      });
+      
+      // Only mark as Completed if:
+      // 1. All units are completed
+      // 2. No active or upcoming rotations (internship is truly finished)
+      if (completedUnits.size >= units.length && !hasActiveOrUpcomingRotations) {
+        console.log(`[AutoAdvance] Intern ${intern.id} has completed all ${units.length} units and has no active/upcoming rotations`);
         
-        // Mark intern as Completed
+        // Mark intern as Completed only if status isn't already Extended
+        if (intern.status !== 'Extended') {
+          try {
+            await new Promise((resolve, reject) => {
+              db.run(
+                'UPDATE interns SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                ['Completed', intern.id],
+                function(err) {
+                  if (err) reject(err);
+                  else resolve();
+                }
+              );
+            });
+            console.log(`[AutoAdvance] Intern ${intern.id} (${intern.name}) marked as Completed`);
+          } catch (err) {
+            console.error(`[AutoAdvance] Error marking intern ${intern.id} as Completed:`, err);
+          }
+        }
+        
+        skipped++;
+        continue; // Skip creating new rotations
+      }
+      
+      // If intern has active/upcoming rotations but status is Completed, set back to Active
+      if (hasActiveOrUpcomingRotations && intern.status === 'Completed') {
+        const newStatus = intern.extension_days > 0 ? 'Extended' : 'Active';
+        console.log(`[AutoAdvance] Intern ${intern.id} (${intern.name}) has active/upcoming rotations, updating status from Completed to ${newStatus}`);
         try {
           await new Promise((resolve, reject) => {
             db.run(
               'UPDATE interns SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-              ['Completed', intern.id],
+              [newStatus, intern.id],
               function(err) {
                 if (err) reject(err);
                 else resolve();
               }
             );
           });
-          console.log(`[AutoAdvance] Intern ${intern.id} (${intern.name}) marked as Completed`);
+          console.log(`[AutoAdvance] ✅ Intern ${intern.id} status updated to ${newStatus}`);
         } catch (err) {
-          console.error(`[AutoAdvance] Error marking intern ${intern.id} as Completed:`, err);
+          console.error(`[AutoAdvance] Error updating intern ${intern.id} status:`, err);
         }
-        
-        skipped++;
-        continue; // Skip creating new rotations
       }
       
       if (rotationsToCreate > 0) {
@@ -842,24 +891,9 @@ async function autoAdvanceRotations() {
             
             advanced++;
             
-            // If this was the last unit, mark intern as Completed
-            if (willCompletedUnits.size >= units.length) {
-              try {
-                await new Promise((resolve, reject) => {
-                  db.run(
-                    'UPDATE interns SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-                    ['Completed', intern.id],
-                    function(err) {
-                      if (err) reject(err);
-                      else resolve();
-                    }
-                  );
-                });
-                console.log(`[AutoAdvance] Intern ${intern.id} (${intern.name}) marked as Completed (finished all units)`);
-              } catch (err) {
-                console.error(`[AutoAdvance] Error marking intern ${intern.id} as Completed:`, err);
-              }
-            }
+            // Note: We don't mark as Completed here anymore
+            // Status is only set to Completed when there are no active/upcoming rotations
+            // This happens in the check above before creating new rotations
           } catch (err) {
             console.error(`[AutoAdvance] Error creating rotation for intern ${intern.id}:`, err);
             errors++;

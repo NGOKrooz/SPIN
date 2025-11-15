@@ -440,15 +440,46 @@ router.post('/:id/extend', [
       const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
       const todayStr = format(todayUTC, 'yyyy-MM-dd');
       
-      console.log(`[ExtendInternship] Looking for active rotation for intern ${id}, today (UTC): ${todayStr}`);
+      console.log(`[ExtendInternship] Looking for ACTIVE (current) rotation for intern ${id}, today (UTC): ${todayStr}`);
 
       let rotation = null;
 
-      // First try: if unit_id provided, find the most recent rotation for that unit
-      if (unit_id) {
+      // PRIORITY 1: Find the ACTIVE rotation (where today falls between start and end dates)
+      // This ensures we always extend the current unit the intern is in
+      const allRotations = await allAsync(
+        `SELECT id, end_date, start_date, is_manual_assignment, unit_id FROM rotations WHERE intern_id = ? ORDER BY start_date DESC`,
+        [id]
+      );
+      
+      console.log(`[ExtendInternship] Checking ${allRotations.length} rotations for intern ${id}`);
+      
+      // Find ACTIVE rotation using date-fns for reliable date comparison
+      for (const rot of allRotations) {
+        const startDate = normalizeDbDate(rot.start_date);
+        const endDate = normalizeDbDate(rot.end_date);
+        
+        if (startDate && endDate) {
+          const startStr = format(startDate, 'yyyy-MM-dd');
+          const endStr = format(endDate, 'yyyy-MM-dd');
+          
+          // Check if today falls within the rotation period (this is the CURRENT unit)
+          if (startStr <= todayStr && endStr >= todayStr) {
+            // If unit_id was provided, verify it matches (preferred unit)
+            if (!unit_id || rot.unit_id === unit_id) {
+              rotation = rot;
+              console.log(`[ExtendInternship] ✅ Found ACTIVE rotation: id=${rotation.id}, unit_id=${rotation.unit_id}, ${startStr} to ${endStr}`);
+              break;
+            }
+          }
+        }
+      }
+      
+      // PRIORITY 2: If unit_id provided but no active rotation found for that unit, 
+      // find the most recent rotation for that specific unit (might be upcoming)
+      if (!rotation && unit_id) {
         rotation = await getAsync(
           `
-            SELECT id, end_date, start_date, is_manual_assignment FROM rotations
+            SELECT id, end_date, start_date, is_manual_assignment, unit_id FROM rotations
             WHERE intern_id = ? AND unit_id = ?
             ORDER BY end_date DESC
             LIMIT 1
@@ -457,53 +488,24 @@ router.post('/:id/extend', [
         );
         
         if (rotation) {
-          console.log(`[ExtendInternship] Found rotation by unit_id: id=${rotation.id}, end_date=${rotation.end_date}, is_manual=${rotation.is_manual_assignment}`);
+          console.log(`[ExtendInternship] Found rotation by unit_id (may not be active): id=${rotation.id}, unit_id=${rotation.unit_id}, end_date=${rotation.end_date}`);
         }
       }
-
-      // Second try: find any active rotation (includes today)
+      
+      // PRIORITY 3: Fallback - use SQL date comparison
       if (!rotation) {
-        // Get all rotations for this intern to check manually
-        const allRotations = await allAsync(
-          `SELECT id, end_date, start_date, is_manual_assignment FROM rotations WHERE intern_id = ? ORDER BY start_date DESC`,
-          [id]
+        rotation = await getAsync(
+          `
+            SELECT id, end_date, start_date, is_manual_assignment, unit_id FROM rotations
+            WHERE intern_id = ? AND start_date <= ? AND end_date >= ?
+            ORDER BY start_date DESC
+            LIMIT 1
+          `,
+          [id, todayStr, todayStr]
         );
         
-        console.log(`[ExtendInternship] Checking ${allRotations.length} rotations for intern ${id}`);
-        
-        // Find active rotation using date-fns for reliable date comparison
-        for (const rot of allRotations) {
-          const startDate = normalizeDbDate(rot.start_date);
-          const endDate = normalizeDbDate(rot.end_date);
-          
-          if (startDate && endDate) {
-            const startStr = format(startDate, 'yyyy-MM-dd');
-            const endStr = format(endDate, 'yyyy-MM-dd');
-            
-            // Check if today falls within the rotation period
-            if (startStr <= todayStr && endStr >= todayStr) {
-              rotation = rot;
-              console.log(`[ExtendInternship] Found active rotation: id=${rotation.id}, ${startStr} to ${endStr}`);
-              break;
-            }
-          }
-        }
-        
-        // Fallback: use SQL date comparison as last resort
-        if (!rotation) {
-          rotation = await getAsync(
-            `
-              SELECT id, end_date, start_date, is_manual_assignment FROM rotations
-              WHERE intern_id = ? AND start_date <= ? AND end_date >= ?
-              ORDER BY start_date DESC
-              LIMIT 1
-            `,
-            [id, todayStr, todayStr]
-          );
-          
-          if (rotation) {
-            console.log(`[ExtendInternship] Found rotation via SQL: id=${rotation.id}`);
-          }
+        if (rotation) {
+          console.log(`[ExtendInternship] Found rotation via SQL fallback: id=${rotation.id}`);
         }
       }
 
@@ -863,31 +865,76 @@ async function autoAdvanceInternRotation(internId) {
     }
   }
 
-  // Check if intern has completed all units
+  // Check if intern has completed all units AND has no active/upcoming rotations
   const automaticRotations = sortedRotations.filter(r => !r.is_manual_assignment);
   const completedUnits = new Set(automaticRotations.map(r => r.unit_id));
   
-  if (completedUnits.size >= units.length && intern.status !== 'Extended') {
-    console.log(`[AutoAdvance] Intern ${internId} has completed all ${units.length} units`);
+  // Check for current or upcoming rotations (intern is still active)
+  const hasActiveOrUpcomingRotations = sortedRotations.some(r => {
+    if (!r.start_date || !r.end_date) return false;
+    const startDate = parseDateSafe(r.start_date);
+    const endDate = parseDateSafe(r.end_date);
+    if (!startDate || !endDate) return false;
     
-    // Mark intern as Completed
+    const startStr = format(startDate, 'yyyy-MM-dd');
+    const endStr = format(endDate, 'yyyy-MM-dd');
+    
+    // Current rotation (today is between start and end)
+    if (startStr <= today && endStr >= today) return true;
+    
+    // Upcoming rotation (start date is after today)
+    if (startStr > today) return true;
+    
+    return false;
+  });
+  
+  // Only mark as Completed if:
+  // 1. All units are completed
+  // 2. No active or upcoming rotations (internship is truly finished)
+  if (completedUnits.size >= units.length && !hasActiveOrUpcomingRotations) {
+    console.log(`[AutoAdvance] Intern ${internId} has completed all ${units.length} units and has no active/upcoming rotations`);
+    
+    // Mark intern as Completed only if status isn't already Extended
+    if (intern.status !== 'Extended') {
+      await new Promise((resolve, reject) => {
+        db.run(
+          'UPDATE interns SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+          ['Completed', internId],
+          function(err) {
+            if (err) {
+              console.error(`[AutoAdvance] Error marking intern ${internId} as Completed:`, err);
+              reject(err);
+            } else {
+              console.log(`[AutoAdvance] ✅ Intern ${internId} marked as Completed`);
+              resolve();
+            }
+          }
+        );
+      });
+    }
+    
+    return false; // Stop creating new rotations
+  }
+  
+  // If intern has active/upcoming rotations but status is Completed, set back to Active
+  if (hasActiveOrUpcomingRotations && intern.status === 'Completed') {
+    const newStatus = intern.extension_days > 0 ? 'Extended' : 'Active';
+    console.log(`[AutoAdvance] Intern ${internId} has active/upcoming rotations, updating status from Completed to ${newStatus}`);
     await new Promise((resolve, reject) => {
       db.run(
         'UPDATE interns SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        ['Completed', internId],
+        [newStatus, internId],
         function(err) {
           if (err) {
-            console.error(`[AutoAdvance] Error marking intern ${internId} as Completed:`, err);
+            console.error(`[AutoAdvance] Error updating intern ${internId} status:`, err);
             reject(err);
           } else {
-            console.log(`[AutoAdvance] ✅ Intern ${internId} marked as Completed`);
+            console.log(`[AutoAdvance] ✅ Intern ${internId} status updated to ${newStatus}`);
             resolve();
           }
         }
       );
     });
-    
-    return false; // Stop creating new rotations
   }
   
   // Use flexible, fair round-robin logic to get next unit
@@ -919,28 +966,9 @@ async function autoAdvanceInternRotation(internId) {
       );
     });
     
-    // Check if this was the last unit - if so, mark as Completed
-    const newCompletedUnits = new Set([...completedUnits, nextUnit.id]);
-    if (intern.status !== 'Extended' && newCompletedUnits.size >= units.length) {
-      console.log(`[AutoAdvance] Intern ${internId} will complete all units after this rotation`);
-      
-      // Mark intern as Completed after their last rotation
-      await new Promise((resolve, reject) => {
-        db.run(
-          'UPDATE interns SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-          ['Completed', internId],
-          function(err) {
-            if (err) {
-              console.error(`[AutoAdvance] Error marking intern ${internId} as Completed:`, err);
-              reject(err);
-            } else {
-              console.log(`[AutoAdvance] ✅ Intern ${internId} marked as Completed (finished all units)`);
-              resolve();
-            }
-          }
-        );
-      });
-    }
+    // Note: We don't mark as Completed here anymore
+    // Status is only set to Completed when there are no active/upcoming rotations
+    // This happens in the check above before creating new rotations
 
     return true;
   } catch (err) {
