@@ -114,14 +114,13 @@ router.get('/', (req, res) => {
     db.all('SELECT SUM(duration_days) as total FROM units', [], (err, unitRows) => {
       // Always return response, even if unit query fails
       try {
-        // Base internship duration is 365 days, not sum of unit durations
-        // Extensions add to this base duration
-        const BASE_INTERNSHIP_DURATION = 365;
+        // Total duration = sum of all unit durations + extension days
+        const totalUnitDays = (unitRows && unitRows[0] && unitRows[0].total) ? unitRows[0].total : 0;
         
         const interns = safeRows.map(row => {
           try {
-            // Base duration is always 365 days
-            const baseDuration = BASE_INTERNSHIP_DURATION;
+            // Base duration is the sum of all unit durations (time to complete all units)
+            const baseDuration = totalUnitDays || 0;
             // Always include extension_days if they exist, regardless of status
             const extensionDays = parseInt(row.extension_days) || 0;
             const totalDuration = baseDuration + extensionDays;
