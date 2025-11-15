@@ -543,7 +543,7 @@ router.post('/:id/extend', [
             // First try to find active rotation for this unit from already fetched rotations
             if (allRotations.length > 0) {
               const unitRotations = allRotations.filter(r => r.unit_id === unit_id);
-            for (const rot of unitRotations) {
+              for (const rot of unitRotations) {
               try {
                 const startDate = normalizeDbDate(rot.start_date);
                 const endDate = normalizeDbDate(rot.end_date);
@@ -568,6 +568,7 @@ router.post('/:id/extend', [
                 }
               } catch (rotErr) {
                 continue;
+              }
               }
             }
             
