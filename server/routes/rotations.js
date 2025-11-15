@@ -881,56 +881,66 @@ async function autoAdvanceRotations() {
 }
 
 // Helper function to generate rotations for a single intern
-function generateInternRotations(intern, units, startDate, settings, startOffset = 0) {
+function generateInternRotations(intern, units, startDate, settings, internIndex = 0) {
   const rotations = [];
-  
-  if (!units.length) {
+  if (!units || units.length === 0) {
     return rotations;
   }
 
   // Use the provided startDate if available, otherwise use intern's start_date
   let currentDate = startDate || parseISO(intern.start_date);
-  
+
   // Reorder units so each intern starts at a different offset (round-robin)
-  // Intern 0 starts at unit[0], Intern 1 starts at unit[1], etc.
-  const startUnitIndex = startOffset % units.length;
+  const startUnitIndex = internIndex % units.length;
   const orderedUnits = [
-    ...units.slice(startUnitIndex),  // Units from start position to end
-    ...units.slice(0, startUnitIndex) // Wrap around: units from beginning to start position
+    ...units.slice(startUnitIndex),
+    ...units.slice(0, startUnitIndex)
   ];
-  
-  // Rotate through all units exactly once
-  // Extended interns get extension days added to their last rotation
-  const extensionDays = intern.status === 'Extended' ? (intern.extension_days || 0) : 0;
-  
-  for (let rotationIndex = 0; rotationIndex < orderedUnits.length; rotationIndex++) {
-    const unit = orderedUnits[rotationIndex];
-    
-    // Start date is current date (immediate, no gaps)
+
+  // Base cycle: rotate through every unit exactly once
+  orderedUnits.forEach(unit => {
     const rotationStart = currentDate;
-    
-    // Use unit's default duration
-    let durationDays = unit.duration_days;
-    
-    // If this is the last rotation and intern is extended, add extension days
-    if (rotationIndex === orderedUnits.length - 1 && extensionDays > 0) {
-      durationDays += extensionDays;
-    }
-    
-    // Calculate end date (duration includes start day, so subtract 1)
-    const rotationEnd = addDays(rotationStart, durationDays - 1);
-    
+    const rotationEnd = addDays(rotationStart, unit.duration_days - 1);
+
     rotations.push({
       intern_id: intern.id,
       unit_id: unit.id,
       start_date: format(rotationStart, 'yyyy-MM-dd'),
       end_date: format(rotationEnd, 'yyyy-MM-dd')
     });
-    
-    // Next rotation starts the day after this one ends (no gaps)
+
     currentDate = addDays(rotationEnd, 1);
+  });
+
+  // Extension handling – distribute extra days across additional rotations
+  let remainingExtension = 0;
+  if (intern.status === 'Extended') {
+    const ext = parseInt(intern.extension_days, 10);
+    if (!Number.isNaN(ext) && ext > 0) {
+      remainingExtension = ext;
+    }
   }
-  
+
+  while (remainingExtension > 0) {
+    for (const unit of orderedUnits) {
+      if (remainingExtension <= 0) break;
+
+      const durationDays = Math.min(unit.duration_days, remainingExtension);
+      const rotationStart = currentDate;
+      const rotationEnd = addDays(rotationStart, durationDays - 1);
+
+      rotations.push({
+        intern_id: intern.id,
+        unit_id: unit.id,
+        start_date: format(rotationStart, 'yyyy-MM-dd'),
+        end_date: format(rotationEnd, 'yyyy-MM-dd')
+      });
+
+      currentDate = addDays(rotationEnd, 1);
+      remainingExtension -= durationDays;
+    }
+  }
+
   return rotations;
 }
 
