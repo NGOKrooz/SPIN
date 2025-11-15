@@ -517,20 +517,10 @@ async function getNextUnitForIntern(internId, units, interns, lastRotation) {
 
   const completedUnitIds = new Set(automaticRotations.map(r => r.unit_id));
   
-  // If all units have been completed at least once, allow cycling/repeating
+  // If all units have been completed, DO NOT cycle - return null (no more rotations)
   if (completedUnitIds.size >= unitCount) {
-    // There is an existing rotation; continue to the next unit in sequence (cycling allowed)
-    const lastUnitIndex = units.findIndex(u => u.id === lastRotation.unit_id);
-    if (lastUnitIndex === -1) {
-      // Last unit no longer exists – fall back to round-robin counter
-      const currentOffset = await getRoundRobinCounter();
-      const nextUnitIndex = currentOffset % unitCount;
-      await setRoundRobinCounter(currentOffset + 1);
-      return units[nextUnitIndex];
-    }
-    
-    const nextUnitIndex = (lastUnitIndex + 1) % unitCount;
-    return units[nextUnitIndex];
+    console.log(`[getNextUnitForIntern] Intern ${internId} has completed all ${unitCount} units - no more rotations will be created`);
+    return null;
   }
 
   // Not all units completed yet - find the next unit that hasn't been done
@@ -539,27 +529,30 @@ async function getNextUnitForIntern(internId, units, interns, lastRotation) {
     // Last unit no longer exists – find first uncompleted unit
     for (let i = 0; i < unitCount; i++) {
       if (!completedUnitIds.has(units[i].id)) {
+        console.log(`[getNextUnitForIntern] Last unit not found, returning first uncompleted: ${units[i].name}`);
         return units[i];
       }
     }
-    // All units completed (shouldn't happen, but fallback)
-    return units[0];
+    // All units completed - return null (no cycling)
+    console.log(`[getNextUnitForIntern] All units completed for intern ${internId} - no more rotations`);
+    return null;
   }
 
-  // Start from the next unit after the last one
+  // Start from the next unit after the last one and find the first uncompleted unit
   for (let offset = 1; offset < unitCount; offset++) {
     const nextIndex = (lastUnitIndex + offset) % unitCount;
     const nextUnit = units[nextIndex];
     
     // If this unit hasn't been completed, return it
     if (!completedUnitIds.has(nextUnit.id)) {
+      console.log(`[getNextUnitForIntern] Returning next uncompleted unit: ${nextUnit.name}`);
       return nextUnit;
     }
   }
 
-  // All units have been completed (edge case) - cycle normally
-  const nextUnitIndex = (lastUnitIndex + 1) % unitCount;
-  return units[nextUnitIndex];
+  // All remaining units have been completed - return null (do not cycle)
+  console.log(`[getNextUnitForIntern] All units from this point completed for intern ${internId} - no more rotations`);
+  return null;
 }
 
 async function getRoundRobinCounter() {
