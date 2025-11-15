@@ -624,7 +624,8 @@ router.post('/:id/extend', [
           }
         }
 
-        if (rotation?.end_date) {
+        // If we have a rotation, extend it
+        if (rotation && rotation.end_date) {
           try {
             const endDate = normalizeDbDate(rotation.end_date);
 
