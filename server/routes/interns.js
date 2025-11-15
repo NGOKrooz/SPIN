@@ -669,6 +669,22 @@ router.post('/:id/extend', [
       // Don't fail the entire request if recording reason fails
     }
 
+    // Get updated rotation info if it was extended
+    let updatedRotation = null;
+    if (daysToExtend > 0 && unit_id) {
+      try {
+        updatedRotation = await getAsync(
+          `SELECT id, start_date, end_date, unit_id FROM rotations WHERE intern_id = ? AND unit_id = ? ORDER BY end_date DESC LIMIT 1`,
+          [id, unit_id]
+        );
+        if (updatedRotation) {
+          console.log(`[ExtendInternship] ✅ Returning updated rotation info: ${updatedRotation.start_date} to ${updatedRotation.end_date}`);
+        }
+      } catch (err) {
+        console.error(`[ExtendInternship] Error fetching updated rotation:`, err);
+      }
+    }
+
     res.json({
       message: extension_days > 0 ? 'Internship extended successfully' : 'Extension removed successfully',
       extension_days,
@@ -676,7 +692,13 @@ router.post('/:id/extend', [
       reason,
       notes,
       unit_id: unit_id || null,
-      status: finalStatus
+      status: finalStatus,
+      rotation: updatedRotation ? {
+        id: updatedRotation.id,
+        start_date: updatedRotation.start_date,
+        end_date: updatedRotation.end_date,
+        unit_id: updatedRotation.unit_id
+      } : null
     });
   } catch (error) {
     console.error('[ExtendInternship] Error processing extension:', error);
