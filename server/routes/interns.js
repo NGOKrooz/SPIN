@@ -481,6 +481,10 @@ router.post('/:id/extend', [
           console.log(`[ExtendInternship] Checking ${allRotations.length} rotations for intern ${id}`);
           
           // Find ACTIVE rotation using date-fns for reliable date comparison
+          // Also consider recent rotations (within last 7 days) as they might be the current unit
+          let mostRecentRotation = null;
+          let mostRecentEndDate = null;
+          
           for (const rot of allRotations) {
             try {
               const startDate = normalizeDbDate(rot.start_date);
@@ -489,6 +493,12 @@ router.post('/:id/extend', [
               if (startDate && endDate) {
                 const startStr = format(startDate, 'yyyy-MM-dd');
                 const endStr = format(endDate, 'yyyy-MM-dd');
+                
+                // Track the most recent rotation (by end_date) as fallback
+                if (!mostRecentRotation || (endStr > (mostRecentEndDate || ''))) {
+                  mostRecentRotation = rot;
+                  mostRecentEndDate = endStr;
+                }
                 
                 // Check if today falls within the rotation period (this is the CURRENT unit)
                 if (startStr <= todayStr && endStr >= todayStr) {
@@ -505,27 +515,75 @@ router.post('/:id/extend', [
               continue; // Skip this rotation and continue
             }
           }
+          
+          // If no active rotation found, use the most recent rotation (likely the current one)
+          if (!rotation && mostRecentRotation) {
+            const recentEndDate = normalizeDbDate(mostRecentRotation.end_date);
+            if (recentEndDate) {
+              const recentEndStr = format(recentEndDate, 'yyyy-MM-dd');
+              const daysSinceEnd = Math.floor((parseISO(todayStr).getTime() - recentEndDate.getTime()) / (1000 * 60 * 60 * 24));
+              
+              // If the most recent rotation ended within the last 7 days, consider it the current unit
+              if (daysSinceEnd <= 7 && (!unit_id || mostRecentRotation.unit_id === unit_id)) {
+                rotation = mostRecentRotation;
+                console.log(`[ExtendInternship] ✅ Using most recent rotation (ended ${daysSinceEnd} days ago): id=${rotation.id}, unit_id=${rotation.unit_id}, end_date=${recentEndStr}`);
+              }
+            }
+          }
         } catch (rotationsErr) {
           console.error(`[ExtendInternship] Error fetching rotations:`, rotationsErr);
           // Continue to fallback methods
         }
         
-        // PRIORITY 2: If unit_id provided but no active rotation found for that unit, 
-        // find the most recent rotation for that specific unit (might be upcoming)
+        // PRIORITY 2: If unit_id provided, prioritize finding that specific unit's rotation
+        // This ensures we extend the unit the user selected, even if it's not technically "active"
         if (!rotation && unit_id) {
           try {
-            rotation = await getAsync(
-              `
-                SELECT id, end_date, start_date, is_manual_assignment, unit_id FROM rotations
-                WHERE intern_id = ? AND unit_id = ?
-                ORDER BY end_date DESC
-                LIMIT 1
-              `,
-              [id, unit_id]
-            );
+            // First try to find active rotation for this unit
+            const unitRotations = allRotations.filter(r => r.unit_id === unit_id);
+            for (const rot of unitRotations) {
+              try {
+                const startDate = normalizeDbDate(rot.start_date);
+                const endDate = normalizeDbDate(rot.end_date);
+                if (startDate && endDate) {
+                  const startStr = format(startDate, 'yyyy-MM-dd');
+                  const endStr = format(endDate, 'yyyy-MM-dd');
+                  
+                  // Check if today is within or very close to this rotation
+                  if (startStr <= todayStr && endStr >= todayStr) {
+                    rotation = rot;
+                    console.log(`[ExtendInternship] ✅ Found active rotation for specified unit_id: id=${rotation.id}, unit_id=${rotation.unit_id}`);
+                    break;
+                  }
+                  
+                  // If rotation ended recently (within 7 days), use it
+                  const daysSinceEnd = Math.floor((parseISO(todayStr).getTime() - endDate.getTime()) / (1000 * 60 * 60 * 24));
+                  if (daysSinceEnd <= 7 && daysSinceEnd >= 0) {
+                    rotation = rot;
+                    console.log(`[ExtendInternship] ✅ Found recent rotation for specified unit_id (ended ${daysSinceEnd} days ago): id=${rotation.id}, unit_id=${rotation.unit_id}`);
+                    break;
+                  }
+                }
+              } catch (rotErr) {
+                continue;
+              }
+            }
             
-            if (rotation) {
-              console.log(`[ExtendInternship] Found rotation by unit_id (may not be active): id=${rotation.id}, unit_id=${rotation.unit_id}, end_date=${rotation.end_date}`);
+            // If still not found, get the most recent rotation for this unit
+            if (!rotation) {
+              rotation = await getAsync(
+                `
+                  SELECT id, end_date, start_date, is_manual_assignment, unit_id FROM rotations
+                  WHERE intern_id = ? AND unit_id = ?
+                  ORDER BY end_date DESC
+                  LIMIT 1
+                `,
+                [id, unit_id]
+              );
+              
+              if (rotation) {
+                console.log(`[ExtendInternship] Found most recent rotation for unit_id: id=${rotation.id}, unit_id=${rotation.unit_id}, end_date=${rotation.end_date}`);
+              }
             }
           } catch (unitErr) {
             console.error(`[ExtendInternship] Error finding rotation by unit_id:`, unitErr);
