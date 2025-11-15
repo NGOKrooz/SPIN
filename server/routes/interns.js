@@ -460,109 +460,145 @@ router.post('/:id/extend', [
     console.log(`[ExtendInternship] Extending internship for intern ${id}: ${daysToExtend} days, unit_id: ${unit_id || 'none'}`);
 
     if (!Number.isNaN(daysToExtend) && daysToExtend !== 0) {
-      // Use UTC date for consistent comparison across timezones
-      const now = new Date();
-      const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-      const todayStr = format(todayUTC, 'yyyy-MM-dd');
-      
-      console.log(`[ExtendInternship] Looking for ACTIVE (current) rotation for intern ${id}, today (UTC): ${todayStr}`);
-
-      let rotation = null;
-
-      // PRIORITY 1: Find the ACTIVE rotation (where today falls between start and end dates)
-      // This ensures we always extend the current unit the intern is in
-      const allRotations = await allAsync(
-        `SELECT id, end_date, start_date, is_manual_assignment, unit_id FROM rotations WHERE intern_id = ? ORDER BY start_date DESC`,
-        [id]
-      );
-      
-      console.log(`[ExtendInternship] Checking ${allRotations.length} rotations for intern ${id}`);
-      
-      // Find ACTIVE rotation using date-fns for reliable date comparison
-      for (const rot of allRotations) {
-        const startDate = normalizeDbDate(rot.start_date);
-        const endDate = normalizeDbDate(rot.end_date);
+      try {
+        // Use UTC date for consistent comparison across timezones
+        const now = new Date();
+        const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        const todayStr = format(todayUTC, 'yyyy-MM-dd');
         
-        if (startDate && endDate) {
-          const startStr = format(startDate, 'yyyy-MM-dd');
-          const endStr = format(endDate, 'yyyy-MM-dd');
-          
-          // Check if today falls within the rotation period (this is the CURRENT unit)
-          if (startStr <= todayStr && endStr >= todayStr) {
-            // If unit_id was provided, verify it matches (preferred unit)
-            if (!unit_id || rot.unit_id === unit_id) {
-              rotation = rot;
-              console.log(`[ExtendInternship] ✅ Found ACTIVE rotation: id=${rotation.id}, unit_id=${rotation.unit_id}, ${startStr} to ${endStr}`);
-              break;
-            }
-          }
-        }
-      }
-      
-      // PRIORITY 2: If unit_id provided but no active rotation found for that unit, 
-      // find the most recent rotation for that specific unit (might be upcoming)
-      if (!rotation && unit_id) {
-        rotation = await getAsync(
-          `
-            SELECT id, end_date, start_date, is_manual_assignment, unit_id FROM rotations
-            WHERE intern_id = ? AND unit_id = ?
-            ORDER BY end_date DESC
-            LIMIT 1
-          `,
-          [id, unit_id]
-        );
-        
-        if (rotation) {
-          console.log(`[ExtendInternship] Found rotation by unit_id (may not be active): id=${rotation.id}, unit_id=${rotation.unit_id}, end_date=${rotation.end_date}`);
-        }
-      }
-      
-      // PRIORITY 3: Fallback - use SQL date comparison
-      if (!rotation) {
-        rotation = await getAsync(
-          `
-            SELECT id, end_date, start_date, is_manual_assignment, unit_id FROM rotations
-            WHERE intern_id = ? AND start_date <= ? AND end_date >= ?
-            ORDER BY start_date DESC
-            LIMIT 1
-          `,
-          [id, todayStr, todayStr]
-        );
-        
-        if (rotation) {
-          console.log(`[ExtendInternship] Found rotation via SQL fallback: id=${rotation.id}`);
-        }
-      }
+        console.log(`[ExtendInternship] Looking for ACTIVE (current) rotation for intern ${id}, today (UTC): ${todayStr}`);
 
-      if (rotation?.end_date) {
-        const endDate = normalizeDbDate(rotation.end_date);
+        let rotation = null;
 
-        if (endDate) {
-          const newEnd = format(addDays(endDate, daysToExtend), 'yyyy-MM-dd');
-          console.log(`[ExtendInternship] Extending rotation ${rotation.id} from ${format(endDate, 'yyyy-MM-dd')} to ${newEnd}`);
-          
-          const updateResult = await runAsync(
-            'UPDATE rotations SET end_date = ?, is_manual_assignment = 1 WHERE id = ?',
-            [newEnd, rotation.id]
+        // PRIORITY 1: Find the ACTIVE rotation (where today falls between start and end dates)
+        // This ensures we always extend the current unit the intern is in
+        try {
+          const allRotations = await allAsync(
+            `SELECT id, end_date, start_date, is_manual_assignment, unit_id FROM rotations WHERE intern_id = ? ORDER BY start_date DESC`,
+            [id]
           );
           
-          console.log(`[ExtendInternship] ✅ Rotation ${rotation.id} updated successfully, changes: ${updateResult.changes}`);
-        } else {
-          console.warn(`[ExtendInternship] ⚠️ Skipping rotation update for intern ${id} due to invalid end_date`, rotation.end_date);
+          console.log(`[ExtendInternship] Checking ${allRotations.length} rotations for intern ${id}`);
+          
+          // Find ACTIVE rotation using date-fns for reliable date comparison
+          for (const rot of allRotations) {
+            try {
+              const startDate = normalizeDbDate(rot.start_date);
+              const endDate = normalizeDbDate(rot.end_date);
+              
+              if (startDate && endDate) {
+                const startStr = format(startDate, 'yyyy-MM-dd');
+                const endStr = format(endDate, 'yyyy-MM-dd');
+                
+                // Check if today falls within the rotation period (this is the CURRENT unit)
+                if (startStr <= todayStr && endStr >= todayStr) {
+                  // If unit_id was provided, verify it matches (preferred unit)
+                  if (!unit_id || rot.unit_id === unit_id) {
+                    rotation = rot;
+                    console.log(`[ExtendInternship] ✅ Found ACTIVE rotation: id=${rotation.id}, unit_id=${rotation.unit_id}, ${startStr} to ${endStr}`);
+                    break;
+                  }
+                }
+              }
+            } catch (rotErr) {
+              console.error(`[ExtendInternship] Error processing rotation ${rot?.id}:`, rotErr);
+              continue; // Skip this rotation and continue
+            }
+          }
+        } catch (rotationsErr) {
+          console.error(`[ExtendInternship] Error fetching rotations:`, rotationsErr);
+          // Continue to fallback methods
         }
-      } else {
-        console.warn(`[ExtendInternship] ⚠️ No active rotation found for intern ${id}, extension days will still be recorded`);
+        
+        // PRIORITY 2: If unit_id provided but no active rotation found for that unit, 
+        // find the most recent rotation for that specific unit (might be upcoming)
+        if (!rotation && unit_id) {
+          try {
+            rotation = await getAsync(
+              `
+                SELECT id, end_date, start_date, is_manual_assignment, unit_id FROM rotations
+                WHERE intern_id = ? AND unit_id = ?
+                ORDER BY end_date DESC
+                LIMIT 1
+              `,
+              [id, unit_id]
+            );
+            
+            if (rotation) {
+              console.log(`[ExtendInternship] Found rotation by unit_id (may not be active): id=${rotation.id}, unit_id=${rotation.unit_id}, end_date=${rotation.end_date}`);
+            }
+          } catch (unitErr) {
+            console.error(`[ExtendInternship] Error finding rotation by unit_id:`, unitErr);
+          }
+        }
+        
+        // PRIORITY 3: Fallback - use SQL date comparison
+        if (!rotation) {
+          try {
+            rotation = await getAsync(
+              `
+                SELECT id, end_date, start_date, is_manual_assignment, unit_id FROM rotations
+                WHERE intern_id = ? AND start_date <= ? AND end_date >= ?
+                ORDER BY start_date DESC
+                LIMIT 1
+              `,
+              [id, todayStr, todayStr]
+            );
+            
+            if (rotation) {
+              console.log(`[ExtendInternship] Found rotation via SQL fallback: id=${rotation.id}`);
+            }
+          } catch (fallbackErr) {
+            console.error(`[ExtendInternship] Error with SQL fallback:`, fallbackErr);
+          }
+        }
+
+        if (rotation?.end_date) {
+          try {
+            const endDate = normalizeDbDate(rotation.end_date);
+
+            if (endDate) {
+              const newEnd = format(addDays(endDate, daysToExtend), 'yyyy-MM-dd');
+              console.log(`[ExtendInternship] Extending rotation ${rotation.id} from ${format(endDate, 'yyyy-MM-dd')} to ${newEnd}`);
+              
+              const updateResult = await runAsync(
+                'UPDATE rotations SET end_date = ?, is_manual_assignment = 1 WHERE id = ?',
+                [newEnd, rotation.id]
+              );
+              
+              console.log(`[ExtendInternship] ✅ Rotation ${rotation.id} updated successfully, changes: ${updateResult.changes}`);
+            } else {
+              console.warn(`[ExtendInternship] ⚠️ Skipping rotation update for intern ${id} due to invalid end_date`, rotation.end_date);
+            }
+          } catch (updateErr) {
+            console.error(`[ExtendInternship] Error updating rotation:`, updateErr);
+            throw updateErr; // Re-throw to be caught by outer catch
+          }
+        } else {
+          console.warn(`[ExtendInternship] ⚠️ No active rotation found for intern ${id}, extension days will still be recorded`);
+        }
+      } catch (rotationUpdateErr) {
+        console.error(`[ExtendInternship] Error in rotation update logic:`, rotationUpdateErr);
+        // Don't fail the entire request - extension days are still recorded
+        // The rotation update can be retried later if needed
       }
     }
 
+    // Record extension reason (non-blocking - don't fail if this fails)
     const daysToRecord = typeof adjustment_days === 'number' ? adjustment_days : extension_days;
-    await runAsync(
-      `
-        INSERT INTO extension_reasons (intern_id, extension_days, reason, notes)
-        VALUES (?, ?, ?, ?)
-      `,
-      [id, daysToRecord, reason, notes || '']
-    );
+    try {
+      await runAsync(
+        `
+          INSERT INTO extension_reasons (intern_id, extension_days, reason, notes)
+          VALUES (?, ?, ?, ?)
+        `,
+        [id, daysToRecord, reason, notes || '']
+      );
+      console.log(`[ExtendInternship] ✅ Extension reason recorded for intern ${id}`);
+    } catch (reasonErr) {
+      console.error(`[ExtendInternship] ⚠️ Failed to record extension reason (non-critical):`, reasonErr);
+      // Don't fail the entire request if recording reason fails
+    }
 
     res.json({
       message: extension_days > 0 ? 'Internship extended successfully' : 'Extension removed successfully',
@@ -575,9 +611,11 @@ router.post('/:id/extend', [
     });
   } catch (error) {
     console.error('[ExtendInternship] Error processing extension:', error);
+    console.error('[ExtendInternship] Error stack:', error.stack);
     res.status(500).json({
       error: 'Failed to extend internship',
-      details: error.message || String(error)
+      details: error.message || String(error),
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
