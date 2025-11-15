@@ -469,11 +469,12 @@ router.post('/:id/extend', [
         console.log(`[ExtendInternship] Looking for ACTIVE (current) rotation for intern ${id}, today (UTC): ${todayStr}`);
 
         let rotation = null;
+        let allRotations = [];
 
         // PRIORITY 1: Find the ACTIVE rotation (where today falls between start and end dates)
         // This ensures we always extend the current unit the intern is in
         try {
-          const allRotations = await allAsync(
+          allRotations = await allAsync(
             `SELECT id, end_date, start_date, is_manual_assignment, unit_id FROM rotations WHERE intern_id = ? ORDER BY start_date DESC`,
             [id]
           );
@@ -539,8 +540,9 @@ router.post('/:id/extend', [
         // This ensures we extend the unit the user selected, even if it's not technically "active"
         if (!rotation && unit_id) {
           try {
-            // First try to find active rotation for this unit
-            const unitRotations = allRotations.filter(r => r.unit_id === unit_id);
+            // First try to find active rotation for this unit from already fetched rotations
+            if (allRotations.length > 0) {
+              const unitRotations = allRotations.filter(r => r.unit_id === unit_id);
             for (const rot of unitRotations) {
               try {
                 const startDate = normalizeDbDate(rot.start_date);
