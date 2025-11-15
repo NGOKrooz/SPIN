@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Textarea } from './ui/textarea';
 import { api } from '../services/api';
 import { useToast } from '../hooks/use-toast';
-import { includesToday } from '../lib/utils';
+import { normalizeDate } from '../lib/utils';
 
 export default function ExtensionModal({ intern, onClose, onSuccess }) {
   const [formData, setFormData] = useState({
@@ -21,13 +21,44 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
 
   const { toast } = useToast();
 
-  // Fetch active units for this intern (current rotations)
+  // Fetch schedule for this intern
   const { data: schedule } = useQuery({
     queryKey: ['intern-schedule', intern.id],
     queryFn: () => api.getInternSchedule(intern.id),
   });
-  // Use timezone-aware date comparison to find active units
-  const activeUnits = useMemo(() => (schedule || []).filter(r => includesToday(r.start_date, r.end_date)), [schedule]);
+  
+  // Find the most recent rotation (current or just completed within last 7 days)
+  // This ensures we extend the correct unit even if the rotation just ended
+  const activeUnits = useMemo(() => {
+    if (!schedule || schedule.length === 0) return [];
+    
+    const now = normalizeDate(new Date());
+    const sevenDaysAgo = now - (7 * 24 * 60 * 60 * 1000);
+    
+    // First, try to find an active rotation (today is between start and end)
+    const current = schedule.find(r => {
+      const start = normalizeDate(r.start_date);
+      const end = normalizeDate(r.end_date);
+      return start <= now && end >= now;
+    });
+    
+    if (current) return [current];
+    
+    // If no active rotation, find the most recent rotation (by end_date)
+    // that ended within the last 7 days
+    const recent = schedule
+      .filter(r => {
+        const end = normalizeDate(r.end_date);
+        return end >= sevenDaysAgo && end <= now;
+      })
+      .sort((a, b) => {
+        const endA = normalizeDate(a.end_date);
+        const endB = normalizeDate(b.end_date);
+        return endB - endA; // Most recent first
+      })[0];
+    
+    return recent ? [recent] : [];
+  }, [schedule]);
   
   const currentExtension = intern.extension_days || 0;
   const hasExtension = currentExtension > 0;
