@@ -660,8 +660,19 @@ router.post('/:id/extend', [
             throw updateErr; // Re-throw to be caught by outer catch
           }
         } else {
+          // CRITICAL: If unit_id was provided but no rotation found, this is an error
           if (unit_id) {
-            console.error(`[ExtendInternship] ❌ ERROR: unit_id provided (${unit_id}) but no rotation found for intern ${id}. Extension days recorded but rotation not updated.`);
+            console.error(`[ExtendInternship] ❌ ERROR: unit_id provided (${unit_id}) but no rotation found for intern ${id}`);
+            try {
+              const debugRotations = await allAsync(
+                `SELECT id, unit_id, start_date, end_date FROM rotations WHERE intern_id = ? ORDER BY end_date DESC`,
+                [id]
+              );
+              console.error(`[ExtendInternship] Available rotations for intern ${id}:`, debugRotations);
+            } catch (debugErr) {
+              console.error(`[ExtendInternship] Error fetching debug rotations:`, debugErr);
+            }
+            console.error(`[ExtendInternship] Extension days recorded (${extension_days}) but rotation NOT updated!`);
           } else {
             console.warn(`[ExtendInternship] ⚠️ No rotation found for intern ${id} (no unit_id provided), extension days will still be recorded`);
           }
