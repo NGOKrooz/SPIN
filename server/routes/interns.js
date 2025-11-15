@@ -458,8 +458,10 @@ router.post('/:id/extend', [
     const daysToExtend = parseInt(daysToExtendRaw, 10);
 
     console.log(`[ExtendInternship] Extending internship for intern ${id}: ${daysToExtend} days, unit_id: ${unit_id || 'none'}`);
+    console.log(`[ExtendInternship] extension_days=${extension_days}, adjustment_days=${adjustment_days}, daysToExtend=${daysToExtend}`);
 
-    if (!Number.isNaN(daysToExtend) && daysToExtend !== 0) {
+    // Always try to extend a rotation if daysToExtend is valid (even if 0, we still want to update status)
+    if (!Number.isNaN(daysToExtend)) {
       try {
         // Use UTC date for consistent comparison across timezones
         const now = new Date();
@@ -627,15 +629,28 @@ router.post('/:id/extend', [
             const endDate = normalizeDbDate(rotation.end_date);
 
             if (endDate) {
+              // Add daysToExtend to the current end_date to extend the rotation
               const newEnd = format(addDays(endDate, daysToExtend), 'yyyy-MM-dd');
-              console.log(`[ExtendInternship] Extending rotation ${rotation.id} from ${format(endDate, 'yyyy-MM-dd')} to ${newEnd}`);
+              console.log(`[ExtendInternship] Extending rotation ${rotation.id} from ${format(endDate, 'yyyy-MM-dd')} to ${newEnd} (+${daysToExtend} days)`);
               
               const updateResult = await runAsync(
                 'UPDATE rotations SET end_date = ?, is_manual_assignment = 1 WHERE id = ?',
                 [newEnd, rotation.id]
               );
               
-              console.log(`[ExtendInternship] ✅ Rotation ${rotation.id} updated successfully, changes: ${updateResult.changes}`);
+              if (updateResult.changes > 0) {
+                console.log(`[ExtendInternship] ✅ Rotation ${rotation.id} updated successfully, changes: ${updateResult.changes}`);
+                // Verify the update
+                const verifyRotation = await getAsync(
+                  'SELECT id, end_date, start_date, unit_id FROM rotations WHERE id = ?',
+                  [rotation.id]
+                );
+                if (verifyRotation) {
+                  console.log(`[ExtendInternship] ✅ Verified rotation ${rotation.id} now ends on ${verifyRotation.end_date}`);
+                }
+              } else {
+                console.warn(`[ExtendInternship] ⚠️ Rotation update returned 0 changes - rotation may not exist`);
+              }
             } else {
               console.warn(`[ExtendInternship] ⚠️ Skipping rotation update for intern ${id} due to invalid end_date`, rotation.end_date);
             }
@@ -644,7 +659,11 @@ router.post('/:id/extend', [
             throw updateErr; // Re-throw to be caught by outer catch
           }
         } else {
-          console.warn(`[ExtendInternship] ⚠️ No active rotation found for intern ${id}, extension days will still be recorded`);
+          if (unit_id) {
+            console.error(`[ExtendInternship] ❌ ERROR: unit_id provided (${unit_id}) but no rotation found for intern ${id}. Extension days recorded but rotation not updated.`);
+          } else {
+            console.warn(`[ExtendInternship] ⚠️ No rotation found for intern ${id} (no unit_id provided), extension days will still be recorded`);
+          }
         }
       } catch (rotationUpdateErr) {
         console.error(`[ExtendInternship] Error in rotation update logic:`, rotationUpdateErr);
