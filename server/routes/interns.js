@@ -94,7 +94,7 @@ router.get('/', (req, res) => {
   
   query += ' GROUP BY i.id ORDER BY i.start_date DESC';
   
-  db.all(query, params, (err, rows) => {
+  db.all(query, params, async (err, rows) => {
     if (err) {
       console.error('Error fetching interns:', err);
       return res.status(500).json({ error: 'Failed to fetch interns' });
@@ -102,6 +102,13 @@ router.get('/', (req, res) => {
     
     // Ensure rows is an array
     const safeRows = Array.isArray(rows) ? rows : [];
+    
+    // Ensure status is correct for all interns (run in parallel, don't wait)
+    safeRows.forEach(row => {
+      ensureInternStatusIsCorrect(row.id).catch(err => {
+        console.error(`[GET /interns] Error ensuring status for intern ${row.id}:`, err);
+      });
+    });
     
     // Get all units to calculate total duration
     db.all('SELECT SUM(duration_days) as total FROM units', [], (err, unitRows) => {
@@ -184,7 +191,7 @@ router.get('/:id', (req, res) => {
     ORDER BY r.start_date DESC
   `;
   
-  db.all(query, [id], (err, rows) => {
+  db.all(query, [id], async (err, rows) => {
     if (err) {
       console.error('Error fetching intern:', err);
       return res.status(500).json({ error: 'Failed to fetch intern' });
@@ -207,6 +214,21 @@ router.get('/:id', (req, res) => {
           is_manual_assignment: row.is_manual_assignment
         }))
     };
+    
+    // Ensure status is correct before returning
+    await ensureInternStatusIsCorrect(id).catch(err => {
+      console.error(`[GET /interns/:id] Error ensuring status:`, err);
+    });
+    
+    // Refresh intern data to get corrected status
+    const correctedInternData = await getAsync(
+      `SELECT * FROM interns WHERE id = ?`,
+      [id]
+    );
+    
+    if (correctedInternData) {
+      intern.status = correctedInternData.status;
+    }
     
     // Remove rotation fields from main intern object
     delete intern.rotation_id;
@@ -663,6 +685,88 @@ router.post('/:id/force-auto-advance', async (req, res) => {
     });
   }
 });
+
+// Helper function to ensure intern status is correct based on current rotations
+// Status should be Active/Extended while in rotations, Completed only when all units done and no active/upcoming rotations
+async function ensureInternStatusIsCorrect(internId) {
+  try {
+    const now = new Date();
+    const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const today = format(todayUTC, 'yyyy-MM-dd');
+    
+    // Get intern
+    const intern = await getAsync(
+      `SELECT * FROM interns WHERE id = ?`,
+      [internId]
+    );
+    
+    if (!intern) return;
+    
+    // Get all units
+    const units = await allAsync('SELECT * FROM units ORDER BY id', []);
+    if (units.length === 0) return;
+    
+    // Get all rotations for this intern
+    const allRotations = await allAsync(
+      `SELECT * FROM rotations WHERE intern_id = ? ORDER BY start_date ASC`,
+      [internId]
+    );
+    
+    // Check for active or upcoming rotations
+    const hasActiveOrUpcomingRotations = allRotations.some(r => {
+      if (!r.start_date || !r.end_date) return false;
+      const startDate = parseDateSafe(r.start_date);
+      const endDate = parseDateSafe(r.end_date);
+      if (!startDate || !endDate) return false;
+      
+      const startStr = format(startDate, 'yyyy-MM-dd');
+      const endStr = format(endDate, 'yyyy-MM-dd');
+      
+      // Current rotation (today is between start and end)
+      if (startStr <= today && endStr >= today) return true;
+      
+      // Upcoming rotation (start date is after today)
+      if (startStr > today) return true;
+      
+      return false;
+    });
+    
+    // Check if all units are completed (only count automatic rotations)
+    const automaticRotations = allRotations.filter(r => !r.is_manual_assignment);
+    const completedUnits = new Set(automaticRotations.map(r => r.unit_id));
+    const allUnitsCompleted = completedUnits.size >= units.length;
+    
+    // Determine correct status
+    let correctStatus = intern.status;
+    
+    if (hasActiveOrUpcomingRotations) {
+      // Has active/upcoming rotations - should be Active or Extended
+      correctStatus = intern.extension_days > 0 ? 'Extended' : 'Active';
+    } else if (allUnitsCompleted) {
+      // All units done and no active/upcoming rotations - should be Completed
+      // But keep Extended if they have extension_days (might be in extension period)
+      if (intern.extension_days > 0) {
+        correctStatus = 'Extended';
+      } else {
+        correctStatus = 'Completed';
+      }
+    } else {
+      // Not all units done - should be Active or Extended
+      correctStatus = intern.extension_days > 0 ? 'Extended' : 'Active';
+    }
+    
+    // Update status if it's incorrect
+    if (correctStatus !== intern.status) {
+      console.log(`[ensureInternStatus] Correcting intern ${internId} status from "${intern.status}" to "${correctStatus}"`);
+      await runAsync(
+        'UPDATE interns SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [correctStatus, internId]
+      );
+    }
+  } catch (err) {
+    console.error(`[ensureInternStatus] Error correcting status for intern ${internId}:`, err);
+  }
+}
 
 // Helper function to auto-advance a single intern's rotation
 // Creates automatic rotations (is_manual_assignment = FALSE) for upcoming assignments
