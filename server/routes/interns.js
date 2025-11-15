@@ -460,8 +460,9 @@ router.post('/:id/extend', [
     console.log(`[ExtendInternship] Extending internship for intern ${id}: ${daysToExtend} days, unit_id: ${unit_id || 'none'}`);
     console.log(`[ExtendInternship] extension_days=${extension_days}, adjustment_days=${adjustment_days}, daysToExtend=${daysToExtend}`);
 
-    // Always try to extend a rotation if daysToExtend is valid (even if 0, we still want to update status)
-    if (!Number.isNaN(daysToExtend)) {
+    // Only extend rotation if daysToExtend > 0
+    // Extension days are always recorded in intern record regardless
+    if (!Number.isNaN(daysToExtend) && daysToExtend > 0) {
       try {
         // Use UTC date for consistent comparison across timezones
         const now = new Date();
