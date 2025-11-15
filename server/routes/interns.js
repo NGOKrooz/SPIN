@@ -541,31 +541,42 @@ router.post('/:id/extend', [
         
         // PRIORITY 2: If unit_id provided, ALWAYS find that specific unit's rotation
         // This is the most reliable way - if user specified unit_id, use it
+        // Check both in-memory rotations and database to ensure we find it
         if (!rotation && unit_id) {
           try {
-            // Direct query: get the most recent rotation for this specific unit_id
-            // This is the most reliable method when unit_id is provided
-            rotation = await getAsync(
-              `
-                SELECT id, end_date, start_date, is_manual_assignment, unit_id FROM rotations
-                WHERE intern_id = ? AND unit_id = ?
-                ORDER BY end_date DESC
-                LIMIT 1
-              `,
-              [id, unit_id]
-            );
-            
-            if (rotation) {
-              const rotEndDate = normalizeDbDate(rotation.end_date);
-              if (rotEndDate) {
-                const rotEndStr = format(rotEndDate, 'yyyy-MM-dd');
-                const daysSinceEnd = Math.floor((parseISO(todayStr).getTime() - rotEndDate.getTime()) / (1000 * 60 * 60 * 24));
-                console.log(`[ExtendInternship] ✅ Found rotation for unit_id ${unit_id} (ended ${daysSinceEnd} days ago): id=${rotation.id}, end_date=${rotEndStr}`);
-              } else {
-                console.log(`[ExtendInternship] ✅ Found rotation for unit_id ${unit_id}: id=${rotation.id}, end_date=${rotation.end_date}`);
+            // First check in-memory rotations (already fetched)
+            if (allRotations.length > 0) {
+              const unitRotation = allRotations.find(r => r.unit_id === unit_id);
+              if (unitRotation) {
+                rotation = unitRotation;
+                console.log(`[ExtendInternship] ✅ Found rotation for unit_id ${unit_id} from in-memory list: id=${rotation.id}`);
               }
-            } else {
-              console.error(`[ExtendInternship] ❌ No rotation found for intern ${id} with unit_id ${unit_id}`);
+            }
+            
+            // If not found in memory, query database directly
+            if (!rotation) {
+              rotation = await getAsync(
+                `
+                  SELECT id, end_date, start_date, is_manual_assignment, unit_id FROM rotations
+                  WHERE intern_id = ? AND unit_id = ?
+                  ORDER BY end_date DESC
+                  LIMIT 1
+                `,
+                [id, unit_id]
+              );
+              
+              if (rotation) {
+                const rotEndDate = normalizeDbDate(rotation.end_date);
+                if (rotEndDate) {
+                  const rotEndStr = format(rotEndDate, 'yyyy-MM-dd');
+                  const daysSinceEnd = Math.floor((parseISO(todayStr).getTime() - rotEndDate.getTime()) / (1000 * 60 * 60 * 24));
+                  console.log(`[ExtendInternship] ✅ Found rotation for unit_id ${unit_id} from DB (ended ${daysSinceEnd} days ago): id=${rotation.id}, end_date=${rotEndStr}`);
+                } else {
+                  console.log(`[ExtendInternship] ✅ Found rotation for unit_id ${unit_id} from DB: id=${rotation.id}, end_date=${rotation.end_date}`);
+                }
+              } else {
+                console.error(`[ExtendInternship] ❌ No rotation found for intern ${id} with unit_id ${unit_id}`);
+              }
             }
           } catch (unitErr) {
             console.error(`[ExtendInternship] Error finding rotation by unit_id:`, unitErr);
