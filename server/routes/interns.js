@@ -603,6 +603,11 @@ router.delete('/:id', (req, res) => {
 router.get('/:id/schedule', async (req, res) => {
   const { id } = req.params;
   
+  // Ensure status is correct first
+  await ensureInternStatusIsCorrect(id).catch(err => {
+    console.error(`[schedule] Error ensuring status for intern ${id}:`, err);
+  });
+  
   // Auto-advance rotation if enabled and needed for this intern
   const autoRotationEnabled = process.env.AUTO_ROTATION === 'true';
   console.log(`[Schedule] AUTO_ROTATION=${process.env.AUTO_ROTATION}, enabled=${autoRotationEnabled}`);
