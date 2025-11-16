@@ -818,6 +818,21 @@ router.get('/:id/schedule', async (req, res) => {
       return res.status(500).json({ error: 'Failed to fetch schedule' });
     }
     
+    // DEBUG: Log schedule data format to verify date format before finalizing fix
+    console.log('[DEBUG schedule]', JSON.stringify(rows, null, 2));
+    if (rows && rows.length > 0) {
+      const sample = rows[0];
+      console.log('[DEBUG schedule sample]', {
+        id: sample.id,
+        start_date: sample.start_date,
+        start_date_type: typeof sample.start_date,
+        end_date: sample.end_date,
+        end_date_type: typeof sample.end_date,
+        start_date_value: sample.start_date ? new Date(sample.start_date).toISOString() : null,
+        end_date_value: sample.end_date ? new Date(sample.end_date).toISOString() : null,
+      });
+    }
+    
     res.json(rows);
   });
 });
