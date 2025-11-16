@@ -601,56 +601,64 @@ router.post('/:id/extend', [
           }
         }
 
-        // If we have a rotation, extend it
-        if (rotation && rotation.end_date) {
+        // If we have a rotation, extend it using SQL date arithmetic (works for both SQLite and PostgreSQL)
+        if (rotation && rotation.id) {
           try {
-            const endDate = normalizeDbDate(rotation.end_date);
-
-            if (endDate) {
-              // Add daysToExtend to the current end_date to extend the rotation
-              const newEnd = format(addDays(endDate, daysToExtend), 'yyyy-MM-dd');
-              console.log(`[ExtendInternship] Extending rotation ${rotation.id} from ${format(endDate, 'yyyy-MM-dd')} to ${newEnd} (+${daysToExtend} days)`);
+            const isPostgres = !!process.env.DATABASE_URL;
+            
+            // Use SQL date arithmetic for reliable cross-database updates
+            // SQLite: date(end_date, '+X days')
+            // PostgreSQL: end_date + INTERVAL 'X days'
+            let updateQuery;
+            if (isPostgres) {
+              updateQuery = `
+                UPDATE rotations 
+                SET end_date = end_date + INTERVAL '${daysToExtend} days',
+                    is_manual_assignment = TRUE,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = $1
+              `;
+            } else {
+              updateQuery = `
+                UPDATE rotations 
+                SET end_date = date(end_date, '+${daysToExtend} days'),
+                    is_manual_assignment = 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+              `;
+            }
+            
+            console.log(`[ExtendInternship] Extending rotation ${rotation.id} by ${daysToExtend} days`);
+            console.log(`[ExtendInternship] Current end_date: ${rotation.end_date}`);
+            console.log(`[ExtendInternship] Update query: ${updateQuery.trim()}`);
+            
+            const updateResult = await runAsync(
+              updateQuery,
+              [rotation.id]
+            );
+            
+            if (updateResult.changes > 0) {
+              console.log(`[ExtendInternship] ✅ Rotation ${rotation.id} updated successfully, changes: ${updateResult.changes}`);
               
-              const updateResult = await runAsync(
-                'UPDATE rotations SET end_date = ?, is_manual_assignment = 1 WHERE id = ?',
-                [newEnd, rotation.id]
+              // CRITICAL: Verify the update was actually saved
+              const verifyRotation = await getAsync(
+                'SELECT id, end_date, start_date, unit_id FROM rotations WHERE id = ?',
+                [rotation.id]
               );
-              
-              if (updateResult.changes > 0) {
-                console.log(`[ExtendInternship] ✅ Rotation ${rotation.id} updated successfully, changes: ${updateResult.changes}`);
-                
-                // CRITICAL: Verify the update was actually saved
-                const verifyRotation = await getAsync(
-                  'SELECT id, end_date, start_date, unit_id FROM rotations WHERE id = ?',
-                  [rotation.id]
-                );
-                if (verifyRotation) {
-                  const verifiedEndDate = normalizeDbDate(verifyRotation.end_date);
-                  if (verifiedEndDate) {
-                    const verifiedEndStr = format(verifiedEndDate, 'yyyy-MM-dd');
-                    if (verifiedEndStr === newEnd) {
-                      console.log(`[ExtendInternship] ✅ Verified rotation ${rotation.id} now ends on ${verifiedEndStr} (matches expected ${newEnd})`);
-                    } else {
-                      console.error(`[ExtendInternship] ❌ VERIFICATION FAILED: Rotation ${rotation.id} end_date is ${verifiedEndStr}, expected ${newEnd}`);
-                    }
-                  } else {
-                    console.warn(`[ExtendInternship] ⚠️ Could not parse verified end_date: ${verifyRotation.end_date}`);
-                  }
-                } else {
-                  console.error(`[ExtendInternship] ❌ Could not verify rotation ${rotation.id} after update`);
-                }
+              if (verifyRotation) {
+                console.log(`[ExtendInternship] ✅ Verified rotation ${rotation.id} now ends on ${verifyRotation.end_date} (was ${rotation.end_date})`);
               } else {
-                console.error(`[ExtendInternship] ❌ Rotation update returned 0 changes - rotation may not exist or was not updated`);
-                // Try to fetch the rotation to see if it exists
-                const checkRotation = await getAsync('SELECT id, end_date FROM rotations WHERE id = ?', [rotation.id]);
-                if (checkRotation) {
-                  console.error(`[ExtendInternship] Rotation ${rotation.id} exists but update failed. Current end_date: ${checkRotation.end_date}`);
-                } else {
-                  console.error(`[ExtendInternship] Rotation ${rotation.id} does not exist in database`);
-                }
+                console.error(`[ExtendInternship] ❌ Could not verify rotation ${rotation.id} after update`);
               }
             } else {
-              console.error(`[ExtendInternship] ❌ Skipping rotation update for intern ${id} due to invalid end_date: ${rotation.end_date}`);
+              console.error(`[ExtendInternship] ❌ Rotation update returned 0 changes - rotation may not exist or was not updated`);
+              // Try to fetch the rotation to see if it exists
+              const checkRotation = await getAsync('SELECT id, end_date FROM rotations WHERE id = ?', [rotation.id]);
+              if (checkRotation) {
+                console.error(`[ExtendInternship] Rotation ${rotation.id} exists but update failed. Current end_date: ${checkRotation.end_date}`);
+              } else {
+                console.error(`[ExtendInternship] Rotation ${rotation.id} does not exist in database`);
+              }
             }
           } catch (updateErr) {
             console.error(`[ExtendInternship] ❌ Error updating rotation:`, updateErr);
