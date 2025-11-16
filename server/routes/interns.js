@@ -602,13 +602,14 @@ router.post('/:id/extend', [
         }
 
         // If we have a rotation, extend it using SQL date arithmetic (works for both SQLite and PostgreSQL)
+        // Date format: YYYY-MM-DD HH:MM:SS - we preserve the time component to avoid drift
         if (rotation && rotation.id) {
           try {
             const isPostgres = !!process.env.DATABASE_URL;
             
             // Use SQL date arithmetic for reliable cross-database updates
-            // SQLite: date(end_date, '+X days')
-            // PostgreSQL: end_date + INTERVAL 'X days'
+            // SQLite: datetime(end_date, '+X days') - preserves time component
+            // PostgreSQL: end_date + INTERVAL 'X days' - preserves time component
             let updateQuery;
             if (isPostgres) {
               updateQuery = `
@@ -619,9 +620,10 @@ router.post('/:id/extend', [
                 WHERE id = $1
               `;
             } else {
+              // SQLite: Use datetime() instead of date() to preserve time component (HH:MM:SS)
               updateQuery = `
                 UPDATE rotations 
-                SET end_date = date(end_date, '+${daysToExtend} days'),
+                SET end_date = datetime(end_date, '+${daysToExtend} days'),
                     is_manual_assignment = 1,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
