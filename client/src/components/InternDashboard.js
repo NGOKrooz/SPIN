@@ -317,12 +317,11 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                               const endDate = normalizeDate(rotation.end_date);
                               const currentDate = normalizeDate(new Date());
                               // Always calculate from actual dates to account for extensions
-                              // Calculate total days from start_date to end_date (inclusive)
-                              const totalDays = Math.max(1, Math.floor((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
+                              // Use calculateDaysBetween for consistent inclusive day calculation
+                              const totalDays = calculateDaysBetween(rotation.start_date, rotation.end_date);
                               const daysElapsed = Math.max(0, Math.floor((currentDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
                               // Cap at total days to prevent showing 3/2 days
                               const cappedDays = Math.min(daysElapsed, totalDays);
-                              console.log(`[InternDashboard] Rotation ${rotation.id}: start=${rotation.start_date}, end=${rotation.end_date}, totalDays=${totalDays}, daysElapsed=${daysElapsed}`);
                               return `${cappedDays} / ${totalDays} days`;
                             })()}
                           </p>
