@@ -47,9 +47,13 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
 
   const { data: internSchedule } = useQuery({
     queryKey: ['intern-schedule', intern.id],
-    queryFn: () => api.getInternSchedule(intern.id),
+    queryFn: () => {
+      console.log('[InternDashboard] Fetching schedule for intern', intern.id);
+      return api.getInternSchedule(intern.id);
+    },
     staleTime: 0, // Always refetch fresh data
     refetchOnMount: true,
+    refetchOnWindowFocus: true,
   });
 
   const { data: units } = useQuery({
@@ -137,7 +141,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
     });
   }, [queryClient]);
 
-  const handleExtensionSuccess = React.useCallback((result) => {
+  const handleExtensionSuccess = React.useCallback(async (result) => {
     setShowExtend(false);
     if (result) {
       const updatedStatus = result.status ?? 'Extended';
@@ -160,14 +164,26 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
       }
     }
 
-    queryClient.invalidateQueries({ queryKey: ['intern-schedule', intern.id] });
-    queryClient.refetchQueries({ queryKey: ['intern-schedule', intern.id] });
-    invalidateInternLists();
-    queryClient.refetchQueries({
-      predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === 'interns',
+    // Force immediate refresh of schedule data - this is critical for showing updated rotation days
+    await queryClient.invalidateQueries({ queryKey: ['intern-schedule', intern.id] });
+    await queryClient.refetchQueries({ 
+      queryKey: ['intern-schedule', intern.id],
+      type: 'active' // Force refetch even if query is active
     });
-    queryClient.invalidateQueries({ queryKey: ['intern', intern.id] });
-    queryClient.refetchQueries({ queryKey: ['intern', intern.id] });
+    
+    // Also invalidate and refetch intern details
+    await queryClient.invalidateQueries({ queryKey: ['intern', intern.id] });
+    await queryClient.refetchQueries({ 
+      queryKey: ['intern', intern.id],
+      type: 'active'
+    });
+    
+    // Invalidate intern lists
+    invalidateInternLists();
+    await queryClient.refetchQueries({
+      predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === 'interns',
+      type: 'active'
+    });
   }, [intern.id, internState?.extension_days, invalidateInternLists, onInternUpdated, queryClient]);
 
   return (
