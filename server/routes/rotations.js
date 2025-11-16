@@ -833,10 +833,14 @@ async function autoAdvanceRotations() {
       });
       
       // Only mark as Completed if:
-      // 1. All units are completed
+      // 1. All units are completed (checked via getNextUnitForIntern returning null)
       // 2. No active or upcoming rotations (internship is truly finished)
-      if (completedUnits.size >= units.length && !hasActiveOrUpcomingRotations) {
-        console.log(`[AutoAdvance] Intern ${intern.id} has completed all ${units.length} units and has no active/upcoming rotations`);
+      // Check if getNextUnitForIntern would return null (all units completed)
+      const nextUnitCheck = await getNextUnitForIntern(intern.id, units, allInternsOrdered, lastRotation);
+      const allUnitsCompleted = nextUnitCheck === null;
+      
+      if (allUnitsCompleted && !hasActiveOrUpcomingRotations) {
+        console.log(`[AutoAdvance] Intern ${intern.id} (${intern.name}) has completed all ${units.length} units and has no active/upcoming rotations`);
         
         // Mark intern as Completed only if status isn't already Extended
         if (intern.status !== 'Extended') {
@@ -851,14 +855,16 @@ async function autoAdvanceRotations() {
                 }
               );
             });
-            console.log(`[AutoAdvance] Intern ${intern.id} (${intern.name}) marked as Completed`);
+            console.log(`[AutoAdvance] ✅ Intern ${intern.id} (${intern.name}) marked as Completed`);
           } catch (err) {
             console.error(`[AutoAdvance] Error marking intern ${intern.id} as Completed:`, err);
           }
+        } else {
+          console.log(`[AutoAdvance] Intern ${intern.id} (${intern.name}) has extension_days, keeping status as Extended`);
         }
         
         skipped++;
-        continue; // Skip creating new rotations
+        continue; // Skip creating new rotations - all units completed once
       }
       
       // If intern has active/upcoming rotations but status is Completed, set back to Active
