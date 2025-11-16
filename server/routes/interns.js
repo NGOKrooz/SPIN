@@ -2,7 +2,17 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const db = require('../database/dbWrapper');
 const { addDays, format, parseISO } = require('date-fns');
-const { getNextUnitForIntern, getRoundRobinCounter, setRoundRobinCounter } = require('./rotations');
+// Lazy load to avoid circular dependency - rotations.js is loaded after interns.js in index.js
+let getNextUnitForIntern, getRoundRobinCounter, setRoundRobinCounter;
+function getRotationHelpers() {
+  if (!getNextUnitForIntern) {
+    const rotationsModule = require('./rotations');
+    getNextUnitForIntern = rotationsModule.getNextUnitForIntern;
+    getRoundRobinCounter = rotationsModule.getRoundRobinCounter;
+    setRoundRobinCounter = rotationsModule.setRoundRobinCounter;
+  }
+  return { getNextUnitForIntern, getRoundRobinCounter, setRoundRobinCounter };
+}
 
 const router = express.Router();
 
@@ -1206,7 +1216,8 @@ async function autoAdvanceInternRotation(internId) {
   }
   
   // Use flexible, fair round-robin logic to get next unit
-  const nextUnit = await getNextUnitForIntern(internId, units, allInterns, lastRotation);
+  const { getNextUnitForIntern: getNextUnit } = getRotationHelpers();
+  const nextUnit = await getNextUnit(internId, units, allInterns, lastRotation);
   
   if (!nextUnit) {
     console.warn(`[AutoAdvance] No available unit for intern ${internId}`);
@@ -1306,7 +1317,8 @@ async function generateRotationsForIntern(internId, batch, start_date) {
     let roundRobinCounter;
 
     try {
-      roundRobinCounter = await getRoundRobinCounter();
+      const { getRoundRobinCounter: getCounter } = getRotationHelpers();
+      roundRobinCounter = await getCounter();
       startOffset = roundRobinCounter % units.length;
     } catch (counterErr) {
       console.error('[GenerateRotations] Failed to read round robin counter, using intern index fallback:', counterErr);
@@ -1348,7 +1360,8 @@ async function generateRotationsForIntern(internId, batch, start_date) {
 
     if (roundRobinCounter !== null) {
       try {
-        await setRoundRobinCounter(roundRobinCounter + 1);
+        const { setRoundRobinCounter: setCounter } = getRotationHelpers();
+        await setCounter(roundRobinCounter + 1);
       } catch (counterErr) {
         console.error('[GenerateRotations] Failed to advance round robin counter after creating rotations:', counterErr);
       }
