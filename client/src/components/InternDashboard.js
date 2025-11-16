@@ -72,17 +72,20 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
     }
   }, [internSchedule]);
 
-  // Separate completed and upcoming rotations using date-only comparisons
-  const completedRotations = internSchedule?.filter(rotation => 
-    isBeforeToday(rotation.end_date)
+  // Separate completed and upcoming rotations using normalized dates to handle extensions correctly
+  const completedRotations = internSchedule?.filter(r =>
+    normalizeDate(r.end_date) < normalizeDate(new Date())
   ) || [];
   
-  const currentRotations = internSchedule?.filter(rotation => 
-    includesToday(rotation.start_date, rotation.end_date)
-  ) || [];
+  const currentRotations = internSchedule?.filter(r => {
+    const start = normalizeDate(r.start_date);
+    const end = normalizeDate(r.end_date);
+    const today = normalizeDate(new Date());
+    return start <= today && end >= today;
+  }) || [];
   
-  const upcomingRotations = internSchedule?.filter(rotation => 
-    isAfterToday(rotation.start_date)
+  const upcomingRotations = internSchedule?.filter(r =>
+    normalizeDate(r.start_date) > normalizeDate(new Date())
   ) || [];
 
   // Debug logging for filtered results
@@ -97,14 +100,16 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   const remainingUnits = units?.filter(unit => !assignedUnitIds.includes(unit.id)) || [];
 
   const getRotationDuration = React.useCallback((rotation) => {
+    // NEVER use rotation.duration_days - backend doesn't update it after extension
+    // Always calculate from actual dates
     if (!rotation?.start_date || !rotation?.end_date) {
-      return rotation?.duration_days || 0;
+      return 0;
     }
     try {
       return calculateDaysBetween(rotation.start_date, rotation.end_date);
     } catch (err) {
       console.error('[InternDashboard] Failed to calculate rotation duration:', err);
-      return rotation?.duration_days || 0;
+      return 0;
     }
   }, []);
 
@@ -165,24 +170,33 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
     }
 
     // Force immediate refresh of schedule data - this is critical for showing updated rotation days
-    await queryClient.invalidateQueries({ queryKey: ['intern-schedule', intern.id] });
+    // Use exact: true and type: 'all' to guarantee a fresh refetch
+    await queryClient.invalidateQueries({ 
+      queryKey: ['intern-schedule', intern.id],
+      exact: true
+    });
     await queryClient.refetchQueries({ 
       queryKey: ['intern-schedule', intern.id],
-      type: 'active' // Force refetch even if query is active
+      exact: true,
+      type: 'all' // Force refetch all queries matching this key
     });
     
     // Also invalidate and refetch intern details
-    await queryClient.invalidateQueries({ queryKey: ['intern', intern.id] });
+    await queryClient.invalidateQueries({ 
+      queryKey: ['intern', intern.id],
+      exact: true
+    });
     await queryClient.refetchQueries({ 
       queryKey: ['intern', intern.id],
-      type: 'active'
+      exact: true,
+      type: 'all'
     });
     
     // Invalidate intern lists
     invalidateInternLists();
     await queryClient.refetchQueries({
       predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === 'interns',
-      type: 'active'
+      type: 'all'
     });
   }, [intern.id, internState?.extension_days, invalidateInternLists, onInternUpdated, queryClient]);
 

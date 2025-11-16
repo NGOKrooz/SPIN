@@ -62,10 +62,9 @@ export function getCoverageColor(status) {
 }
 
 export function calculateDaysBetween(startDate, endDate) {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  const diffTime = Math.abs(end - start);
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+  const s = normalizeDate(startDate);
+  const e = normalizeDate(endDate);
+  return Math.floor((e - s) / (1000 * 60 * 60 * 24)) + 1; // +1 for inclusive days
 }
 
 // Helper function to normalize date to start of day for proper date-only comparisons
