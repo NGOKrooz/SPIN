@@ -603,6 +603,112 @@ router.put('/:id', validateRotationUpdate, async (req, res) => {
       }
     }
     
+    // If unit changed, add the old unit back to upcoming rotations
+    const oldUnitId = currentRotation.unit_id;
+    const unitChanged = oldUnitId !== parseInt(unit_id);
+    
+    if (unitChanged && newEndDate) {
+      try {
+        // Check if the old unit is already in upcoming rotations
+        const dayAfterNewEnd = addDays(newEndDate, 1);
+        const dayAfterNewEndStr = format(dayAfterNewEnd, 'yyyy-MM-dd');
+        
+        const existingOldUnitRotation = await getAsync(
+          `SELECT id FROM rotations 
+           WHERE intern_id = ? 
+           AND unit_id = ? 
+           AND start_date >= ? 
+           AND id != ?`,
+          [rotationInternId, oldUnitId, dayAfterNewEndStr, id]
+        );
+        
+        // If old unit is not in upcoming rotations, add it as the next rotation
+        if (!existingOldUnitRotation) {
+          // Get the old unit's duration
+          const oldUnit = await getAsync('SELECT duration_days FROM units WHERE id = ?', [oldUnitId]);
+          
+          if (oldUnit) {
+            const oldUnitStartDate = dayAfterNewEnd;
+            const oldUnitEndDate = addDays(oldUnitStartDate, oldUnit.duration_days - 1);
+            const oldUnitStartStr = format(oldUnitStartDate, 'yyyy-MM-dd');
+            const oldUnitEndStr = format(oldUnitEndDate, 'yyyy-MM-dd');
+            
+            // Check if there's already a rotation starting on this date
+            const conflictingRotation = await getAsync(
+              `SELECT id FROM rotations 
+               WHERE intern_id = ? 
+               AND start_date = ? 
+               AND id != ?`,
+              [rotationInternId, oldUnitStartStr, id]
+            );
+            
+            if (!conflictingRotation) {
+              // Insert the old unit as an upcoming rotation
+              await runAsync(
+                `INSERT INTO rotations (intern_id, unit_id, start_date, end_date, is_manual_assignment)
+                 VALUES (?, ?, ?, ?, FALSE)`,
+                [rotationInternId, oldUnitId, oldUnitStartStr, oldUnitEndStr]
+              );
+              
+              console.log(`[ReassignRotation] ✅ Added old unit ${oldUnitId} back to upcoming rotations starting ${oldUnitStartStr}`);
+              
+              // Shift any existing rotations that conflict with this new one
+              const conflictingRotations = await allAsync(
+                `SELECT id, start_date, end_date FROM rotations 
+                 WHERE intern_id = ? 
+                 AND id != ? 
+                 AND start_date >= ? 
+                 AND id NOT IN (
+                   SELECT id FROM rotations 
+                   WHERE intern_id = ? 
+                   AND unit_id = ? 
+                   AND start_date = ?
+                 )
+                 ORDER BY start_date ASC`,
+                [rotationInternId, id, oldUnitStartStr, rotationInternId, oldUnitId, oldUnitStartStr]
+              );
+              
+              if (conflictingRotations.length > 0) {
+                // Shift conflicting rotations to start after the old unit rotation ends
+                const shiftStartDate = addDays(oldUnitEndDate, 1);
+                const shiftStartStr = format(shiftStartDate, 'yyyy-MM-dd');
+                
+                let currentShiftStart = shiftStartDate;
+                
+                for (const conflictRot of conflictingRotations) {
+                  const conflictStart = parseISO(conflictRot.start_date);
+                  const conflictEnd = parseISO(conflictRot.end_date);
+                  
+                  if (conflictStart && conflictEnd && !isNaN(conflictStart.getTime()) && !isNaN(conflictEnd.getTime())) {
+                    const duration = differenceInDays(conflictEnd, conflictStart);
+                    const newConflictStart = currentShiftStart;
+                    const newConflictEnd = addDays(newConflictStart, duration);
+                    const newConflictStartStr = format(newConflictStart, 'yyyy-MM-dd');
+                    const newConflictEndStr = format(newConflictEnd, 'yyyy-MM-dd');
+                    
+                    const isPostgres = !!process.env.DATABASE_URL;
+                    const updateQuery = isPostgres
+                      ? `UPDATE rotations SET start_date = $1, end_date = $2 WHERE id = $3`
+                      : `UPDATE rotations SET start_date = ?, end_date = ? WHERE id = ?`;
+                    
+                    await runAsync(updateQuery, [newConflictStartStr, newConflictEndStr, conflictRot.id]);
+                    console.log(`[ReassignRotation] ✅ Shifted conflicting rotation ${conflictRot.id} to start ${newConflictStartStr}`);
+                    
+                    // Update currentShiftStart for next iteration
+                    currentShiftStart = addDays(newConflictEnd, 1);
+                  }
+                }
+              }
+            }
+          }
+        } else {
+          console.log(`[ReassignRotation] Old unit ${oldUnitId} already exists in upcoming rotations`);
+        }
+      } catch (addOldUnitErr) {
+        console.error(`[ReassignRotation] ⚠️ Error adding old unit back to upcoming rotations (non-critical):`, addOldUnitErr);
+      }
+    }
+    
     // Log activity for reassignment
     try {
       const intern = await getAsync('SELECT name FROM interns WHERE id = ?', [rotationInternId]);
