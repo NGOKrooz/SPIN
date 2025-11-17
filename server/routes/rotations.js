@@ -671,11 +671,18 @@ async function getNextUnitForIntern(internId, units, interns, lastRotation) {
     }
   }
 
-  // Get all automatic rotations for this intern to check which units have been completed
+  // Get all automatic rotations that have ENDED (completed) for this intern
+  // IMPORTANT: Only count rotations that actually ended in the past
+  // This ensures that if a rotation is reassigned, the old unit isn't counted as "completed"
+  const today = format(new Date(), 'yyyy-MM-dd');
   const automaticRotations = await new Promise((resolve, reject) => {
     db.all(
-      `SELECT unit_id FROM rotations WHERE intern_id = ? AND is_manual_assignment = 0 ORDER BY start_date`,
-      [internId],
+      `SELECT unit_id FROM rotations 
+       WHERE intern_id = ? 
+       AND is_manual_assignment = 0 
+       AND end_date < ?
+       ORDER BY start_date`,
+      [internId, today],
       (err, rows) => {
         if (err) reject(err);
         else resolve(rows || []);
@@ -975,7 +982,17 @@ async function autoAdvanceRotations() {
       }
       
       // Check if intern has completed all units AND has no active/upcoming rotations
-      const completedUnits = new Set(automaticRotations.map(r => r.unit_id));
+      // Only count rotations that have ENDED (completed in the past)
+      // This ensures reassigned units aren't counted as "completed"
+      const today = format(new Date(), 'yyyy-MM-dd');
+      const completedAutomaticRotations = automaticRotations.filter(r => {
+        if (!r.end_date) return false;
+        const endDate = parseISO(r.end_date);
+        if (!endDate || isNaN(endDate.getTime())) return false;
+        const endStr = format(endDate, 'yyyy-MM-dd');
+        return endStr < today; // Only count rotations that ended in the past
+      });
+      const completedUnits = new Set(completedAutomaticRotations.map(r => r.unit_id));
       
       // Check for current or upcoming rotations (intern is still active)
       const hasActiveOrUpcomingRotations = allRotationsHistory.some(r => {
