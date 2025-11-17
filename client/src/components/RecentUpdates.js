@@ -40,7 +40,11 @@ const formatActivityMessage = (activity) => {
   
   switch (activity_type) {
     case 'extension':
-      return details || `${intern_name || 'An intern'}'s internship was extended`;
+      // Use details if available (includes intern name and unit), otherwise construct message
+      if (details) {
+        return details;
+      }
+      return `${intern_name || 'An intern'}'s rotation${unit_name ? ` in ${unit_name}` : ''} was extended`;
     case 'reassignment':
       return `${intern_name || 'An intern'} was reassigned${unit_name ? ` to ${unit_name}` : ''}`;
     case 'unit_change':

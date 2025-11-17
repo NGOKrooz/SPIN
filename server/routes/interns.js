@@ -894,12 +894,17 @@ router.post('/:id/extend', [
         ? `Extended by ${daysDifference} day(s)` 
         : `Extension reduced by ${Math.abs(daysDifference)} day(s)`;
       
+      // Create clear message with intern name and unit
+      const internName = intern?.name || 'An intern';
+      const unitName = unit?.name || 'current unit';
+      const detailsMessage = `${internName}'s rotation in ${unitName} was ${actionText.toLowerCase()}${reason ? ` (${reason})` : ''}`;
+      
       await logActivity('extension', {
         internId: id,
         internName: intern?.name || null,
         unitId: unit_id || null,
         unitName: unit?.name || null,
-        details: `${actionText}${reason ? ` (${reason})` : ''}`
+        details: detailsMessage
       });
     } catch (logErr) {
       console.error(`[ExtendInternship] Error logging activity:`, logErr);
