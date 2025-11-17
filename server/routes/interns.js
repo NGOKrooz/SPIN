@@ -449,6 +449,16 @@ router.post('/:id/extend', [
   const { extension_days, adjustment_days, reason, notes, unit_id } = req.body;
 
   try {
+    // Get current extension_days BEFORE updating to calculate the difference
+    const currentIntern = await getAsync('SELECT extension_days FROM interns WHERE id = ?', [id]);
+    if (!currentIntern) {
+      return res.status(404).json({ error: 'Intern not found' });
+    }
+
+    const oldExtensionDays = parseInt(currentIntern.extension_days || 0, 10);
+    const newExtensionDays = parseInt(extension_days || 0, 10);
+    const daysDifference = newExtensionDays - oldExtensionDays;
+
     const finalStatus = extension_days > 0 ? 'Extended' : 'Active';
 
     const updateInternResult = await runAsync(
@@ -467,12 +477,12 @@ router.post('/:id/extend', [
     const daysToExtendRaw = typeof adjustment_days === 'number' ? adjustment_days : extension_days;
     const daysToExtend = parseInt(daysToExtendRaw, 10);
 
-    console.log(`[ExtendInternship] Extending internship for intern ${id}: ${daysToExtend} days, unit_id: ${unit_id || 'none'}`);
+    console.log(`[ExtendInternship] Updating internship for intern ${id}: old=${oldExtensionDays}, new=${newExtensionDays}, difference=${daysDifference}, unit_id: ${unit_id || 'none'}`);
     console.log(`[ExtendInternship] extension_days=${extension_days}, adjustment_days=${adjustment_days}, daysToExtend=${daysToExtend}`);
 
-    // Only extend rotation if daysToExtend > 0
-    // Extension days are always recorded in intern record regardless
-    if (!Number.isNaN(daysToExtend) && daysToExtend > 0) {
+    // Update rotation if there's a change in extension days (positive or negative)
+    // This handles both adding and removing extension days
+    if (!Number.isNaN(daysDifference) && daysDifference !== 0) {
       try {
         // Use UTC date for consistent comparison across timezones
         const now = new Date();
@@ -601,34 +611,56 @@ router.post('/:id/extend', [
           }
         }
 
-        // If we have a rotation, extend it using SQL date arithmetic (works for both SQLite and PostgreSQL)
+        // If we have a rotation, adjust it using SQL date arithmetic (works for both SQLite and PostgreSQL)
         // Date format: YYYY-MM-DD HH:MM:SS - we preserve the time component to avoid drift
+        // daysDifference can be positive (adding days) or negative (removing days)
         if (rotation && rotation.id) {
           try {
             const isPostgres = !!process.env.DATABASE_URL;
             
             // Use SQL date arithmetic for reliable cross-database updates
-            // SQLite: datetime(end_date, '+X days') - preserves time component
-            // PostgreSQL: end_date + INTERVAL 'X days' - preserves time component
+            // SQLite: datetime(end_date, '+X days') or datetime(end_date, '-X days') - preserves time component
+            // PostgreSQL: end_date + INTERVAL 'X days' or end_date - INTERVAL 'X days' - preserves time component
             let updateQuery;
+            const absDays = Math.abs(daysDifference);
+            const isAdding = daysDifference > 0;
+            
             if (isPostgres) {
-              updateQuery = `
-                UPDATE rotations 
-                SET end_date = end_date + INTERVAL '${daysToExtend} days',
-                    is_manual_assignment = TRUE
-                WHERE id = $1
-              `;
+              if (isAdding) {
+                updateQuery = `
+                  UPDATE rotations 
+                  SET end_date = end_date + INTERVAL '${absDays} days',
+                      is_manual_assignment = TRUE
+                  WHERE id = $1
+                `;
+              } else {
+                updateQuery = `
+                  UPDATE rotations 
+                  SET end_date = end_date - INTERVAL '${absDays} days',
+                      is_manual_assignment = TRUE
+                  WHERE id = $1
+                `;
+              }
             } else {
               // SQLite: Use datetime() instead of date() to preserve time component (HH:MM:SS)
-              updateQuery = `
-                UPDATE rotations 
-                SET end_date = datetime(end_date, '+${daysToExtend} days'),
-                    is_manual_assignment = 1
-                WHERE id = ?
-              `;
+              if (isAdding) {
+                updateQuery = `
+                  UPDATE rotations 
+                  SET end_date = datetime(end_date, '+${absDays} days'),
+                      is_manual_assignment = 1
+                  WHERE id = ?
+                `;
+              } else {
+                updateQuery = `
+                  UPDATE rotations 
+                  SET end_date = datetime(end_date, '-${absDays} days'),
+                      is_manual_assignment = 1
+                  WHERE id = ?
+                `;
+              }
             }
             
-            console.log(`[ExtendInternship] Extending rotation ${rotation.id} by ${daysToExtend} days`);
+            console.log(`[ExtendInternship] ${isAdding ? 'Extending' : 'Reducing'} rotation ${rotation.id} by ${absDays} day(s) (difference: ${daysDifference})`);
             console.log(`[ExtendInternship] Current end_date: ${rotation.end_date}`);
             console.log(`[ExtendInternship] Update query: ${updateQuery.trim()}`);
             
@@ -706,9 +738,9 @@ router.post('/:id/extend', [
       // Don't fail the entire request if recording reason fails
     }
 
-    // Get updated rotation info if it was extended
+    // Get updated rotation info if it was modified
     let updatedRotation = null;
-    if (daysToExtend > 0 && unit_id) {
+    if (daysDifference !== 0 && unit_id) {
       try {
         updatedRotation = await getAsync(
           `SELECT id, start_date, end_date, unit_id FROM rotations WHERE intern_id = ? AND unit_id = ? ORDER BY end_date DESC LIMIT 1`,
