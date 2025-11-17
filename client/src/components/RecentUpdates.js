@@ -1,16 +1,19 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Button } from './ui/button';
 import { 
   Clock, 
   UserPlus, 
   Calendar, 
   ArrowRight,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  ExternalLink
 } from 'lucide-react';
 import { api } from '../services/api';
 import { formatDistanceToNow } from 'date-fns';
+import ActivityHistoryModal from './ActivityHistoryModal';
 
 const activityIcons = {
   extension: Calendar,
@@ -56,6 +59,8 @@ const formatActivityMessage = (activity) => {
 };
 
 export default function RecentUpdates() {
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  
   const { data, isLoading, error } = useQuery({
     queryKey: ['recentActivities'],
     queryFn: () => api.getRecentActivities(15),
@@ -103,13 +108,28 @@ export default function RecentUpdates() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center space-x-2">
-          <Clock className="h-5 w-5" />
-          <span>Recent Updates</span>
-        </CardTitle>
-        <CardDescription>
-          Latest activities and changes in the system
-        </CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center space-x-2">
+              <Clock className="h-5 w-5" />
+              <span>Recent Updates</span>
+            </CardTitle>
+            <CardDescription>
+              Latest activities and changes in the system
+            </CardDescription>
+          </div>
+          {activities.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowHistoryModal(true)}
+              className="text-sm text-blue-600 hover:text-blue-700"
+            >
+              <ExternalLink className="h-4 w-4 mr-1" />
+              View More
+            </Button>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
         {activities.length === 0 ? (
@@ -144,6 +164,9 @@ export default function RecentUpdates() {
           </div>
         )}
       </CardContent>
+      {showHistoryModal && (
+        <ActivityHistoryModal onClose={() => setShowHistoryModal(false)} />
+      )}
     </Card>
   );
 }
