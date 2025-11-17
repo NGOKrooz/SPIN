@@ -40,6 +40,22 @@ const allAsync = (query, params = []) =>
     });
   });
 
+// Helper function to log activities for Recent Updates
+const logActivity = async (activityType, options = {}) => {
+  try {
+    const { internId, internName, unitId, unitName, details } = options;
+    
+    await runAsync(
+      `INSERT INTO activity_log (activity_type, intern_id, intern_name, unit_id, unit_name, details)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [activityType, internId || null, internName || null, unitId || null, unitName || null, details || null]
+    );
+  } catch (err) {
+    // Don't fail the main operation if logging fails
+    console.error(`[ActivityLog] Failed to log ${activityType}:`, err);
+  }
+};
+
 const normalizeDbDate = (value) => {
   if (!value) return null;
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
@@ -317,24 +333,38 @@ router.post('/', validateIntern, (req, res) => {
               VALUES (?, ?, ?, ?, ?)
             `;
             
-            db.run(rotationQuery, [internId, initial_unit_id, start_date, format(endDate, 'yyyy-MM-dd'), true], (err) => {
+            db.run(rotationQuery, [internId, initial_unit_id, start_date, format(endDate, 'yyyy-MM-dd'), true], async (err) => {
               if (err) {
                 console.error('Error creating rotation:', err);
                 return res.status(500).json({ error: 'Failed to create initial rotation' });
               }
               
+              // Log activity
+              try {
+                const unit = await getAsync('SELECT name FROM units WHERE id = ?', [initial_unit_id]);
+                await logActivity('new_intern', {
+                  internId,
+                  internName: name,
+                  unitId: initial_unit_id,
+                  unitName: unit?.name || null,
+                  details: `New intern added to ${unit?.name || 'unit'}`
+                });
+              } catch (logErr) {
+                console.error('Error logging activity:', logErr);
+              }
+              
               res.status(201).json({
-                id: internId,
-                name,
-                gender,
-                batch: finalBatch,
-                start_date,
-                phone_number,
-                status: 'Active',
-                extension_days: 0,
-                initial_unit_id,
-                calculated_end_date: format(endDate, 'yyyy-MM-dd')
-              });
+              id: internId,
+              name,
+              gender,
+              batch: finalBatch,
+              start_date,
+              phone_number,
+              status: 'Active',
+              extension_days: 0,
+              initial_unit_id,
+              calculated_end_date: format(endDate, 'yyyy-MM-dd')
+            });
             });
           });
         } else {
@@ -366,6 +396,13 @@ router.post('/', validateIntern, (req, res) => {
                 autoGenerate = false;
               }
             }
+            
+            // Log activity (non-blocking)
+            logActivity('new_intern', {
+              internId,
+              internName: name,
+              details: `New intern added${autoGenerate ? ' with auto-generated rotations' : ''}`
+            }).catch(err => console.error('Error logging activity:', err));
             
             // Send response first, then generate rotations in background
             res.status(201).json({
@@ -849,6 +886,25 @@ router.post('/:id/extend', [
       // Don't fail the request if status update fails
     }
 
+    // Log activity
+    try {
+      const intern = await getAsync('SELECT name FROM interns WHERE id = ?', [id]);
+      const unit = unit_id ? await getAsync('SELECT name FROM units WHERE id = ?', [unit_id]) : null;
+      const actionText = daysDifference > 0 
+        ? `Extended by ${daysDifference} day(s)` 
+        : `Extension reduced by ${Math.abs(daysDifference)} day(s)`;
+      
+      await logActivity('extension', {
+        internId: id,
+        internName: intern?.name || null,
+        unitId: unit_id || null,
+        unitName: unit?.name || null,
+        details: `${actionText}${reason ? ` (${reason})` : ''}`
+      });
+    } catch (logErr) {
+      console.error(`[ExtendInternship] Error logging activity:`, logErr);
+    }
+
     res.json({
       message: extension_days > 0 ? 'Internship extended successfully' : 'Extension removed successfully',
       extension_days,
@@ -872,6 +928,33 @@ router.post('/:id/extend', [
       details: error.message || String(error),
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
+  }
+});
+
+// GET /api/interns/activities/recent - Get recent activities
+router.get('/activities/recent', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit || 20, 10);
+    const activities = await allAsync(
+      `SELECT 
+        id,
+        activity_type,
+        intern_id,
+        intern_name,
+        unit_id,
+        unit_name,
+        details,
+        created_at
+       FROM activity_log
+       ORDER BY created_at DESC
+       LIMIT ?`,
+      [limit]
+    );
+    
+    res.json({ activities });
+  } catch (error) {
+    console.error('Error fetching activities:', error);
+    res.status(500).json({ error: 'Failed to fetch activities' });
   }
 });
 

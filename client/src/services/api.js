@@ -82,6 +82,7 @@ export const internsAPI = {
   delete: (id) => http.delete(`/interns/${id}`),
   extend: (id, data) => http.post(`/interns/${id}/extend`, data),
   getSchedule: (id) => http.get(`/interns/${id}/schedule`),
+  getRecentActivities: (limit = 20) => http.get('/interns/activities/recent', { params: { limit } }),
 };
 
 // Units API
@@ -184,6 +185,7 @@ export const api = {
   deleteIntern: (id) => internsAPI.delete(id),
   extendInternship: (id, data) => internsAPI.extend(id, data),
   getInternSchedule: (id) => internsAPI.getSchedule(id),
+  getRecentActivities: (limit) => internsAPI.getRecentActivities(limit),
 
   // Units
   getUnits: (params) => unitsAPI.getAll(params),

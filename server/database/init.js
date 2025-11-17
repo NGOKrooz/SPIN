@@ -136,6 +136,26 @@ if (DB_TYPE === 'postgres') {
         )
       `, (err) => {
         if (err) {
+          console.error('Error creating extension_reasons table:', err);
+        }
+      });
+
+      // Activity log table for recent updates
+      db.run(`
+        CREATE TABLE IF NOT EXISTS activity_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          activity_type TEXT NOT NULL CHECK (activity_type IN ('extension', 'reassignment', 'unit_change', 'status_change', 'new_intern', 'auto_advance', 'rotation_update')),
+          intern_id INTEGER,
+          intern_name TEXT,
+          unit_id INTEGER,
+          unit_name TEXT,
+          details TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (intern_id) REFERENCES interns (id) ON DELETE SET NULL,
+          FOREIGN KEY (unit_id) REFERENCES units (id) ON DELETE SET NULL
+        )
+      `, (err) => {
+        if (err) {
           reject(err);
         } else {
           // Insert default settings

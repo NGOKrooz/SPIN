@@ -12,6 +12,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { api } from '../services/api';
 import { formatDate } from '../lib/utils';
+import RecentUpdates from '../components/RecentUpdates';
 
 export default function Dashboard() {
   const { data: interns, isLoading: internsLoading } = useQuery({
@@ -243,36 +244,40 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Quick Actions */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Quick Actions</CardTitle>
-          <CardDescription>
-            Common tasks and shortcuts for managing the internship program
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {quickActions.map((action) => (
-              <Link key={action.title} to={action.href}>
-                <div className="group relative overflow-hidden rounded-lg border border-gray-200 bg-white p-4 hover:shadow-md transition-shadow">
-                  <div className="flex items-center space-x-3">
-                    <div className={`rounded-lg p-2 ${action.color === 'hospital' ? 'hospital-gradient' : action.color === 'batchA' ? 'bg-batch-a' : action.color === 'batchB' ? 'bg-batch-b' : 'bg-gray-100'}`}>
-                      <action.icon className="h-5 w-5 text-white" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-sm font-medium text-gray-900 group-hover:text-blue-600">
-                        {action.title}
-                      </h3>
-                      <p className="text-xs text-gray-500">{action.description}</p>
+      {/* Quick Actions and Recent Updates */}
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Quick Actions</CardTitle>
+            <CardDescription>
+              Common tasks and shortcuts for managing the internship program
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {quickActions.map((action) => (
+                <Link key={action.title} to={action.href}>
+                  <div className="group relative overflow-hidden rounded-lg border border-gray-200 bg-white p-4 hover:shadow-md transition-shadow">
+                    <div className="flex items-center space-x-3">
+                      <div className={`rounded-lg p-2 ${action.color === 'hospital' ? 'hospital-gradient' : action.color === 'batchA' ? 'bg-batch-a' : action.color === 'batchB' ? 'bg-batch-b' : 'bg-gray-100'}`}>
+                        <action.icon className="h-5 w-5 text-white" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-sm font-medium text-gray-900 group-hover:text-blue-600">
+                          {action.title}
+                        </h3>
+                        <p className="text-xs text-gray-500">{action.description}</p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+                </Link>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <RecentUpdates />
+      </div>
       {/* Removed Recent Rotations per requirements */}
     </div>
   );

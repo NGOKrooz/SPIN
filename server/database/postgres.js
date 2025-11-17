@@ -193,6 +193,22 @@ async function initializeDatabase() {
       )
     `);
 
+    // Activity log table for recent updates
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS activity_log (
+        id SERIAL PRIMARY KEY,
+        activity_type TEXT NOT NULL CHECK (activity_type IN ('extension', 'reassignment', 'unit_change', 'status_change', 'new_intern', 'auto_advance', 'rotation_update')),
+        intern_id INTEGER,
+        intern_name TEXT,
+        unit_id INTEGER,
+        unit_name TEXT,
+        details TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (intern_id) REFERENCES interns (id) ON DELETE SET NULL,
+        FOREIGN KEY (unit_id) REFERENCES units (id) ON DELETE SET NULL
+      )
+    `);
+
     await client.query('COMMIT');
     
     // Insert default settings and units outside of transaction
