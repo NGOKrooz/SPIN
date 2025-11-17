@@ -679,6 +679,89 @@ router.post('/:id/extend', [
               );
               if (verifyRotation) {
                 console.log(`[ExtendInternship] ✅ Verified rotation ${rotation.id} now ends on ${verifyRotation.end_date} (was ${rotation.end_date})`);
+                
+                // AUTOMATED: Shift all upcoming rotations by the same amount
+                // This ensures the schedule remains consistent when extension days change
+                try {
+                  const updatedEndDate = normalizeDbDate(verifyRotation.end_date);
+                  if (updatedEndDate) {
+                    const updatedEndStr = format(updatedEndDate, 'yyyy-MM-dd');
+                    
+                    // Find all rotations that start on or after the day after the current rotation ends
+                    // These are the "upcoming" rotations that need to be shifted
+                    // We use >= to catch rotations that start exactly on the day after the current rotation ends
+                    const dayAfterEnd = addDays(updatedEndDate, 1);
+                    const dayAfterEndStr = format(dayAfterEnd, 'yyyy-MM-dd');
+                    
+                    const upcomingRotations = await allAsync(
+                      `SELECT id, start_date, end_date, unit_id 
+                       FROM rotations 
+                       WHERE intern_id = ? 
+                       AND start_date >= ? 
+                       ORDER BY start_date ASC`,
+                      [id, dayAfterEndStr]
+                    );
+                    
+                    if (upcomingRotations.length > 0) {
+                      console.log(`[ExtendInternship] Found ${upcomingRotations.length} upcoming rotation(s) to shift by ${daysDifference} day(s)`);
+                      
+                      // Shift each upcoming rotation forward (or backward) by daysDifference
+                      for (const upcomingRot of upcomingRotations) {
+                        try {
+                          let shiftQuery;
+                          if (isPostgres) {
+                            if (isAdding) {
+                              shiftQuery = `
+                                UPDATE rotations 
+                                SET start_date = start_date + INTERVAL '${absDays} days',
+                                    end_date = end_date + INTERVAL '${absDays} days'
+                                WHERE id = $1
+                              `;
+                            } else {
+                              shiftQuery = `
+                                UPDATE rotations 
+                                SET start_date = start_date - INTERVAL '${absDays} days',
+                                    end_date = end_date - INTERVAL '${absDays} days'
+                                WHERE id = $1
+                              `;
+                            }
+                          } else {
+                            if (isAdding) {
+                              shiftQuery = `
+                                UPDATE rotations 
+                                SET start_date = datetime(start_date, '+${absDays} days'),
+                                    end_date = datetime(end_date, '+${absDays} days')
+                                WHERE id = ?
+                              `;
+                            } else {
+                              shiftQuery = `
+                                UPDATE rotations 
+                                SET start_date = datetime(start_date, '-${absDays} days'),
+                                    end_date = datetime(end_date, '-${absDays} days')
+                                WHERE id = ?
+                              `;
+                            }
+                          }
+                          
+                          const shiftResult = await runAsync(shiftQuery, [upcomingRot.id]);
+                          if (shiftResult.changes > 0) {
+                            console.log(`[ExtendInternship] ✅ Shifted upcoming rotation ${upcomingRot.id} (unit ${upcomingRot.unit_id}) by ${daysDifference} day(s)`);
+                          }
+                        } catch (shiftErr) {
+                          console.error(`[ExtendInternship] ⚠️ Error shifting rotation ${upcomingRot.id}:`, shiftErr);
+                          // Continue with other rotations even if one fails
+                        }
+                      }
+                      
+                      console.log(`[ExtendInternship] ✅ Completed shifting ${upcomingRotations.length} upcoming rotation(s)`);
+                    } else {
+                      console.log(`[ExtendInternship] No upcoming rotations to shift`);
+                    }
+                  }
+                } catch (shiftAllErr) {
+                  console.error(`[ExtendInternship] ⚠️ Error shifting upcoming rotations (non-critical):`, shiftAllErr);
+                  // Don't fail the entire request if shifting upcoming rotations fails
+                }
               } else {
                 console.error(`[ExtendInternship] ❌ Could not verify rotation ${rotation.id} after update`);
               }
