@@ -615,8 +615,7 @@ router.post('/:id/extend', [
               updateQuery = `
                 UPDATE rotations 
                 SET end_date = end_date + INTERVAL '${daysToExtend} days',
-                    is_manual_assignment = TRUE,
-                    updated_at = CURRENT_TIMESTAMP
+                    is_manual_assignment = TRUE
                 WHERE id = $1
               `;
             } else {
@@ -624,8 +623,7 @@ router.post('/:id/extend', [
               updateQuery = `
                 UPDATE rotations 
                 SET end_date = datetime(end_date, '+${daysToExtend} days'),
-                    is_manual_assignment = 1,
-                    updated_at = CURRENT_TIMESTAMP
+                    is_manual_assignment = 1
                 WHERE id = ?
               `;
             }
