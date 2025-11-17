@@ -618,6 +618,11 @@ router.post('/:id/extend', [
           try {
             const isPostgres = !!process.env.DATABASE_URL;
             
+            // CRITICAL: Store the ORIGINAL end_date BEFORE updating
+            // We need this to find upcoming rotations correctly
+            const originalEndDate = normalizeDbDate(rotation.end_date);
+            const originalEndStr = originalEndDate ? format(originalEndDate, 'yyyy-MM-dd') : null;
+            
             // Use SQL date arithmetic for reliable cross-database updates
             // SQLite: datetime(end_date, '+X days') or datetime(end_date, '-X days') - preserves time component
             // PostgreSQL: end_date + INTERVAL 'X days' or end_date - INTERVAL 'X days' - preserves time component
@@ -661,7 +666,7 @@ router.post('/:id/extend', [
             }
             
             console.log(`[ExtendInternship] ${isAdding ? 'Extending' : 'Reducing'} rotation ${rotation.id} by ${absDays} day(s) (difference: ${daysDifference})`);
-            console.log(`[ExtendInternship] Current end_date: ${rotation.end_date}`);
+            console.log(`[ExtendInternship] Original end_date: ${rotation.end_date}`);
             console.log(`[ExtendInternship] Update query: ${updateQuery.trim()}`);
             
             const updateResult = await runAsync(
@@ -682,24 +687,23 @@ router.post('/:id/extend', [
                 
                 // AUTOMATED: Shift all upcoming rotations by the same amount
                 // This ensures the schedule remains consistent when extension days change
+                // IMPORTANT: Use the ORIGINAL end_date to find upcoming rotations, not the updated one
+                // This ensures we catch the first upcoming rotation that starts on the day after the original end date
                 try {
-                  const updatedEndDate = normalizeDbDate(verifyRotation.end_date);
-                  if (updatedEndDate) {
-                    const updatedEndStr = format(updatedEndDate, 'yyyy-MM-dd');
-                    
-                    // Find all rotations that start on or after the day after the current rotation ends
-                    // These are the "upcoming" rotations that need to be shifted
-                    // We use >= to catch rotations that start exactly on the day after the current rotation ends
-                    const dayAfterEnd = addDays(updatedEndDate, 1);
-                    const dayAfterEndStr = format(dayAfterEnd, 'yyyy-MM-dd');
+                  if (originalEndDate && originalEndStr) {
+                    // Find all rotations that start on or after the day after the ORIGINAL end date
+                    // This catches the first upcoming rotation that starts immediately after the current rotation
+                    const dayAfterOriginalEnd = addDays(originalEndDate, 1);
+                    const dayAfterOriginalEndStr = format(dayAfterOriginalEnd, 'yyyy-MM-dd');
                     
                     const upcomingRotations = await allAsync(
                       `SELECT id, start_date, end_date, unit_id 
                        FROM rotations 
                        WHERE intern_id = ? 
+                       AND id != ?
                        AND start_date >= ? 
                        ORDER BY start_date ASC`,
-                      [id, dayAfterEndStr]
+                      [id, rotation.id, dayAfterOriginalEndStr]
                     );
                     
                     if (upcomingRotations.length > 0) {
