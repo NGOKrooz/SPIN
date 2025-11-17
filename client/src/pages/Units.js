@@ -319,9 +319,6 @@ export default function Units() {
                   <h4 className="text-sm font-medium text-gray-700">Patient Count</h4>
                   <span className="text-sm font-medium text-blue-600">{unit.patient_count || 0} patients</span>
                 </div>
-                <p className="text-xs text-gray-500">
-                  Workload: <span className="font-medium">{unit.workload}</span> (Auto-calculated from patient count)
-                </p>
                 {(!unit.patient_count || unit.patient_count === 0) && (
                   <p className="text-xs text-yellow-600 mt-1">
                     ⚠️ No patient count set - edit unit to set patient count

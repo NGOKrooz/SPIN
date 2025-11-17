@@ -176,18 +176,6 @@ export default function UnitForm({ unit, onClose, onSuccess }) {
               />
             </div>
 
-            {formData.patient_count && (
-              <div className="bg-blue-50 p-3 rounded-lg">
-                <div className="flex items-center space-x-2 text-sm">
-                  <span className="text-blue-800">
-                    <strong>Auto-calculated Workload:</strong> {formData.workload} (from {formData.patient_count} patients)
-                  </span>
-                </div>
-                <p className="text-xs text-blue-600 mt-1">
-                  Workload is automatically calculated: ≤4 = Low, 5-8 = Medium, 9+ = High
-                </p>
-              </div>
-            )}
 
             <div>
               <Label htmlFor="description">Description</Label>
