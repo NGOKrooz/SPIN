@@ -1133,13 +1133,13 @@ async function ensureInternStatusIsCorrect(internId) {
     // Check if all units are completed (only count automatic rotations that have ENDED)
     // IMPORTANT: Only count rotations that ended in the past
     // This ensures reassigned units aren't counted as "completed"
-    const today = format(todayUTC, 'yyyy-MM-dd');
+    const todayStr = format(todayUTC, 'yyyy-MM-dd');
     const automaticRotations = allRotations.filter(r => {
       if (r.is_manual_assignment) return false;
       const endDate = parseDateSafe(r.end_date);
       if (!endDate) return false;
       const endStr = format(endDate, 'yyyy-MM-dd');
-      return endStr < today; // Only count rotations that ended in the past
+      return endStr < todayStr; // Only count rotations that ended in the past
     });
     const completedUnits = new Set(automaticRotations.map(r => r.unit_id));
     const allUnitsCompleted = completedUnits.size >= units.length;
