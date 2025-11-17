@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { X, Save, RotateCcw } from 'lucide-react';
+import { X, Save, RotateCcw, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Label } from './ui/label';
@@ -46,6 +46,20 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
   const availableUnits = units?.filter(unit => 
     !pastUnitIds.includes(unit.id)
   ) || [];
+
+  // Calculate days spent in current rotation
+  const daysInCurrentRotation = React.useMemo(() => {
+    if (!currentRotation?.start_date) return 0;
+    const startDate = parseISO(currentRotation.start_date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    startDate.setHours(0, 0, 0, 0);
+    // Calculate inclusive days from start to today
+    const days = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    return Math.max(0, days); // Ensure non-negative
+  }, [currentRotation?.start_date]);
+
+  const showWarning = daysInCurrentRotation > 1;
 
   const reassignMutation = useMutation({
     mutationFn: ({ rotationId, unitId, startDate, endDate }) => 
@@ -145,6 +159,22 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
                   <p><strong>New:</strong> {units?.find(u => u.id === parseInt(selectedUnitId))?.name} ({units?.find(u => u.id === parseInt(selectedUnitId))?.duration_days} days)</p>
                   <p><strong>Start Date:</strong> {currentRotation.start_date}</p>
                   <p><strong>New End Date:</strong> {selectedUnitId ? format(addDays(parseISO(currentRotation.start_date), (units?.find(u => u.id === parseInt(selectedUnitId))?.duration_days || 0) - 1), 'yyyy-MM-dd') : ''}</p>
+                </div>
+              </div>
+            )}
+
+            {showWarning && (
+              <div className="bg-orange-50 border border-orange-200 p-3 rounded-lg">
+                <div className="flex items-start space-x-2">
+                  <AlertCircle className="h-5 w-5 text-orange-600 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-orange-800">
+                      Warning: Intern has spent {daysInCurrentRotation} day(s) in {currentRotation.unit_name}
+                    </p>
+                    <p className="text-xs text-orange-700 mt-1">
+                      Reassigning after more than 1 day may affect rotation tracking. Proceed with caution.
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
