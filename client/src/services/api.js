@@ -95,6 +95,7 @@ export const unitsAPI = {
   updateWorkload: (id, data) => http.post(`/units/${id}/workload`, data),
   updatePatientCount: (id, data) => http.post(`/units/${id}/patient-count`, data),
   getWorkloadHistory: (id, limit = 12) => http.get(`/units/${id}/workload-history`, { params: { limit } }),
+  getCompletedInterns: (id) => http.get(`/units/${id}/completed-interns`),
   seedDefaults: () => http.post('/units/seed-defaults'),
 };
 
@@ -196,6 +197,7 @@ export const api = {
   updateUnitWorkload: (id, data) => unitsAPI.updateWorkload(id, data),
   updateUnitPatientCount: (id, data) => unitsAPI.updatePatientCount(id, data),
   getUnitWorkloadHistory: (id, limit) => unitsAPI.getWorkloadHistory(id, limit),
+  getCompletedInterns: (id) => unitsAPI.getCompletedInterns(id),
   seedUnits: () => unitsAPI.seedDefaults(),
   testPatientCount: (id, data) => http.post(`/units/${id}/test-patient-count`, data),
   getUnitsSchema: () => http.get('/units/schema'),

@@ -441,6 +441,40 @@ router.get('/:id/workload-history', (req, res) => {
   });
 });
 
+// GET /api/units/:id/completed-interns - Get completed interns for a unit
+router.get('/:id/completed-interns', (req, res) => {
+  const { id } = req.params;
+  
+  const DB_TYPE = process.env.DATABASE_URL ? 'postgres' : (process.env.DB_TYPE || 'sqlite');
+  const isPostgres = DB_TYPE === 'postgres';
+  const dateFunction = isPostgres ? 'CURRENT_DATE' : "date('now')";
+  
+  const query = `
+    SELECT 
+      r.id as rotation_id,
+      r.start_date,
+      r.end_date,
+      i.id as intern_id,
+      i.name as intern_name,
+      i.batch as intern_batch,
+      i.status as intern_status
+    FROM rotations r
+    JOIN interns i ON r.intern_id = i.id
+    WHERE r.unit_id = ${isPostgres ? '$1' : '?'}
+      AND r.end_date < ${dateFunction}
+    ORDER BY r.end_date DESC
+  `;
+  
+  db.all(query, [id], (err, rows) => {
+    if (err) {
+      console.error('Error fetching completed interns:', err);
+      return res.status(500).json({ error: 'Failed to fetch completed interns' });
+    }
+    
+    res.json(rows || []);
+  });
+});
+
 // DELETE /api/units/:id - Delete unit
 router.delete('/:id', (req, res) => {
   const { id } = req.params;
