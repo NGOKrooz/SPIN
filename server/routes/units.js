@@ -445,10 +445,7 @@ router.get('/:id/workload-history', (req, res) => {
 router.get('/:id/completed-interns', (req, res) => {
   const { id } = req.params;
   
-  const DB_TYPE = process.env.DATABASE_URL ? 'postgres' : (process.env.DB_TYPE || 'sqlite');
-  const isPostgres = DB_TYPE === 'postgres';
-  const dateFunction = isPostgres ? 'CURRENT_DATE' : "date('now')";
-  
+  // dbWrapper automatically converts date('now') to CURRENT_DATE for PostgreSQL
   const query = `
     SELECT 
       r.id as rotation_id,
@@ -460,8 +457,8 @@ router.get('/:id/completed-interns', (req, res) => {
       i.status as intern_status
     FROM rotations r
     JOIN interns i ON r.intern_id = i.id
-    WHERE r.unit_id = ${isPostgres ? '$1' : '?'}
-      AND r.end_date < ${dateFunction}
+    WHERE r.unit_id = ?
+      AND r.end_date < date('now')
     ORDER BY r.end_date DESC
   `;
   
