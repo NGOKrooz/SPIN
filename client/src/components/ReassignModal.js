@@ -20,15 +20,27 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
     queryFn: api.getUnits,
   });
 
-  // Get intern's schedule to find remaining units
+  // Get intern's schedule to find units they've done before
   const { data: internSchedule } = useQuery({
     queryKey: ['intern-schedule', intern.id],
     queryFn: () => api.getInternSchedule(intern.id),
   });
 
-  // Get remaining units (units not yet assigned to this intern)
-  const assignedUnitIds = internSchedule?.map(r => r.unit_id) || [];
-  const remainingUnits = units?.filter(unit => !assignedUnitIds.includes(unit.id)) || [];
+  // Get units the intern has done in the PAST (exclude current and future rotations)
+  // We only want to exclude units they've completed before, not current/future ones
+  const today = format(new Date(), 'yyyy-MM-dd');
+  const pastRotations = internSchedule?.filter(r => {
+    const endDate = r.end_date ? format(parseISO(r.end_date), 'yyyy-MM-dd') : null;
+    return endDate && endDate < today;
+  }) || [];
+  
+  const pastUnitIds = pastRotations.map(r => r.unit_id);
+  const currentUnitId = currentRotation?.unit_id;
+  
+  // Available units: exclude past units and current unit
+  const availableUnits = units?.filter(unit => 
+    !pastUnitIds.includes(unit.id) && unit.id !== currentUnitId
+  ) || [];
 
   const reassignMutation = useMutation({
     mutationFn: ({ rotationId, unitId, startDate, endDate }) => 
@@ -112,7 +124,7 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
                   <SelectValue placeholder="Select a unit to reassign to" />
                 </SelectTrigger>
                 <SelectContent>
-                  {remainingUnits.map((unit) => (
+                  {availableUnits.map((unit) => (
                     <SelectItem key={unit.id} value={unit.id.toString()}>
                       {unit.name} ({unit.duration_days} days)
                     </SelectItem>
@@ -132,10 +144,10 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
               </div>
             )}
 
-            {remainingUnits.length === 0 && (
+            {availableUnits.length === 0 && (
               <div className="bg-yellow-50 p-3 rounded-lg">
                 <p className="text-sm text-yellow-800">
-                  No remaining units available for reassignment. All units have been assigned to this intern.
+                  No available units for reassignment. All remaining units have already been completed by this intern.
                 </p>
               </div>
             )}
@@ -146,7 +158,7 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
               </Button>
               <Button 
                 type="submit" 
-                disabled={isLoading || remainingUnits.length === 0} 
+                disabled={isLoading || availableUnits.length === 0} 
                 className="hospital-gradient"
               >
                 <Save className="h-4 w-4 mr-2" />

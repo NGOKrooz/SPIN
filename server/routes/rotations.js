@@ -3,6 +3,61 @@ const { body, validationResult } = require('express-validator');
 const db = require('../database/dbWrapper');
 const { addDays, format, parseISO, differenceInDays } = require('date-fns');
 
+// Helper functions for async database operations
+const runAsync = (query, params = []) =>
+  new Promise((resolve, reject) => {
+    db.run(query, params, function(err) {
+      if (err) return reject(err);
+      resolve({ lastID: this.lastID, changes: this.changes });
+    });
+  });
+
+const getAsync = (query, params = []) =>
+  new Promise((resolve, reject) => {
+    db.get(query, params, (err, row) => {
+      if (err) return reject(err);
+      resolve(row || null);
+    });
+  });
+
+const allAsync = (query, params = []) =>
+  new Promise((resolve, reject) => {
+    db.all(query, params, (err, rows) => {
+      if (err) return reject(err);
+      resolve(rows || []);
+    });
+  });
+
+// Helper function to normalize database dates
+const normalizeDbDate = (value) => {
+  if (!value) return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value;
+  }
+  try {
+    const parsed = parseISO(typeof value === 'string' ? value : String(value));
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  } catch {
+    return null;
+  }
+};
+
+// Helper function to log activities for Recent Updates
+const logActivity = async (activityType, options = {}) => {
+  try {
+    const { internId, internName, unitId, unitName, details } = options;
+    
+    await runAsync(
+      `INSERT INTO activity_log (activity_type, intern_id, intern_name, unit_id, unit_name, details)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [activityType, internId || null, internName || null, unitId || null, unitName || null, details || null]
+    );
+  } catch (err) {
+    // Don't fail the main operation if logging fails
+    console.error(`[ActivityLog] Failed to log ${activityType}:`, err);
+  }
+};
+
 const router = express.Router();
 
 // Validation middleware
@@ -418,7 +473,7 @@ router.post('/generate', async (req, res) => {
 });
 
 // PUT /api/rotations/:id - Update rotation
-router.put('/:id', validateRotationUpdate, (req, res) => {
+router.put('/:id', validateRotationUpdate, async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
@@ -427,36 +482,149 @@ router.put('/:id', validateRotationUpdate, (req, res) => {
   const { id } = req.params;
   const { intern_id, unit_id, start_date, end_date } = req.body;
   
-  // If intern_id is not provided, we only update unit, start_date, and end_date
-  let query, params;
-  if (intern_id) {
-    query = `
-      UPDATE rotations 
-      SET intern_id = ?, unit_id = ?, start_date = ?, end_date = ?
-      WHERE id = ?
-    `;
-    params = [intern_id, unit_id, start_date, end_date, id];
-  } else {
-    query = `
-      UPDATE rotations 
-      SET unit_id = ?, start_date = ?, end_date = ?
-      WHERE id = ?
-    `;
-    params = [unit_id, start_date, end_date, id];
-  }
-  
-  db.run(query, params, function(err) {
-    if (err) {
-      console.error('Error updating rotation:', err);
-      return res.status(500).json({ error: 'Failed to update rotation' });
-    }
+  try {
+    // Get the current rotation to compare changes
+    const currentRotation = await getAsync(
+      `SELECT intern_id, unit_id, start_date, end_date FROM rotations WHERE id = ?`,
+      [id]
+    );
     
-    if (this.changes === 0) {
+    if (!currentRotation) {
       return res.status(404).json({ error: 'Rotation not found' });
     }
     
+    const rotationInternId = intern_id || currentRotation.intern_id;
+    const originalEndDate = normalizeDbDate(currentRotation.end_date);
+    const newEndDate = normalizeDbDate(end_date);
+    
+    // Calculate the difference in end dates to shift upcoming rotations
+    let daysDifference = 0;
+    if (originalEndDate && newEndDate) {
+      daysDifference = differenceInDays(newEndDate, originalEndDate);
+    }
+    
+    // If intern_id is not provided, we only update unit, start_date, and end_date
+    let query, params;
+    if (intern_id) {
+      query = `
+        UPDATE rotations 
+        SET intern_id = ?, unit_id = ?, start_date = ?, end_date = ?
+        WHERE id = ?
+      `;
+      params = [intern_id, unit_id, start_date, end_date, id];
+    } else {
+      query = `
+        UPDATE rotations 
+        SET unit_id = ?, start_date = ?, end_date = ?
+        WHERE id = ?
+      `;
+      params = [unit_id, start_date, end_date, id];
+    }
+    
+    const updateResult = await runAsync(query, params);
+    
+    if (updateResult.changes === 0) {
+      return res.status(404).json({ error: 'Rotation not found' });
+    }
+    
+    // If end_date changed, shift upcoming rotations (similar to extension logic)
+    if (daysDifference !== 0 && originalEndDate) {
+      try {
+        const originalEndStr = format(originalEndDate, 'yyyy-MM-dd');
+        const dayAfterOriginalEnd = addDays(originalEndDate, 1);
+        const dayAfterOriginalEndStr = format(dayAfterOriginalEnd, 'yyyy-MM-dd');
+        
+        // Find all rotations that start on or after the day after the ORIGINAL end date
+        const upcomingRotations = await allAsync(
+          `SELECT id, start_date, end_date, unit_id 
+           FROM rotations 
+           WHERE intern_id = ? 
+           AND id != ?
+           AND start_date >= ? 
+           ORDER BY start_date ASC`,
+          [rotationInternId, id, dayAfterOriginalEndStr]
+        );
+        
+        if (upcomingRotations.length > 0) {
+          console.log(`[ReassignRotation] Found ${upcomingRotations.length} upcoming rotation(s) to shift by ${daysDifference} day(s)`);
+          
+          const isPostgres = !!process.env.DATABASE_URL;
+          const absDays = Math.abs(daysDifference);
+          const isAdding = daysDifference > 0;
+          
+          for (const upcomingRot of upcomingRotations) {
+            try {
+              let shiftQuery;
+              if (isPostgres) {
+                if (isAdding) {
+                  shiftQuery = `
+                    UPDATE rotations 
+                    SET start_date = start_date + INTERVAL '${absDays} days',
+                        end_date = end_date + INTERVAL '${absDays} days'
+                    WHERE id = $1
+                  `;
+                } else {
+                  shiftQuery = `
+                    UPDATE rotations 
+                    SET start_date = start_date - INTERVAL '${absDays} days',
+                        end_date = end_date - INTERVAL '${absDays} days'
+                    WHERE id = $1
+                  `;
+                }
+              } else {
+                if (isAdding) {
+                  shiftQuery = `
+                    UPDATE rotations 
+                    SET start_date = datetime(start_date, '+${absDays} days'),
+                        end_date = datetime(end_date, '+${absDays} days')
+                    WHERE id = ?
+                  `;
+                } else {
+                  shiftQuery = `
+                    UPDATE rotations 
+                    SET start_date = datetime(start_date, '-${absDays} days'),
+                        end_date = datetime(end_date, '-${absDays} days')
+                    WHERE id = ?
+                  `;
+                }
+              }
+              
+              await runAsync(shiftQuery, [upcomingRot.id]);
+              console.log(`[ReassignRotation] ✅ Shifted upcoming rotation ${upcomingRot.id} by ${daysDifference} day(s)`);
+            } catch (shiftErr) {
+              console.error(`[ReassignRotation] ⚠️ Error shifting rotation ${upcomingRot.id}:`, shiftErr);
+            }
+          }
+          
+          console.log(`[ReassignRotation] ✅ Completed shifting ${upcomingRotations.length} upcoming rotation(s)`);
+        }
+      } catch (shiftAllErr) {
+        console.error(`[ReassignRotation] ⚠️ Error shifting upcoming rotations (non-critical):`, shiftAllErr);
+      }
+    }
+    
+    // Log activity for reassignment
+    try {
+      const intern = await getAsync('SELECT name FROM interns WHERE id = ?', [rotationInternId]);
+      const oldUnit = await getAsync('SELECT name FROM units WHERE id = ?', [currentRotation.unit_id]);
+      const newUnit = await getAsync('SELECT name FROM units WHERE id = ?', [unit_id]);
+      
+      await logActivity('reassignment', {
+        internId: rotationInternId,
+        internName: intern?.name || null,
+        unitId: unit_id || null,
+        unitName: newUnit?.name || null,
+        details: `Reassigned from ${oldUnit?.name || 'previous unit'} to ${newUnit?.name || 'new unit'}`
+      });
+    } catch (logErr) {
+      console.error(`[ReassignRotation] Error logging activity:`, logErr);
+    }
+    
     res.json({ message: 'Rotation updated successfully' });
-  });
+  } catch (error) {
+    console.error('Error updating rotation:', error);
+    res.status(500).json({ error: 'Failed to update rotation' });
+  }
 });
 
 // DELETE /api/rotations/:id - Delete rotation
@@ -844,20 +1012,20 @@ async function autoAdvanceRotations() {
         
         // Mark intern as Completed only if status isn't already Extended
         if (intern.status !== 'Extended') {
-          try {
-            await new Promise((resolve, reject) => {
-              db.run(
-                'UPDATE interns SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-                ['Completed', intern.id],
-                function(err) {
-                  if (err) reject(err);
-                  else resolve();
-                }
-              );
-            });
+        try {
+          await new Promise((resolve, reject) => {
+            db.run(
+              'UPDATE interns SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+              ['Completed', intern.id],
+              function(err) {
+                if (err) reject(err);
+                else resolve();
+              }
+            );
+          });
             console.log(`[AutoAdvance] ✅ Intern ${intern.id} (${intern.name}) marked as Completed`);
-          } catch (err) {
-            console.error(`[AutoAdvance] Error marking intern ${intern.id} as Completed:`, err);
+        } catch (err) {
+          console.error(`[AutoAdvance] Error marking intern ${intern.id} as Completed:`, err);
           }
         } else {
           console.log(`[AutoAdvance] Intern ${intern.id} (${intern.name}) has extension_days, keeping status as Extended`);
