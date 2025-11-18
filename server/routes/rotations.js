@@ -633,25 +633,31 @@ router.put('/:id', validateRotationUpdate, async (req, res) => {
       
       // THEN: Add the old unit back to upcoming rotations
       try {
-        // Check if the old unit is already in upcoming rotations
+        // Check if the old unit is already in upcoming rotations (any future rotation)
+        const todayStr = format(new Date(), 'yyyy-MM-dd');
         const dayAfterNewEnd = addDays(newEndDate, 1);
         const dayAfterNewEndStr = format(dayAfterNewEnd, 'yyyy-MM-dd');
         
+        // Check for ANY upcoming rotation for the old unit (not just ones starting after new end)
         const existingOldUnitRotation = await getAsync(
           `SELECT id FROM rotations 
            WHERE intern_id = ? 
            AND unit_id = ? 
-           AND start_date >= ? 
+           AND start_date > ? 
            AND id != ?`,
-          [rotationInternId, oldUnitId, dayAfterNewEndStr, id]
+          [rotationInternId, oldUnitId, todayStr, id]
         );
+        
+        console.log(`[ReassignRotation] Checking for existing old unit ${oldUnitId} rotation:`, existingOldUnitRotation ? `Found rotation ${existingOldUnitRotation.id}` : 'Not found');
         
         // If old unit is not in upcoming rotations, add it as the next rotation
         if (!existingOldUnitRotation) {
           // Get the old unit's duration
           const oldUnit = await getAsync('SELECT duration_days FROM units WHERE id = ?', [oldUnitId]);
           
-          if (oldUnit) {
+          console.log(`[ReassignRotation] Old unit ${oldUnitId} details:`, oldUnit);
+          
+          if (oldUnit && oldUnit.duration_days) {
             const oldUnitStartDate = dayAfterNewEnd;
             const oldUnitEndDate = addDays(oldUnitStartDate, oldUnit.duration_days - 1);
             const oldUnitStartStr = format(oldUnitStartDate, 'yyyy-MM-dd');
@@ -668,13 +674,18 @@ router.put('/:id', validateRotationUpdate, async (req, res) => {
             
             if (!conflictingRotation) {
               // Insert the old unit as an upcoming rotation
-              await runAsync(
-                `INSERT INTO rotations (intern_id, unit_id, start_date, end_date, is_manual_assignment)
-                 VALUES (?, ?, ?, ?, FALSE)`,
-                [rotationInternId, oldUnitId, oldUnitStartStr, oldUnitEndStr]
-              );
-              
-              console.log(`[ReassignRotation] ✅ Added old unit ${oldUnitId} back to upcoming rotations starting ${oldUnitStartStr}`);
+              try {
+                const insertResult = await runAsync(
+                  `INSERT INTO rotations (intern_id, unit_id, start_date, end_date, is_manual_assignment)
+                   VALUES (?, ?, ?, ?, FALSE)`,
+                  [rotationInternId, oldUnitId, oldUnitStartStr, oldUnitEndStr]
+                );
+                
+                console.log(`[ReassignRotation] ✅ Added old unit ${oldUnitId} back to upcoming rotations starting ${oldUnitStartStr} (rotation ID: ${insertResult.lastID})`);
+              } catch (insertErr) {
+                console.error(`[ReassignRotation] ❌ Error inserting old unit rotation:`, insertErr);
+                throw insertErr; // Re-throw to be caught by outer catch
+              }
               
               // Shift any existing rotations that conflict with this new one
               const conflictingRotations = await allAsync(
@@ -722,14 +733,20 @@ router.put('/:id', validateRotationUpdate, async (req, res) => {
                     currentShiftStart = addDays(newConflictEnd, 1);
                   }
                 }
+              } else {
+                console.log(`[ReassignRotation] ⚠️ Conflicting rotation found at ${oldUnitStartStr}, skipping insertion of old unit`);
               }
+            } else {
+              console.error(`[ReassignRotation] ❌ Old unit ${oldUnitId} not found or has no duration_days`);
             }
+          } else {
+            console.log(`[ReassignRotation] ℹ️ Old unit ${oldUnitId} already exists in upcoming rotations (rotation ID: ${existingOldUnitRotation.id})`);
           }
-        } else {
-          console.log(`[ReassignRotation] Old unit ${oldUnitId} already exists in upcoming rotations`);
-        }
       } catch (addOldUnitErr) {
-        console.error(`[ReassignRotation] ⚠️ Error adding old unit back to upcoming rotations (non-critical):`, addOldUnitErr);
+        // This is actually critical - we need the old unit to be added back
+        console.error(`[ReassignRotation] ❌ CRITICAL ERROR adding old unit ${oldUnitId} back to upcoming rotations:`, addOldUnitErr);
+        // Don't fail the entire request, but log it prominently
+        // The frontend should handle this case by showing a warning
       }
     }
     
