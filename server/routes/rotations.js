@@ -603,130 +603,98 @@ router.put('/:id', validateRotationUpdate, async (req, res) => {
       }
     }
     
-    // If unit changed, handle both old and new units
+    // If unit changed, perform a simple unit swap (keep dates flexible)
     const oldUnitId = currentRotation.unit_id;
     const newUnitId = parseInt(unit_id);
     const unitChanged = oldUnitId !== newUnitId;
     
-    if (unitChanged && newEndDate) {
-      // FIRST: Remove any upcoming rotation for the new unit (to prevent duplicates)
-      // If we're reassigning TO a unit that's already in upcoming rotations, remove it
+    if (unitChanged) {
+      // SIMPLE SWAP LOGIC: Just swap the units, maintain dates
+      // 1. Current rotation: unit_id changes from old to new (dates stay the same)
+      // 2. Find new unit in upcoming rotations and replace it with old unit (same dates)
+      
       try {
-        const newUnitUpcomingRotations = await allAsync(
+        // Find the new unit in upcoming rotations (if it exists)
+        // We'll replace it with the old unit, keeping the same dates
+        const newUnitUpcomingRotation = await getAsync(
+          `SELECT id, start_date, end_date FROM rotations 
+           WHERE intern_id = ? 
+           AND unit_id = ? 
+           AND id != ?
+           AND start_date > ?`,
+          [rotationInternId, newUnitId, id, format(newEndDate || currentRotation.end_date, 'yyyy-MM-dd')]
+        );
+        
+        if (newUnitUpcomingRotation) {
+          // Perfect! Replace the new unit with the old unit (same dates)
+          await runAsync(
+            `UPDATE rotations SET unit_id = ? WHERE id = ?`,
+            [oldUnitId, newUnitUpcomingRotation.id]
+          );
+          console.log(`[ReassignRotation] ✅ Swapped: Replaced upcoming ${newUnitId} with ${oldUnitId} at rotation ${newUnitUpcomingRotation.id} (dates: ${newUnitUpcomingRotation.start_date} - ${newUnitUpcomingRotation.end_date})`);
+        } else {
+          // New unit not found in upcoming - add old unit to upcoming
+          // Find the first upcoming rotation after current ends to place old unit there
+          const dayAfterCurrentEnd = addDays(newEndDate || normalizeDbDate(currentRotation.end_date), 1);
+          const dayAfterCurrentEndStr = format(dayAfterCurrentEnd, 'yyyy-MM-dd');
+          
+          const firstUpcomingRotation = await getAsync(
+            `SELECT id, start_date, end_date FROM rotations 
+             WHERE intern_id = ? 
+             AND id != ?
+             AND start_date >= ?
+             ORDER BY start_date ASC
+             LIMIT 1`,
+            [rotationInternId, id, dayAfterCurrentEndStr]
+          );
+          
+          if (firstUpcomingRotation) {
+            // Replace the first upcoming rotation with old unit (same dates)
+            await runAsync(
+              `UPDATE rotations SET unit_id = ? WHERE id = ?`,
+              [oldUnitId, firstUpcomingRotation.id]
+            );
+            console.log(`[ReassignRotation] ✅ Swapped: Replaced first upcoming rotation ${firstUpcomingRotation.id} with ${oldUnitId} (dates: ${firstUpcomingRotation.start_date} - ${firstUpcomingRotation.end_date})`);
+          } else {
+            // No upcoming rotations - create one for old unit
+            const oldUnit = await getAsync('SELECT duration_days FROM units WHERE id = ?', [oldUnitId]);
+            if (oldUnit && oldUnit.duration_days) {
+              const oldUnitStartDate = dayAfterCurrentEnd;
+              const oldUnitEndDate = addDays(oldUnitStartDate, oldUnit.duration_days - 1);
+              const oldUnitStartStr = format(oldUnitStartDate, 'yyyy-MM-dd');
+              const oldUnitEndStr = format(oldUnitEndDate, 'yyyy-MM-dd');
+              
+              await runAsync(
+                `INSERT INTO rotations (intern_id, unit_id, start_date, end_date, is_manual_assignment)
+                 VALUES (?, ?, ?, ?, FALSE)`,
+                [rotationInternId, oldUnitId, oldUnitStartStr, oldUnitEndStr]
+              );
+              console.log(`[ReassignRotation] ✅ Added old unit ${oldUnitId} to upcoming rotations (no existing upcoming found)`);
+            }
+          }
+        }
+        
+        // Remove any other instances of old unit in upcoming rotations (to prevent duplicates)
+        const otherOldUnitRotations = await allAsync(
           `SELECT id FROM rotations 
            WHERE intern_id = ? 
            AND unit_id = ? 
            AND id != ?
            AND start_date > ?`,
-          [rotationInternId, newUnitId, id, format(newEndDate, 'yyyy-MM-dd')]
+          [rotationInternId, oldUnitId, id, format(newEndDate || currentRotation.end_date, 'yyyy-MM-dd')]
         );
         
-        if (newUnitUpcomingRotations.length > 0) {
-          for (const upcomingRot of newUnitUpcomingRotations) {
-            await runAsync('DELETE FROM rotations WHERE id = ?', [upcomingRot.id]);
-            console.log(`[ReassignRotation] ✅ Removed duplicate upcoming rotation ${upcomingRot.id} for new unit ${newUnitId}`);
-          }
-        }
-      } catch (removeNewUnitErr) {
-        console.error(`[ReassignRotation] ⚠️ Error removing duplicate upcoming rotation for new unit (non-critical):`, removeNewUnitErr);
-      }
-      
-      // THEN: ALWAYS add the old unit back to upcoming rotations (right after current rotation ends)
-      // This ensures a perfect swap: old unit goes to upcoming, new unit becomes current
-      try {
-        const dayAfterNewEnd = addDays(newEndDate, 1);
-        const dayAfterNewEndStr = format(dayAfterNewEnd, 'yyyy-MM-dd');
-        
-        // Get the old unit's duration
-        const oldUnit = await getAsync('SELECT duration_days FROM units WHERE id = ?', [oldUnitId]);
-        
-        if (!oldUnit || !oldUnit.duration_days) {
-          console.error(`[ReassignRotation] ❌ Old unit ${oldUnitId} not found or has no duration_days`);
-          throw new Error(`Old unit ${oldUnitId} not found or invalid`);
-        }
-        
-        const oldUnitStartDate = dayAfterNewEnd;
-        const oldUnitEndDate = addDays(oldUnitStartDate, oldUnit.duration_days - 1);
-        const oldUnitStartStr = format(oldUnitStartDate, 'yyyy-MM-dd');
-        const oldUnitEndStr = format(oldUnitEndDate, 'yyyy-MM-dd');
-        
-        console.log(`[ReassignRotation] Adding old unit ${oldUnitId} back to upcoming rotations starting ${oldUnitStartStr}`);
-        
-        // FIRST: Remove any existing rotation for the old unit that starts on or after the day after new end
-        // We want to place it in the exact position (right after current), so remove any duplicates
-        const existingOldUnitRotations = await allAsync(
-          `SELECT id FROM rotations 
-           WHERE intern_id = ? 
-           AND unit_id = ? 
-           AND start_date >= ? 
-           AND id != ?`,
-          [rotationInternId, oldUnitId, dayAfterNewEndStr, id]
-        );
-        
-        if (existingOldUnitRotations.length > 0) {
-          for (const existingRot of existingOldUnitRotations) {
-            await runAsync('DELETE FROM rotations WHERE id = ?', [existingRot.id]);
-            console.log(`[ReassignRotation] ✅ Removed existing old unit rotation ${existingRot.id} to make room for new placement`);
+        // Keep only the first one we just created/updated, delete the rest
+        if (otherOldUnitRotations.length > 1) {
+          for (let i = 1; i < otherOldUnitRotations.length; i++) {
+            await runAsync('DELETE FROM rotations WHERE id = ?', [otherOldUnitRotations[i].id]);
+            console.log(`[ReassignRotation] ✅ Removed duplicate old unit rotation ${otherOldUnitRotations[i].id}`);
           }
         }
         
-        // SECOND: Find ALL rotations that start on or after the old unit's start date
-        // We need to shift ALL of them to make room for the old unit
-        // This is simpler and more reliable than trying to detect overlaps
-        const rotationsToShift = await allAsync(
-          `SELECT id, start_date, end_date FROM rotations 
-           WHERE intern_id = ? 
-           AND id != ?
-           AND start_date >= ?
-           ORDER BY start_date ASC`,
-          [rotationInternId, id, oldUnitStartStr]
-        );
-        
-        if (rotationsToShift.length > 0) {
-          console.log(`[ReassignRotation] Found ${rotationsToShift.length} rotation(s) starting on or after ${oldUnitStartStr} that need to be shifted`);
-          
-          // Calculate where to start shifting (right after old unit ends)
-          let currentShiftStart = addDays(oldUnitEndDate, 1);
-          const isPostgres = !!process.env.DATABASE_URL;
-          const updateQuery = isPostgres
-            ? `UPDATE rotations SET start_date = $1, end_date = $2 WHERE id = $3`
-            : `UPDATE rotations SET start_date = ?, end_date = ? WHERE id = ?`;
-          
-          // Shift each rotation sequentially
-          for (const rot of rotationsToShift) {
-            const rotStart = parseISO(rot.start_date);
-            const rotEnd = parseISO(rot.end_date);
-            
-            if (rotStart && rotEnd && !isNaN(rotStart.getTime()) && !isNaN(rotEnd.getTime())) {
-              const duration = differenceInDays(rotEnd, rotStart);
-              const newRotStart = currentShiftStart;
-              const newRotEnd = addDays(newRotStart, duration);
-              const newRotStartStr = format(newRotStart, 'yyyy-MM-dd');
-              const newRotEndStr = format(newRotEnd, 'yyyy-MM-dd');
-              
-              await runAsync(updateQuery, [newRotStartStr, newRotEndStr, rot.id]);
-              console.log(`[ReassignRotation] ✅ Shifted rotation ${rot.id} from ${rot.start_date} to ${newRotStartStr}`);
-              
-              // Update currentShiftStart for next rotation (day after this one ends)
-              currentShiftStart = addDays(newRotEnd, 1);
-            }
-          }
-        }
-        
-        // THIRD: Insert the old unit as an upcoming rotation (right after current ends)
-        const insertResult = await runAsync(
-          `INSERT INTO rotations (intern_id, unit_id, start_date, end_date, is_manual_assignment)
-           VALUES (?, ?, ?, ?, FALSE)`,
-          [rotationInternId, oldUnitId, oldUnitStartStr, oldUnitEndStr]
-        );
-        
-        console.log(`[ReassignRotation] ✅ Added old unit ${oldUnitId} back to upcoming rotations starting ${oldUnitStartStr} (rotation ID: ${insertResult.lastID})`);
-        
-      } catch (addOldUnitErr) {
-        // This is critical - we need the old unit to be added back
-        console.error(`[ReassignRotation] ❌ CRITICAL ERROR adding old unit ${oldUnitId} back to upcoming rotations:`, addOldUnitErr);
-        console.error(`[ReassignRotation] Error stack:`, addOldUnitErr.stack);
-        // Don't fail the entire request, but log it prominently
+      } catch (swapErr) {
+        console.error(`[ReassignRotation] ❌ CRITICAL ERROR performing unit swap:`, swapErr);
+        console.error(`[ReassignRotation] Error stack:`, swapErr.stack);
       }
     }
     
