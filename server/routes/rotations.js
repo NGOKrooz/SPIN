@@ -603,11 +603,35 @@ router.put('/:id', validateRotationUpdate, async (req, res) => {
       }
     }
     
-    // If unit changed, add the old unit back to upcoming rotations
+    // If unit changed, handle both old and new units
     const oldUnitId = currentRotation.unit_id;
-    const unitChanged = oldUnitId !== parseInt(unit_id);
+    const newUnitId = parseInt(unit_id);
+    const unitChanged = oldUnitId !== newUnitId;
     
     if (unitChanged && newEndDate) {
+      // FIRST: Remove any upcoming rotation for the new unit (to prevent duplicates)
+      // If we're reassigning TO a unit that's already in upcoming rotations, remove it
+      try {
+        const newUnitUpcomingRotations = await allAsync(
+          `SELECT id FROM rotations 
+           WHERE intern_id = ? 
+           AND unit_id = ? 
+           AND id != ?
+           AND start_date > ?`,
+          [rotationInternId, newUnitId, id, format(newEndDate, 'yyyy-MM-dd')]
+        );
+        
+        if (newUnitUpcomingRotations.length > 0) {
+          for (const upcomingRot of newUnitUpcomingRotations) {
+            await runAsync('DELETE FROM rotations WHERE id = ?', [upcomingRot.id]);
+            console.log(`[ReassignRotation] ✅ Removed duplicate upcoming rotation ${upcomingRot.id} for new unit ${newUnitId}`);
+          }
+        }
+      } catch (removeNewUnitErr) {
+        console.error(`[ReassignRotation] ⚠️ Error removing duplicate upcoming rotation for new unit (non-critical):`, removeNewUnitErr);
+      }
+      
+      // THEN: Add the old unit back to upcoming rotations
       try {
         // Check if the old unit is already in upcoming rotations
         const dayAfterNewEnd = addDays(newEndDate, 1);

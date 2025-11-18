@@ -96,8 +96,15 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   }, [completedRotations.length, currentRotations.length, upcomingRotations.length]);
 
   // Get units not yet assigned to this intern
-  const assignedUnitIds = internSchedule?.map(r => r.unit_id) || [];
-  const remainingUnits = units?.filter(unit => !assignedUnitIds.includes(unit.id)) || [];
+  // Only count units that are in completed or current rotations (not upcoming)
+  // Units in upcoming rotations should NOT appear in remaining units
+  const completedAndCurrentUnitIds = [
+    ...completedRotations.map(r => r.unit_id),
+    ...currentRotations.map(r => r.unit_id)
+  ];
+  const remainingUnits = units?.filter(unit => 
+    !completedAndCurrentUnitIds.includes(unit.id)
+  ) || [];
 
   const getRotationDuration = React.useCallback((rotation) => {
     // NEVER use rotation.duration_days - backend doesn't update it after extension
@@ -481,12 +488,24 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
               setShowReassign(false);
               setActiveRotation(null);
             }}
-            onSuccess={() => {
+            onSuccess={async () => {
               setShowReassign(false);
               setActiveRotation(null);
-              // Invalidate and refetch the schedule data
-              queryClient.invalidateQueries({ queryKey: ['intern-schedule', intern.id] });
-              queryClient.invalidateQueries({ queryKey: ['rotations', 'current'] });
+              // Force a complete refresh of the schedule data
+              await queryClient.invalidateQueries({ 
+                queryKey: ['intern-schedule', intern.id],
+                exact: true
+              });
+              await queryClient.refetchQueries({ 
+                queryKey: ['intern-schedule', intern.id],
+                exact: true,
+                type: 'all'
+              });
+              // Also invalidate rotations and intern lists
+              await queryClient.invalidateQueries({ queryKey: ['rotations', 'current'] });
+              await queryClient.invalidateQueries({ 
+                predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === 'interns',
+              });
             }}
           />
         )}

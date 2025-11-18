@@ -64,11 +64,13 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
   const reassignMutation = useMutation({
     mutationFn: ({ rotationId, unitId, startDate, endDate }) => 
       api.updateRotation(rotationId, { unit_id: unitId, start_date: startDate, end_date: endDate }),
-    onSuccess: () => {
+    onSuccess: async () => {
       toast({
         title: 'Success',
         description: 'Rotation reassigned successfully',
       });
+      // Force a refresh of the schedule before calling onSuccess
+      await new Promise(resolve => setTimeout(resolve, 100)); // Small delay to ensure backend has processed
       onSuccess();
     },
     onError: (error) => {
