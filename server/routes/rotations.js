@@ -670,61 +670,78 @@ router.put('/:id', validateRotationUpdate, async (req, res) => {
           }
         }
         
-        // SECOND: Check if there's already a rotation (any unit) starting on the exact date we want
-        const conflictingRotation = await getAsync(
-          `SELECT id, unit_id, start_date, end_date FROM rotations 
+        // SECOND: Find ALL rotations that conflict with the old unit's placement
+        // A rotation conflicts if it starts on or before oldUnitEndDate (overlaps with old unit)
+        const conflictingRotations = await allAsync(
+          `SELECT id, start_date, end_date FROM rotations 
            WHERE intern_id = ? 
-           AND start_date = ? 
-           AND id != ?`,
-          [rotationInternId, oldUnitStartStr, id]
+           AND id != ?
+           AND (
+             (start_date <= ? AND end_date >= ?) OR
+             (start_date >= ? AND start_date <= ?)
+           )
+           ORDER BY start_date ASC`,
+          [rotationInternId, id, oldUnitEndStr, oldUnitStartStr, oldUnitStartStr, oldUnitEndStr]
         );
         
-        if (conflictingRotation) {
-          // There's a rotation starting on the same date - shift it to make room
-          const conflictStart = parseISO(conflictingRotation.start_date);
-          const conflictEnd = parseISO(conflictingRotation.end_date);
+        if (conflictingRotations.length > 0) {
+          console.log(`[ReassignRotation] Found ${conflictingRotations.length} conflicting rotation(s) that need to be shifted`);
           
-          if (conflictStart && conflictEnd && !isNaN(conflictStart.getTime()) && !isNaN(conflictEnd.getTime())) {
-            const duration = differenceInDays(conflictEnd, conflictStart);
-            const newConflictStart = addDays(oldUnitEndDate, 1);
-            const newConflictEnd = addDays(newConflictStart, duration);
-            const newConflictStartStr = format(newConflictStart, 'yyyy-MM-dd');
-            const newConflictEndStr = format(newConflictEnd, 'yyyy-MM-dd');
+          // Calculate where to start shifting (right after old unit ends)
+          let currentShiftStart = addDays(oldUnitEndDate, 1);
+          const isPostgres = !!process.env.DATABASE_URL;
+          const updateQuery = isPostgres
+            ? `UPDATE rotations SET start_date = $1, end_date = $2 WHERE id = $3`
+            : `UPDATE rotations SET start_date = ?, end_date = ? WHERE id = ?`;
+          
+          // Shift each conflicting rotation sequentially
+          for (const conflictRot of conflictingRotations) {
+            const conflictStart = parseISO(conflictRot.start_date);
+            const conflictEnd = parseISO(conflictRot.end_date);
             
-            const isPostgres = !!process.env.DATABASE_URL;
-            const updateQuery = isPostgres
-              ? `UPDATE rotations SET start_date = $1, end_date = $2 WHERE id = $3`
-              : `UPDATE rotations SET start_date = ?, end_date = ? WHERE id = ?`;
-            
-            await runAsync(updateQuery, [newConflictStartStr, newConflictEndStr, conflictingRotation.id]);
-            console.log(`[ReassignRotation] ✅ Shifted conflicting rotation ${conflictingRotation.id} to make room for old unit`);
-            
-            // Also shift any other rotations that now conflict
-            const otherConflictingRotations = await allAsync(
-              `SELECT id, start_date, end_date FROM rotations 
-               WHERE intern_id = ? 
-               AND id != ? 
-               AND id != ?
-               AND start_date >= ? 
-               ORDER BY start_date ASC`,
-              [rotationInternId, id, conflictingRotation.id, newConflictStartStr]
-            );
-            
-            let currentShiftStart = addDays(newConflictEnd, 1);
-            for (const otherRot of otherConflictingRotations) {
-              const otherStart = parseISO(otherRot.start_date);
-              const otherEnd = parseISO(otherRot.end_date);
+            if (conflictStart && conflictEnd && !isNaN(conflictStart.getTime()) && !isNaN(conflictEnd.getTime())) {
+              const duration = differenceInDays(conflictEnd, conflictStart);
+              const newConflictStart = currentShiftStart;
+              const newConflictEnd = addDays(newConflictStart, duration);
+              const newConflictStartStr = format(newConflictStart, 'yyyy-MM-dd');
+              const newConflictEndStr = format(newConflictEnd, 'yyyy-MM-dd');
               
-              if (otherStart && otherEnd && !isNaN(otherStart.getTime()) && !isNaN(otherEnd.getTime())) {
-                const otherDuration = differenceInDays(otherEnd, otherStart);
-                const newOtherStart = currentShiftStart;
-                const newOtherEnd = addDays(newOtherStart, otherDuration);
-                const newOtherStartStr = format(newOtherStart, 'yyyy-MM-dd');
-                const newOtherEndStr = format(newOtherEnd, 'yyyy-MM-dd');
+              await runAsync(updateQuery, [newConflictStartStr, newConflictEndStr, conflictRot.id]);
+              console.log(`[ReassignRotation] ✅ Shifted conflicting rotation ${conflictRot.id} from ${conflictRot.start_date} to ${newConflictStartStr}`);
+              
+              // Update currentShiftStart for next rotation (day after this one ends)
+              currentShiftStart = addDays(newConflictEnd, 1);
+            }
+          }
+          
+          // After shifting conflicts, check if there are any other rotations that now overlap
+          // (rotations that start after oldUnitEndDate but before the last shifted rotation)
+          const additionalConflicts = await allAsync(
+            `SELECT id, start_date, end_date FROM rotations 
+             WHERE intern_id = ? 
+             AND id != ?
+             AND start_date < ?
+             AND start_date > ?
+             ORDER BY start_date ASC`,
+            [rotationInternId, id, format(currentShiftStart, 'yyyy-MM-dd'), oldUnitEndStr]
+          );
+          
+          if (additionalConflicts.length > 0) {
+            console.log(`[ReassignRotation] Found ${additionalConflicts.length} additional rotation(s) that need shifting`);
+            for (const addRot of additionalConflicts) {
+              const addStart = parseISO(addRot.start_date);
+              const addEnd = parseISO(addRot.end_date);
+              
+              if (addStart && addEnd && !isNaN(addStart.getTime()) && !isNaN(addEnd.getTime())) {
+                const addDuration = differenceInDays(addEnd, addStart);
+                const newAddStart = currentShiftStart;
+                const newAddEnd = addDays(newAddStart, addDuration);
+                const newAddStartStr = format(newAddStart, 'yyyy-MM-dd');
+                const newAddEndStr = format(newAddEnd, 'yyyy-MM-dd');
                 
-                await runAsync(updateQuery, [newOtherStartStr, newOtherEndStr, otherRot.id]);
-                console.log(`[ReassignRotation] ✅ Shifted rotation ${otherRot.id} to start ${newOtherStartStr}`);
-                currentShiftStart = addDays(newOtherEnd, 1);
+                await runAsync(updateQuery, [newAddStartStr, newAddEndStr, addRot.id]);
+                console.log(`[ReassignRotation] ✅ Shifted additional rotation ${addRot.id} to start ${newAddStartStr}`);
+                currentShiftStart = addDays(newAddEnd, 1);
               }
             }
           }
