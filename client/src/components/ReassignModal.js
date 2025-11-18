@@ -104,16 +104,13 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
       return;
     }
 
-    // Calculate new end date based on selected unit duration
-    // End date = start date + (duration_days - 1) since duration includes the start day
-    const startDateParsed = parseISO(currentRotation.start_date);
-    const newEndDate = addDays(startDateParsed, selectedUnit.duration_days - 1);
-    
+    // MAINTAIN ORIGINAL DATES - don't recalculate based on unit duration
+    // Just swap the unit, keep the same start_date and end_date
     reassignMutation.mutate({
       rotationId: currentRotation.id,
       unitId: parseInt(selectedUnitId),
       startDate: currentRotation.start_date,
-      endDate: format(newEndDate, 'yyyy-MM-dd')
+      endDate: currentRotation.end_date
     });
   };
 
