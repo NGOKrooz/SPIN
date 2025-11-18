@@ -733,15 +733,16 @@ router.put('/:id', validateRotationUpdate, async (req, res) => {
                     currentShiftStart = addDays(newConflictEnd, 1);
                   }
                 }
-              } else {
-                console.log(`[ReassignRotation] ⚠️ Conflicting rotation found at ${oldUnitStartStr}, skipping insertion of old unit`);
               }
             } else {
-              console.error(`[ReassignRotation] ❌ Old unit ${oldUnitId} not found or has no duration_days`);
+              console.log(`[ReassignRotation] ⚠️ Conflicting rotation found at ${oldUnitStartStr}, skipping insertion of old unit`);
             }
           } else {
-            console.log(`[ReassignRotation] ℹ️ Old unit ${oldUnitId} already exists in upcoming rotations (rotation ID: ${existingOldUnitRotation.id})`);
+            console.error(`[ReassignRotation] ❌ Old unit ${oldUnitId} not found or has no duration_days`);
           }
+        } else {
+          console.log(`[ReassignRotation] ℹ️ Old unit ${oldUnitId} already exists in upcoming rotations (rotation ID: ${existingOldUnitRotation.id})`);
+        }
       } catch (addOldUnitErr) {
         // This is actually critical - we need the old unit to be added back
         console.error(`[ReassignRotation] ❌ CRITICAL ERROR adding old unit ${oldUnitId} back to upcoming rotations:`, addOldUnitErr);
