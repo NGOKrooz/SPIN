@@ -43,7 +43,11 @@ const formatActivityMessage = (activity) => {
     case 'status_change':
       return `${intern_name || 'An intern'}'s status was updated`;
     case 'new_intern':
-      return details || `${intern_name || 'A new intern'} was added`;
+      // Always show intern name prominently
+      if (intern_name) {
+        return `${intern_name} was added${details ? ` - ${details}` : ''}`;
+      }
+      return details || 'A new intern was added';
     case 'auto_advance':
       return details || `${intern_name || 'An intern'} was auto-advanced to next unit`;
     case 'rotation_update':
