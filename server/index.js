@@ -62,6 +62,15 @@ function requireAdminForWrites(req, res, next) {
   next();
 }
 
+// Health check endpoint - define early so it's always available
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    message: 'SPIN API is running',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Apply admin protection to all API write routes
 app.use('/api', requireAdminForWrites);
 
@@ -77,23 +86,26 @@ app.get('/api/auth/verify-admin', (req, res) => {
   res.json({ ok: true });
 });
 
-// Routes
-app.use('/api/interns', require('./routes/interns'));
-app.use('/api/units', require('./routes/units'));
-app.use('/api/rotations', require('./routes/rotations'));
-app.use('/api/reports', require('./routes/reports'));
-app.use('/api/settings', require('./routes/settings').router);
-app.use('/api/config', require('./routes/config'));
-app.use('/api/debug', require('./routes/debug'));
-
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    message: 'SPIN API is running',
-    timestamp: new Date().toISOString()
+// Routes - wrap in try-catch to prevent server crash if route loading fails
+try {
+  app.use('/api/interns', require('./routes/interns'));
+  app.use('/api/units', require('./routes/units'));
+  app.use('/api/rotations', require('./routes/rotations'));
+  app.use('/api/reports', require('./routes/reports'));
+  app.use('/api/settings', require('./routes/settings').router);
+  app.use('/api/config', require('./routes/config'));
+  app.use('/api/debug', require('./routes/debug'));
+  console.log('✅ All routes loaded successfully');
+} catch (routeError) {
+  console.error('❌ Error loading routes:', routeError);
+  // Don't exit - health endpoint should still work
+  app.use('/api/*', (req, res) => {
+    res.status(500).json({ 
+      error: 'Route loading failed', 
+      message: process.env.NODE_ENV === 'development' ? routeError.message : 'Internal server error'
+    });
   });
-});
+}
 
 // Serve React build if it exists (works in production containers without NODE_ENV)
 const buildPath = path.join(__dirname, '../client/build');
@@ -153,13 +165,43 @@ const autoRestore = require('./services/autoRestore');
 
 async function startServer() {
   try {
-    await initializeDatabase();
-    console.log('✅ Database initialized successfully');
+    // Start server first, then initialize database (non-blocking)
+    const server = app.listen(PORT, '0.0.0.0', () => {
+      console.log(`🚀 SPIN Server running on port ${PORT}`);
+      console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
+    });
+    
+    // Handle server errors
+    server.on('error', (err) => {
+      console.error('❌ Server error:', err);
+      if (err.code === 'EADDRINUSE') {
+        console.error(`Port ${PORT} is already in use`);
+        process.exit(1);
+      }
+    });
+    
+    // Keep process alive and handle errors gracefully
+    app.on('error', (err) => {
+      console.error('Express error:', err);
+    });
+    
+    // Initialize database (non-blocking - server already started)
+    try {
+      await initializeDatabase();
+      console.log('✅ Database initialized successfully');
+    } catch (dbError) {
+      console.error('❌ Database initialization failed:', dbError);
+      // Don't exit - server is already running, health check should still work
+    }
     
     // Initialize backup scheduler
     if (process.env.BACKUP_SCHEDULE && process.env.BACKUP_SCHEDULE !== 'disabled') {
-      scheduler.initializeScheduler();
-      console.log('✅ Backup scheduler initialized');
+      try {
+        scheduler.initializeScheduler();
+        console.log('✅ Backup scheduler initialized');
+      } catch (schedulerError) {
+        console.error('⚠️  Backup scheduler initialization failed:', schedulerError);
+      }
     }
     
     // Perform auto-restore if needed (on fresh deployment)
@@ -177,18 +219,9 @@ async function startServer() {
         }
       }, 2000); // Wait 2 seconds after server start
     }
-    
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`🚀 SPIN Server running on port ${PORT}`);
-      console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
-    });
-    
-    // Keep process alive and handle errors gracefully
-    app.on('error', (err) => {
-      console.error('Express error:', err);
-    });
   } catch (error) {
     console.error('❌ Failed to start server:', error);
+    console.error('Error stack:', error.stack);
     process.exit(1);
   }
 }
