@@ -671,17 +671,16 @@ router.put('/:id', validateRotationUpdate, async (req, res) => {
         }
         
         // SECOND: Find ALL rotations that conflict with the old unit's placement
-        // A rotation conflicts if it starts on or before oldUnitEndDate (overlaps with old unit)
+        // A rotation conflicts if it overlaps with the old unit's date range
+        // Overlap condition: start_date <= oldUnitEndStr AND end_date >= oldUnitStartStr
         const conflictingRotations = await allAsync(
           `SELECT id, start_date, end_date FROM rotations 
            WHERE intern_id = ? 
            AND id != ?
-           AND (
-             (start_date <= ? AND end_date >= ?) OR
-             (start_date >= ? AND start_date <= ?)
-           )
+           AND start_date <= ? 
+           AND end_date >= ?
            ORDER BY start_date ASC`,
-          [rotationInternId, id, oldUnitEndStr, oldUnitStartStr, oldUnitStartStr, oldUnitEndStr]
+          [rotationInternId, id, oldUnitEndStr, oldUnitStartStr]
         );
         
         if (conflictingRotations.length > 0) {
