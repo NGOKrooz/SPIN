@@ -96,14 +96,15 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   }, [completedRotations.length, currentRotations.length, upcomingRotations.length]);
 
   // Get units not yet assigned to this intern
-  // Only count units that are in completed or current rotations (not upcoming)
+  // Exclude units that are in completed, current, OR upcoming rotations
   // Units in upcoming rotations should NOT appear in remaining units
-  const completedAndCurrentUnitIds = [
+  const assignedUnitIds = [
     ...completedRotations.map(r => r.unit_id),
-    ...currentRotations.map(r => r.unit_id)
+    ...currentRotations.map(r => r.unit_id),
+    ...upcomingRotations.map(r => r.unit_id)
   ];
   const remainingUnits = units?.filter(unit => 
-    !completedAndCurrentUnitIds.includes(unit.id)
+    !assignedUnitIds.includes(unit.id)
   ) || [];
 
   const getRotationDuration = React.useCallback((rotation) => {

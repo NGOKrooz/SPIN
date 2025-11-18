@@ -638,19 +638,20 @@ router.put('/:id', validateRotationUpdate, async (req, res) => {
         const dayAfterNewEnd = addDays(newEndDate, 1);
         const dayAfterNewEndStr = format(dayAfterNewEnd, 'yyyy-MM-dd');
         
-        // Check for ANY upcoming rotation for the old unit (not just ones starting after new end)
+        // Check for ANY upcoming rotation for the old unit that starts after the new rotation ends
+        // We want to add the old unit right after the new rotation ends
         const existingOldUnitRotation = await getAsync(
-          `SELECT id FROM rotations 
+          `SELECT id, start_date FROM rotations 
            WHERE intern_id = ? 
            AND unit_id = ? 
-           AND start_date > ? 
+           AND start_date >= ? 
            AND id != ?`,
-          [rotationInternId, oldUnitId, todayStr, id]
+          [rotationInternId, oldUnitId, dayAfterNewEndStr, id]
         );
         
-        console.log(`[ReassignRotation] Checking for existing old unit ${oldUnitId} rotation:`, existingOldUnitRotation ? `Found rotation ${existingOldUnitRotation.id}` : 'Not found');
+        console.log(`[ReassignRotation] Checking for existing old unit ${oldUnitId} rotation starting on or after ${dayAfterNewEndStr}:`, existingOldUnitRotation ? `Found rotation ${existingOldUnitRotation.id} starting ${existingOldUnitRotation.start_date}` : 'Not found');
         
-        // If old unit is not in upcoming rotations, add it as the next rotation
+        // If old unit is not in upcoming rotations starting after the new rotation ends, add it
         if (!existingOldUnitRotation) {
           // Get the old unit's duration
           const oldUnit = await getAsync('SELECT duration_days FROM units WHERE id = ?', [oldUnitId]);
