@@ -97,6 +97,7 @@ export const unitsAPI = {
 export const rotationsAPI = {
   getAll: (params = {}) => http.get('/rotations', { params }),
   getCurrent: () => http.get('/rotations/current'),
+  getUpcoming: () => http.get('/rotations/upcoming'),
   create: (data) => http.post('/rotations', data),
   update: (id, data) => http.put(`/rotations/${id}`, data),
   delete: (id) => http.delete(`/rotations/${id}`),
@@ -199,6 +200,7 @@ export const api = {
   // Rotations
   getRotations: (params) => rotationsAPI.getAll(params),
   getCurrentRotations: () => rotationsAPI.getCurrent(),
+  getUpcomingRotations: () => rotationsAPI.getUpcoming(),
   createRotation: (data) => rotationsAPI.create(data),
   updateRotation: (id, data) => rotationsAPI.update(id, data),
   deleteRotation: (id) => rotationsAPI.delete(id),

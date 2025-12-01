@@ -139,17 +139,28 @@ router.get('/', (req, res) => {
 
 // GET /api/rotations/current - Get current active rotations
 router.get('/current', async (req, res) => {
-  // Auto-advance rotations if enabled
-  const autoRotationEnabled = process.env.AUTO_ROTATION === 'true';
+  // Auto-advance rotations if enabled (default to true if not set)
+  const autoRotationEnabled = process.env.AUTO_ROTATION !== 'false';
+  console.log(`[Rotations/Current] Auto-rotation enabled: ${autoRotationEnabled} (env: ${process.env.AUTO_ROTATION})`);
+  
   if (autoRotationEnabled) {
     try {
-      await autoAdvanceRotations();
+      console.log('[Rotations/Current] Triggering auto-advance rotations...');
+      const result = await autoAdvanceRotations();
+      console.log('[Rotations/Current] Auto-advance result:', result);
     } catch (err) {
-      console.error('Error auto-advancing rotations:', err);
+      console.error('[Rotations/Current] Error auto-advancing rotations:', err);
+      console.error('[Rotations/Current] Error stack:', err.stack);
       // Continue even if auto-advance fails
     }
   }
 
+  // Use UTC date for consistent comparisons in production
+  const now = new Date();
+  const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const todayStr = format(todayUTC, 'yyyy-MM-dd');
+  console.log(`[Rotations/Current] Querying rotations for date: ${todayStr}`);
+  
   const query = `
     SELECT 
       r.*,
@@ -162,7 +173,7 @@ router.get('/current', async (req, res) => {
     FROM rotations r
     JOIN interns i ON r.intern_id = i.id
     JOIN units u ON r.unit_id = u.id
-    WHERE r.start_date <= date('now') AND r.end_date >= date('now')
+    WHERE r.start_date <= ? AND r.end_date >= ?
     ORDER BY u.name, i.batch
   `;
   
@@ -175,7 +186,7 @@ router.get('/current', async (req, res) => {
       return res.status(500).json({ error: 'Failed to fetch units' });
     }
     
-    db.all(query, [], (err, rows) => {
+    db.all(query, [todayStr, todayStr], (err, rows) => {
       if (err) {
         console.error('Error fetching current rotations:', err);
         return res.status(500).json({ error: 'Failed to fetch current rotations' });
@@ -226,6 +237,58 @@ router.get('/current', async (req, res) => {
       });
     });
   });
+});
+
+// GET /api/rotations/upcoming - Get upcoming rotations
+router.get('/upcoming', async (req, res) => {
+  try {
+    // Use UTC date for consistent comparisons
+    const now = new Date();
+    const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const todayStr = format(todayUTC, 'yyyy-MM-dd');
+    console.log(`[Rotations/Upcoming] Querying upcoming rotations for date: ${todayStr}`);
+    
+    // Auto-advance rotations if enabled before fetching upcoming
+    const autoRotationEnabled = process.env.AUTO_ROTATION !== 'false';
+    if (autoRotationEnabled) {
+      try {
+        console.log('[Rotations/Upcoming] Triggering auto-advance before fetching upcoming...');
+        await autoAdvanceRotations();
+      } catch (err) {
+        console.error('[Rotations/Upcoming] Error auto-advancing rotations:', err);
+        // Continue even if auto-advance fails
+      }
+    }
+    
+    const query = `
+      SELECT 
+        r.*,
+        i.name as intern_name,
+        i.batch as intern_batch,
+        i.status as intern_status,
+        u.name as unit_name,
+        u.workload as unit_workload,
+        u.duration_days
+      FROM rotations r
+      JOIN interns i ON r.intern_id = i.id
+      JOIN units u ON r.unit_id = u.id
+      WHERE r.start_date > ?
+      ORDER BY r.start_date ASC, u.name, i.batch
+    `;
+    
+    db.all(query, [todayStr], (err, rows) => {
+      if (err) {
+        console.error('[Rotations/Upcoming] Error fetching upcoming rotations:', err);
+        return res.status(500).json({ error: 'Failed to fetch upcoming rotations' });
+      }
+      
+      console.log(`[Rotations/Upcoming] Found ${rows?.length || 0} upcoming rotations`);
+      res.json(rows || []);
+    });
+  } catch (err) {
+    console.error('[Rotations/Upcoming] Exception:', err);
+    res.status(500).json({ error: 'Failed to fetch upcoming rotations' });
+  }
 });
 
 // POST /api/rotations - Create manual rotation assignment
@@ -799,6 +862,8 @@ async function setRoundRobinCounter(value) {
 // Only works with automatic rotations (is_manual_assignment = FALSE)
 // Always ensures there's an upcoming rotation visible
 async function autoAdvanceRotations() {
+  console.log('[AutoAdvance] ===== Starting auto-advance rotations =====');
+  
   // Use UTC date to avoid timezone issues in production
   const now = new Date();
   const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -806,6 +871,8 @@ async function autoAdvanceRotations() {
   let today;
   try {
     today = format(todayUTC, 'yyyy-MM-dd');
+    console.log(`[AutoAdvance] Today (UTC): ${today}`);
+    console.log(`[AutoAdvance] Current time: ${now.toISOString()}`);
   } catch (err) {
     console.error('[AutoAdvance] Error formatting today date:', err);
     return { advanced: 0, skipped: 0, errors: 1 };
@@ -1160,7 +1227,10 @@ async function autoAdvanceRotations() {
     }
   }
   
-  return { advanced, skipped, errors, total: interns.length };
+  const result = { advanced, skipped, errors, total: interns.length };
+  console.log(`[AutoAdvance] ===== Completed auto-advance rotations =====`);
+  console.log(`[AutoAdvance] Result:`, result);
+  return result;
 }
 
 // Helper function to generate rotations for a single intern
