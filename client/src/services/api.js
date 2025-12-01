@@ -1,32 +1,26 @@
 import axios from 'axios';
 
-// Force production to use same-origin relative path
-// NEVER use localhost in production - always use /api
+// API Base URL configuration
+// Production: Use Render backend URL
+// Development: Use localhost proxy or Render backend
 const getApiBaseUrl = () => {
-  // In production (when not on localhost), always use /api
   const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   
+  // Production (Vercel): Use Render backend
   if (!isLocalhost) {
-    // Production: always use same-origin relative path
-    return '/api';
+    return 'https://spin-j3qw.onrender.com/api';
   }
   
-  // Development: check env var, but default to /api
-  if (process.env.REACT_APP_API_URL && !process.env.REACT_APP_API_URL.includes('localhost')) {
+  // Development: Check env var first, then default to localhost proxy
+  if (process.env.REACT_APP_API_URL) {
     return process.env.REACT_APP_API_URL;
   }
   
-  // Default to /api even in development (proxy will handle it)
+  // Development default: use localhost proxy
   return '/api';
 };
 
 let API_BASE_URL = getApiBaseUrl();
-
-// Safety check: NEVER allow localhost in production builds
-if (API_BASE_URL.includes('localhost') && window.location.hostname !== 'localhost') {
-  console.error('ERROR: localhost API URL detected in production! Forcing /api');
-  API_BASE_URL = '/api';
-}
 
 console.log('API Base URL configured:', API_BASE_URL, '(hostname:', window.location.hostname + ')');
 

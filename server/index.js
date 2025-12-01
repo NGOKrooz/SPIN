@@ -14,12 +14,27 @@ console.log('🌀 Autorotation status:', autoRotation);
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware
+// Middleware - CORS configuration
+const allowedOrigins = [
+  "https://spin-interns.vercel.app",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000"
+];
+
 app.use(cors({
-  origin: (origin, callback) => callback(null, true),
-  credentials: false,
-  methods: ['GET','POST','PUT','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization','x-admin-key']
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1 || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  credentials: true,
+  allowedHeaders: ["Origin", "X-Requested-With", "Content-Type", "Accept", "Authorization", "x-admin-key"]
 }));
 
 // Handle preflight
@@ -33,11 +48,16 @@ app.use((req, res, next) => {
   next();
 });
 
-// Extra CORS safety headers for environments behind proxies
+// CORS headers fallback for environments behind proxies
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-admin-key');
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin) || (origin && (origin.includes('localhost') || origin.includes('127.0.0.1')))) {
+    res.header("Access-Control-Allow-Origin", origin);
+  } else {
+    res.header("Access-Control-Allow-Origin", "https://spin-interns.vercel.app");
+  }
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization, x-admin-key");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
