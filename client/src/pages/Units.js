@@ -7,7 +7,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { api } from '../services/api';
-import { getWorkloadColor, getCoverageColor, getBatchColor } from '../lib/utils';
+import { getWorkloadColor, getBatchColor } from '../lib/utils';
 import { useToast } from '../hooks/use-toast';
 import UnitForm from '../components/UnitForm';
 import UnitViewModal from '../components/UnitViewModal';
@@ -72,17 +72,6 @@ export default function Units() {
     return matchesSearch && matchesWorkload && matchesCoverage;
   }) || [];
 
-  const handleWorkloadUpdate = (unitId, workload, notes = '') => {
-    const weekStartDate = new Date().toISOString().split('T')[0];
-    updateWorkloadMutation.mutate({
-      id: unitId,
-      data: {
-        workload,
-        week_start_date: weekStartDate,
-        notes
-      }
-    });
-  };
 
   const handleEdit = (unit) => {
     setEditingUnit(unit);
