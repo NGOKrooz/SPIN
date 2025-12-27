@@ -23,10 +23,12 @@ services:
           type: web
           name: spin-app
           property: host
-      - key: DB_TYPE
-        value: sqlite  # Change to postgres if using PostgreSQL database
-      - key: DB_PATH
-        value: ./database/spin.db
+      # DATABASE_URL will be automatically set by Render from the database service below
+      # Remove DB_TYPE and DB_PATH when using PostgreSQL
+      # - key: DB_TYPE
+      #   value: sqlite
+      # - key: DB_PATH
+      #   value: ./database/spin.db
       # Uncomment and configure these if using cloud backups
       # - key: CLOUD_BACKUP_ENABLED
       #   value: false
@@ -36,8 +38,9 @@ services:
       #   value: daily
 
 databases:
-  # Uncomment to add PostgreSQL database (recommended for production)
-  # - name: spin-database
-  #   plan: starter  # Options: starter, standard, pro
-  #   databaseName: spin_db
-  #   user: spin_user
+  # PostgreSQL database for persistent data storage
+  # This prevents data loss on each deployment
+  - name: spin-database
+    plan: starter  # Options: starter, standard, pro
+    databaseName: spin_db
+    user: spin_user

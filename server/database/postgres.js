@@ -56,7 +56,8 @@ pool.on('connect', () => {
 
 pool.on('error', (err) => {
   console.error('❌ PostgreSQL connection error:', err);
-  process.exit(-1);
+  // Don't exit immediately - let the app try to reconnect
+  console.error('⚠️  Will attempt to reconnect on next query');
 });
 
 // Initialize database tables

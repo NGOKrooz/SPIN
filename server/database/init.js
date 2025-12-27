@@ -1,5 +1,14 @@
 // Determine database type based on environment
+// Priority: DATABASE_URL > DB_TYPE > default to sqlite
+// If DATABASE_URL is set, always use PostgreSQL (for production persistence)
 const DB_TYPE = process.env.DATABASE_URL ? 'postgres' : (process.env.DB_TYPE || 'sqlite');
+
+if (process.env.DATABASE_URL) {
+  console.log('📊 Using PostgreSQL database (persistent storage)');
+} else {
+  console.log('📊 Using SQLite database (local development only - data will be lost on Vercel/Render deployments)');
+  console.log('⚠️  For production, set DATABASE_URL environment variable to use PostgreSQL');
+}
 
 let db, initializeDatabase, getDatabase;
 
