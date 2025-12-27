@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const db = require('../database/dbWrapper');
 const { addDays, format, parseISO } = require('date-fns');
+const { isAutoRotationEnabled } = require('../utils/autoRotation');
 // Lazy load to avoid circular dependency - rotations.js is loaded after interns.js in index.js
 let getNextUnitForIntern, getRoundRobinCounter, setRoundRobinCounter;
 function getRotationHelpers() {
@@ -993,7 +994,7 @@ router.get('/:id/schedule', async (req, res) => {
   });
   
   // Auto-advance rotation if enabled and needed for this intern
-  const autoRotationEnabled = process.env.AUTO_ROTATION === 'true';
+  const autoRotationEnabled = isAutoRotationEnabled();
   console.log(`[Schedule] AUTO_ROTATION=${process.env.AUTO_ROTATION}, enabled=${autoRotationEnabled}`);
   
   if (autoRotationEnabled) {
