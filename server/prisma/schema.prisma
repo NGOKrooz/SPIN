@@ -1,0 +1,168 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Enums
+enum Gender {
+  Male
+  Female
+}
+
+enum Batch {
+  A
+  B
+}
+
+enum InternStatus {
+  Active
+  Extended
+  Completed
+}
+
+enum Workload {
+  Low
+  Medium
+  High
+}
+
+enum ExtensionReasonType {
+  sign_out
+  presentation
+  internal_query
+  leave
+  other
+}
+
+enum ActivityType {
+  extension
+  reassignment
+  unit_change
+  status_change
+  new_intern
+  auto_advance
+  rotation_update
+}
+
+// Models
+model Intern {
+  id            Int          @id @default(autoincrement())
+  name          String       @db.Text
+  gender        Gender
+  batch         Batch
+  startDate     DateTime     @map("start_date") @db.Date
+  phoneNumber   String?      @map("phone_number") @db.Text
+  status        InternStatus @default(Active)
+  extensionDays Int          @default(0) @map("extension_days")
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt     DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  rotations        Rotation[]
+  extensionReasons ExtensionReason[]
+  activityLogs     ActivityLog[]
+
+  @@index([status])
+  @@index([batch])
+  @@index([startDate])
+  @@map("interns")
+}
+
+model Unit {
+  id           Int      @id @default(autoincrement())
+  name         String   @unique @db.Text
+  durationDays Int      @map("duration_days")
+  workload     Workload @default(Medium)
+  patientCount Int      @default(0) @map("patient_count")
+  description  String?  @db.Text
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  rotations       Rotation[]
+  workloadHistory WorkloadHistory[]
+
+  @@map("units")
+}
+
+model Rotation {
+  id                 Int      @id @default(autoincrement())
+  internId           Int      @map("intern_id")
+  unitId             Int      @map("unit_id")
+  startDate          DateTime @map("start_date") @db.Date
+  endDate            DateTime @map("end_date") @db.Date
+  isManualAssignment Boolean  @default(false) @map("is_manual_assignment")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  intern Intern @relation(fields: [internId], references: [id], onDelete: Cascade)
+  unit   Unit   @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@index([internId])
+  @@index([unitId])
+  @@index([startDate])
+  @@index([endDate])
+  @@index([internId, startDate])
+  @@map("rotations")
+}
+
+model ExtensionReason {
+  id            Int                 @id @default(autoincrement())
+  internId      Int                 @map("intern_id")
+  extensionDays Int                 @map("extension_days")
+  reason        ExtensionReasonType
+  notes         String?             @db.Text
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamp(6)
+
+  intern Intern @relation(fields: [internId], references: [id], onDelete: Cascade)
+
+  @@index([internId])
+  @@map("extension_reasons")
+}
+
+model Setting {
+  id          Int      @id @default(autoincrement())
+  key         String   @unique @db.Text
+  value       String   @db.Text
+  description String?  @db.Text
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  @@map("settings")
+}
+
+model WorkloadHistory {
+  id            Int      @id @default(autoincrement())
+  unitId        Int      @map("unit_id")
+  workload      Workload
+  weekStartDate DateTime @map("week_start_date") @db.Date
+  notes         String?  @db.Text
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  unit Unit @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@index([unitId])
+  @@index([weekStartDate])
+  @@map("workload_history")
+}
+
+model ActivityLog {
+  id           Int          @id @default(autoincrement())
+  activityType ActivityType @map("activity_type")
+  internId     Int?         @map("intern_id")
+  internName   String?      @map("intern_name") @db.Text
+  unitId       Int?         @map("unit_id")
+  unitName     String?      @map("unit_name") @db.Text
+  details      String?      @db.Text
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamp(6)
+
+  intern Intern? @relation(fields: [internId], references: [id], onDelete: SetNull)
+
+  @@index([activityType])
+  @@index([internId])
+  @@index([unitId])
+  @@index([createdAt])
+  @@map("activity_log")
+}
