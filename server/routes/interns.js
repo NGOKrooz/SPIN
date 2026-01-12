@@ -2,7 +2,6 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const db = require('../database/dbWrapper');
 const { addDays, format, parseISO } = require('date-fns');
-const { isAutoRotationEnabled } = require('../utils/autoRotation');
 // Lazy load to avoid circular dependency - rotations.js is loaded after interns.js in index.js
 let getNextUnitForIntern, getRoundRobinCounter, setRoundRobinCounter;
 function getRotationHelpers() {
@@ -297,12 +296,23 @@ router.post('/', validateIntern, (req, res) => {
   });
 
   getNextBatch.then((nextBatch) => {
-    const finalBatch = batch && ['A','B'].includes(batch) ? batch : nextBatch;
+    const finalBatch = batch && ['A','B'].includes(batch) ? batch : (nextBatch || 'A');
+    
+    // Validate finalBatch
+    if (!finalBatch || !['A','B'].includes(finalBatch)) {
+      console.error('Error: Invalid batch value:', finalBatch);
+      return res.status(500).json({ 
+        error: 'Failed to create intern',
+        details: 'Invalid batch value'
+      });
+    }
     
     // Create intern (don't use serialize for PostgreSQL compatibility)
     db.run(query, [name, gender, finalBatch, start_date, phone_number], function(err) {
       if (err) {
         console.error('Error creating intern:', err);
+        console.error('Query:', query);
+        console.error('Params:', [name, gender, finalBatch, start_date, phone_number]);
         return res.status(500).json({ 
           error: 'Failed to create intern',
           details: err.message || String(err)
@@ -310,6 +320,17 @@ router.post('/', validateIntern, (req, res) => {
       }
       
       const internId = this.lastID;
+      
+      // Validate that internId was returned
+      if (!internId) {
+        console.error('Error: internId is null/undefined after insert');
+        console.error('this.lastID:', this.lastID);
+        console.error('this.changes:', this.changes);
+        return res.status(500).json({ 
+          error: 'Failed to create intern',
+          details: 'Database did not return intern ID'
+        });
+      }
       
       // If initial unit is provided, create rotation
       if (initial_unit_id) {
@@ -994,7 +1015,7 @@ router.get('/:id/schedule', async (req, res) => {
   });
   
   // Auto-advance rotation if enabled and needed for this intern
-  const autoRotationEnabled = isAutoRotationEnabled();
+  const autoRotationEnabled = process.env.AUTO_ROTATION === 'true';
   console.log(`[Schedule] AUTO_ROTATION=${process.env.AUTO_ROTATION}, enabled=${autoRotationEnabled}`);
   
   if (autoRotationEnabled) {
