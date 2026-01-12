@@ -5,7 +5,7 @@ services:
     runtime: node
     plan: starter  # Change to 'standard' or 'pro' for production
     region: oregon  # Options: oregon, frankfurt, singapore, mumbai, tokyo
-    buildCommand: npm install && cd server && npm install && cd ../client && npm install && CI=false npm run build
+    buildCommand: npm install && cd server && npm install && npm run prisma:generate && cd ../client && npm install && CI=false npm run build
     startCommand: node server/index.js
     healthCheckPath: /api/health
     envVars:
@@ -17,18 +17,16 @@ services:
       - key: ADMIN_PASSWORD
         sync: false  # Set this manually in Render dashboard
       - key: AUTO_ROTATION
-        value: "true"
+        value: true
       - key: CORS_ORIGIN
         fromService:
           type: web
           name: spin-app
           property: host
-      # DATABASE_URL will be automatically set by Render from the database service below
-      # Remove DB_TYPE and DB_PATH when using PostgreSQL
-      # - key: DB_TYPE
-      #   value: sqlite
-      # - key: DB_PATH
-      #   value: ./database/spin.db
+      - key: DB_TYPE
+        value: sqlite  # Change to postgres if using PostgreSQL database
+      - key: DB_PATH
+        value: ./database/spin.db
       # Uncomment and configure these if using cloud backups
       # - key: CLOUD_BACKUP_ENABLED
       #   value: false
@@ -38,9 +36,8 @@ services:
       #   value: daily
 
 databases:
-  # PostgreSQL database for persistent data storage
-  # This prevents data loss on each deployment
-  - name: spin-database
-    plan: starter  # Options: starter, standard, pro
-    databaseName: spin_db
-    user: spin_user
+  # Uncomment to add PostgreSQL database (recommended for production)
+  # - name: spin-database
+  #   plan: starter  # Options: starter, standard, pro
+  #   databaseName: spin_db
+  #   user: spin_user
