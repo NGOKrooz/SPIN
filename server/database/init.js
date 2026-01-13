@@ -1,6 +1,12 @@
 // Determine database type based on environment
 // Priority: DATABASE_URL > DB_TYPE > default to sqlite
 // If DATABASE_URL is set, always use PostgreSQL (for production persistence)
+// Enforce that production must use DATABASE_URL (no silent fallback to sqlite)
+if (process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL) {
+  console.error('FATAL: NODE_ENV=production requires DATABASE_URL to be set. Aborting startup.');
+  process.exit(1);
+}
+
 const DB_TYPE = process.env.DATABASE_URL ? 'postgres' : (process.env.DB_TYPE || 'sqlite');
 
 if (process.env.DATABASE_URL) {
@@ -81,18 +87,6 @@ if (DB_TYPE === 'postgres') {
         }
       });
 
-      // Add is_manual_assignment column to rotations if it doesn't exist (migration for existing databases)
-      db.run(`
-        ALTER TABLE rotations ADD COLUMN is_manual_assignment BOOLEAN DEFAULT FALSE
-      `, (err) => {
-        // Ignore error if column already exists
-        if (err && !err.message.includes('duplicate column name')) {
-          console.error('Error adding is_manual_assignment column:', err);
-        } else {
-          console.log('is_manual_assignment column added or already exists');
-        }
-      });
-
       // Rotations table
       db.run(`
         CREATE TABLE IF NOT EXISTS rotations (
@@ -107,6 +101,22 @@ if (DB_TYPE === 'postgres') {
           FOREIGN KEY (unit_id) REFERENCES units (id) ON DELETE CASCADE
         )
       `);
+
+      // Add is_manual_assignment column to rotations if it doesn't exist (migration for existing databases)
+      db.run(`
+        ALTER TABLE rotations ADD COLUMN is_manual_assignment BOOLEAN DEFAULT FALSE
+      `, (err) => {
+        // Ignore error if column already exists or table missing
+        if (err) {
+          if (!err.message.includes('duplicate column name') && !err.message.includes('no such table')) {
+            console.error('Error adding is_manual_assignment column:', err);
+          } else {
+            console.log('is_manual_assignment column added or already exists');
+          }
+        } else {
+          console.log('is_manual_assignment column added or already exists');
+        }
+      });
 
       // Settings table
       db.run(`

@@ -13,6 +13,8 @@ console.log('🌀 Autorotation status:', autoRotation);
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+// Server startup flag visible to health endpoint
+let serverStarted = false;
 
 // Middleware - CORS configuration
 app.use(cors({
@@ -63,6 +65,10 @@ function requireAdminForWrites(req, res, next) {
 // Health check endpoint - define early so it's always available
 app.get('/api/health', async (req, res) => {
   const DB_TYPE = process.env.DATABASE_URL ? 'postgres' : (process.env.DB_TYPE || 'sqlite');
+  // If server hasn't finished starting, indicate service unavailable
+  if (typeof serverStarted !== 'undefined' && !serverStarted) {
+    return res.status(503).json({ status: 'STARTING', message: 'Server is starting' });
+  }
   const health = {
     status: 'OK',
     message: 'SPIN API is running',
@@ -208,6 +214,9 @@ const autoRestore = require('./services/autoRestore');
 
 async function startServer() {
   try {
+    // Ensure we only call initializeDatabase once and that `server` is in scope
+    let server;
+
     // If using PostgreSQL (DATABASE_URL), ensure DB initializes before starting server
     const usingPostgres = !!process.env.DATABASE_URL;
 
@@ -218,30 +227,32 @@ async function startServer() {
         console.log('✅ Database initialized successfully (Postgres)');
       } catch (dbError) {
         console.error('❌ Database initialization failed - aborting startup:', dbError?.message || dbError);
+        // Fatal in production: exit so deployment doesn't enter crash loop
         process.exit(1);
       }
       // Start server after DB is ready
-      const server = app.listen(PORT, '0.0.0.0', () => {
+      server = app.listen(PORT, '0.0.0.0', () => {
+        serverStarted = true;
         console.log(`🚀 SPIN Server running on port ${PORT}`);
         console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
       });
     } else {
       // Start server first, then initialize database (non-blocking) for SQLite/local dev
-      const server = app.listen(PORT, '0.0.0.0', () => {
+      server = app.listen(PORT, '0.0.0.0', async () => {
+        serverStarted = true;
         console.log(`🚀 SPIN Server running on port ${PORT}`);
         console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
-      });
 
-      // Initialize database (non-blocking - server already started)
-      try {
-        await initializeDatabase();
-        console.log('✅ Database initialized successfully');
-      } catch (dbError) {
-        console.error('❌ Database initialization failed:', dbError);
-        // Don't exit - server is already running, health check should still work
-      }
+        try {
+          await initializeDatabase();
+          console.log('✅ Database initialized successfully');
+        } catch (dbError) {
+          console.error('❌ Database initialization failed (dev):', dbError);
+          // Do not exit in local dev - but log clearly
+        }
+      });
     }
-    
+
     // Handle server errors
     server.on('error', (err) => {
       console.error('❌ Server error:', err);
@@ -256,14 +267,7 @@ async function startServer() {
       console.error('Express error:', err);
     });
     
-    // Initialize database (non-blocking - server already started)
-    try {
-      await initializeDatabase();
-      console.log('✅ Database initialized successfully');
-    } catch (dbError) {
-      console.error('❌ Database initialization failed:', dbError);
-      // Don't exit - server is already running, health check should still work
-    }
+    // NOTE: database initialization already handled above depending on environment
     
     // Initialize backup scheduler
     if (process.env.BACKUP_SCHEDULE && process.env.BACKUP_SCHEDULE !== 'disabled') {
