@@ -49,6 +49,23 @@ const getConnectionConfig = () => {
 
 const pool = new Pool(getConnectionConfig());
 
+// Log connection host/port (avoid printing credentials)
+try {
+  const cfg = getConnectionConfig();
+  if (cfg.connectionString) {
+    try {
+      const u = new URL(cfg.connectionString);
+      console.log(`📡 PostgreSQL connection host: ${u.hostname}:${u.port || 5432}`);
+    } catch (e) {
+      console.log('📡 PostgreSQL connection string provided (host parsing failed)');
+    }
+  } else {
+    console.log(`📡 PostgreSQL connection host: ${cfg.host || process.env.DB_HOST || 'localhost'}:${cfg.port || process.env.DB_PORT || 5432}`);
+  }
+} catch (e) {
+  // Non-fatal
+}
+
 // Test connection
 pool.on('connect', () => {
   console.log('✅ PostgreSQL connected');

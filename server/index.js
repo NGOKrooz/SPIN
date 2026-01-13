@@ -61,12 +61,57 @@ function requireAdminForWrites(req, res, next) {
 }
 
 // Health check endpoint - define early so it's always available
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
+app.get('/api/health', async (req, res) => {
+  const DB_TYPE = process.env.DATABASE_URL ? 'postgres' : (process.env.DB_TYPE || 'sqlite');
+  const health = {
+    status: 'OK',
     message: 'SPIN API is running',
-    timestamp: new Date().toISOString()
-  });
+    timestamp: new Date().toISOString(),
+    database: {
+      type: DB_TYPE,
+      ok: null,
+      details: null
+    }
+  };
+
+  // Try a lightweight DB check
+  try {
+    const { getDatabase } = require('./database/init');
+    const db = getDatabase();
+
+    if (DB_TYPE === 'postgres') {
+      // pg Pool has query method
+      await db.query('SELECT 1');
+      health.database.ok = true;
+      try {
+        // Log hostname/port if possible
+        if (process.env.DATABASE_URL) {
+          const url = new URL(process.env.DATABASE_URL);
+          health.database.details = { host: url.hostname, port: url.port || '5432' };
+        } else {
+          health.database.details = { host: process.env.DB_HOST || 'localhost', port: process.env.DB_PORT || '5432' };
+        }
+      } catch (e) {
+        health.database.details = 'Could not parse DB host details';
+      }
+    } else {
+      // sqlite3 Database object
+      await new Promise((resolve, reject) => {
+        db.get('SELECT 1 as ok', [], (err, row) => {
+          if (err) return reject(err);
+          resolve(row);
+        });
+      });
+      health.database.ok = true;
+      health.database.details = { path: process.env.DB_PATH || './database/spin.db' };
+    }
+  } catch (err) {
+    console.error('Health check DB error:', err?.message || err);
+    health.database.ok = false;
+    health.database.details = err?.message || String(err);
+  }
+
+  res.json(health);
 });
 
 // Apply admin protection to all API write routes
