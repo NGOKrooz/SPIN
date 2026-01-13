@@ -208,11 +208,39 @@ const autoRestore = require('./services/autoRestore');
 
 async function startServer() {
   try {
-    // Start server first, then initialize database (non-blocking)
-    const server = app.listen(PORT, '0.0.0.0', () => {
-      console.log(`🚀 SPIN Server running on port ${PORT}`);
-      console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
-    });
+    // If using PostgreSQL (DATABASE_URL), ensure DB initializes before starting server
+    const usingPostgres = !!process.env.DATABASE_URL;
+
+    if (usingPostgres) {
+      console.log('🔌 DATABASE_URL detected - verifying DB connectivity before starting server');
+      try {
+        await initializeDatabase();
+        console.log('✅ Database initialized successfully (Postgres)');
+      } catch (dbError) {
+        console.error('❌ Database initialization failed - aborting startup:', dbError?.message || dbError);
+        process.exit(1);
+      }
+      // Start server after DB is ready
+      const server = app.listen(PORT, '0.0.0.0', () => {
+        console.log(`🚀 SPIN Server running on port ${PORT}`);
+        console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
+      });
+    } else {
+      // Start server first, then initialize database (non-blocking) for SQLite/local dev
+      const server = app.listen(PORT, '0.0.0.0', () => {
+        console.log(`🚀 SPIN Server running on port ${PORT}`);
+        console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
+      });
+
+      // Initialize database (non-blocking - server already started)
+      try {
+        await initializeDatabase();
+        console.log('✅ Database initialized successfully');
+      } catch (dbError) {
+        console.error('❌ Database initialization failed:', dbError);
+        // Don't exit - server is already running, health check should still work
+      }
+    }
     
     // Handle server errors
     server.on('error', (err) => {

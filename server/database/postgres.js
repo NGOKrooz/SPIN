@@ -3,40 +3,73 @@ const { Pool } = require('pg');
 // Parse DATABASE_URL or use individual connection parameters
 const getConnectionConfig = () => {
   if (process.env.DATABASE_URL) {
-    const connectionString = process.env.DATABASE_URL;
-    
-    // For Railway private networking, SSL is typically not required
-    // Check if sslmode is specified in the connection string
+    let connectionString = process.env.DATABASE_URL;
+
+    // If the connection string contains unencoded userinfo (e.g. raw '#' or '%'),
+    // try to safely encode the username/password portion so Node's URL parser works.
+    function fixAuthEncoding(connStr) {
+      try {
+        const u = new URL(connStr);
+        // If username and password are already populated, assume it's fine
+        if (u.username && u.password) return connStr;
+      } catch (e) {
+        // Parsing failed - we'll attempt to repair auth portion
+      }
+
+      const m = connStr.match(/^(\w+:\/\/)([^@]+)@(.+)$/);
+      if (!m) return connStr;
+
+      const prefix = m[1];
+      const auth = m[2];
+      const rest = m[3];
+
+      // auth may be "user:pass" or just "user" - handle both
+      const idx = auth.indexOf(':');
+      let user = auth;
+      let pass = '';
+      if (idx !== -1) {
+        user = auth.slice(0, idx);
+        pass = auth.slice(idx + 1);
+      }
+
+      try {
+        const encUser = encodeURIComponent(user);
+        const encPass = encodeURIComponent(pass);
+        const fixed = `${prefix}${encUser}${pass ? ':' + encPass : ''}@${rest}`;
+        console.log('Note: Fixed DATABASE_URL auth encoding for safer parsing');
+        return fixed;
+      } catch (e) {
+        return connStr;
+      }
+    }
+
+    connectionString = fixAuthEncoding(connectionString);
+
+    // For Railway private networking, SSL is typically not required by default
     let ssl = false;
-    
+
     try {
       const url = new URL(connectionString);
       const sslMode = url.searchParams.get('sslmode');
-      
-      // Determine SSL settings based on connection string parameters
+
       if (sslMode === 'require' || sslMode === 'prefer') {
         ssl = { rejectUnauthorized: false };
       } else if (sslMode === 'disable') {
         ssl = false;
       } else {
-        // Default for Railway private networking (no SSL)
-        // Private networking connection strings typically use internal hostnames
-        // or have no sslmode specified, so we default to no SSL
-        // This avoids egress fees and is more efficient for internal connections
         ssl = false;
       }
     } catch (err) {
-      // If URL parsing fails, default to no SSL (safe for private networking)
-      console.log('Note: Could not parse DATABASE_URL, defaulting to no SSL (safe for Railway private networking)');
+      console.log('Note: Could not parse DATABASE_URL after fix, defaulting to no SSL');
       ssl = false;
     }
-    
+
     return {
       connectionString: connectionString,
       ssl: ssl,
     };
   }
-  
+
   return {
     host: process.env.DB_HOST || 'localhost',
     port: process.env.DB_PORT || 5432,
