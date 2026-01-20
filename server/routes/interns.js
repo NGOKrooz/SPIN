@@ -465,9 +465,18 @@ router.post('/', validateIntern, async (req, res) => {
             
             // Generate rotations asynchronously if enabled (don't block response)
             if (autoGenerate) {
-              generateRotationsForIntern(internId, finalBatch, start_date).catch(err => {
-                console.error('Error auto-generating rotations in background:', err);
-              });
+              console.log(`[POST /interns] Starting background rotation generation for intern ${internId}: batch=${finalBatch}, start_date=${start_date}`);
+              generateRotationsForIntern(internId, finalBatch, start_date)
+                .then(() => {
+                  console.log(`[POST /interns] ✅ Successfully completed rotation generation for intern ${internId}`);
+                })
+                .catch(err => {
+                  console.error(`[POST /interns] ❌ Error auto-generating rotations for intern ${internId}:`, err);
+                  console.error(`[POST /interns] Error details:`, err.message || String(err));
+                  console.error(`[POST /interns] Error stack:`, err.stack);
+                });
+            } else {
+              console.log(`[POST /interns] Auto-generation disabled, skipping rotation creation for intern ${internId}`);
             }
           });
         }
@@ -1545,6 +1554,8 @@ async function autoAdvanceInternRotation(internId) {
 // Helper function to generate rotations for a new intern (called asynchronously)
 async function generateRotationsForIntern(internId, batch, start_date) {
   try {
+    console.log(`[GenerateRotations] STARTING for intern ${internId} (batch=${batch}, start_date=${start_date})`);
+    
     // Get all active interns ordered by ID for round-robin indexing
     const allInterns = await new Promise((resolve, reject) => {
       db.all(
@@ -1557,12 +1568,16 @@ async function generateRotationsForIntern(internId, batch, start_date) {
       );
     });
     
+    console.log(`[GenerateRotations] Found ${allInterns.length} active/extended interns`);
+    
     // Find the new intern's index for fallback round-robin assignment
     const internIndex = allInterns.findIndex(i => i.id === internId);
     if (internIndex === -1) {
-      console.error(`[GenerateRotations] Intern ${internId} not found in active interns list`);
+      console.error(`[GenerateRotations] ❌ Intern ${internId} not found in active interns list`);
       return;
     }
+    
+    console.log(`[GenerateRotations] Intern ${internId} is at index ${internIndex}`);
     
     // Get all units ordered by ID for consistent round-robin sequence
     const units = await new Promise((resolve, reject) => {
@@ -1571,6 +1586,8 @@ async function generateRotationsForIntern(internId, batch, start_date) {
         else resolve(rows || []);
       });
     });
+    
+    console.log(`[GenerateRotations] Found ${units.length} units: ${units.map(u => u.name).join(', ')}`);
     
     // Get settings for rotation generation
     const settings = await new Promise((resolve, reject) => {
@@ -1593,8 +1610,11 @@ async function generateRotationsForIntern(internId, batch, start_date) {
         }
       });
     });
+    
+    console.log(`[GenerateRotations] Settings loaded: ${Object.keys(settings).join(', ')}`);
+    
     if (units.length === 0) {
-      console.warn('[GenerateRotations] No units available, skipping rotation creation');
+      console.warn('[GenerateRotations] ⚠️ No units available, skipping rotation creation');
       return;
     }
 
@@ -1605,6 +1625,7 @@ async function generateRotationsForIntern(internId, batch, start_date) {
       const { getRoundRobinCounter: getCounter } = getRotationHelpers();
       roundRobinCounter = await getCounter();
       startOffset = roundRobinCounter % units.length;
+      console.log(`[GenerateRotations] Round-robin counter: ${roundRobinCounter}, start offset: ${startOffset}`);
     } catch (counterErr) {
       console.error('[GenerateRotations] Failed to read round robin counter, using intern index fallback:', counterErr);
       roundRobinCounter = null;
@@ -1628,7 +1649,13 @@ async function generateRotationsForIntern(internId, batch, start_date) {
       startOffset
     );
     
+    console.log(`[GenerateRotations] Generated ${rotations.length} rotations for intern ${internId}`);
+    rotations.forEach((rot, idx) => {
+      console.log(`  Rotation ${idx + 1}: Unit ID ${rot.unit_id}, ${rot.start_date} to ${rot.end_date}`);
+    });
+    
     // Insert generated rotations
+    let insertedCount = 0;
     for (const rotation of rotations) {
       await new Promise((resolve, reject) => {
         db.run(
@@ -1636,24 +1663,35 @@ async function generateRotationsForIntern(internId, batch, start_date) {
            VALUES (?, ?, ?, ?, FALSE)`,
           [rotation.intern_id, rotation.unit_id, rotation.start_date, rotation.end_date],
           (err) => {
-            if (err) reject(err);
-            else resolve();
+            if (err) {
+              console.error(`[GenerateRotations] ❌ Error inserting rotation:`, err);
+              reject(err);
+            } else {
+              insertedCount++;
+              resolve();
+            }
           }
         );
       });
     }
 
+    console.log(`[GenerateRotations] ✅ Successfully inserted ${insertedCount}/${rotations.length} rotations for intern ${internId}`);
+
     if (roundRobinCounter !== null) {
       try {
         const { setRoundRobinCounter: setCounter } = getRotationHelpers();
         await setCounter(roundRobinCounter + 1);
+        console.log(`[GenerateRotations] Updated round-robin counter to ${roundRobinCounter + 1}`);
       } catch (counterErr) {
         console.error('[GenerateRotations] Failed to advance round robin counter after creating rotations:', counterErr);
       }
     }
     
+    console.log(`[GenerateRotations] ✅ COMPLETED for intern ${internId}`);
   } catch (genErr) {
-    console.error('Error auto-generating rotations:', genErr);
+    console.error('[GenerateRotations] ❌ FATAL ERROR auto-generating rotations:', genErr);
+    console.error('[GenerateRotations] Error message:', genErr.message);
+    console.error('[GenerateRotations] Stack trace:', genErr.stack);
     // Don't fail intern creation if rotation generation fails
   }
 }

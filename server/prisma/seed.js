@@ -16,7 +16,7 @@ async function main() {
     { key: 'schedule_start_date', value: '2024-01-01', description: 'Reference date for calculating alternating schedule weeks' },
     { key: 'internship_duration_months', value: '12', description: 'Total internship duration in months' },
     { key: 'rotation_buffer_days', value: '2', description: 'Buffer days between rotations' },
-    { key: 'auto_generation', value: JSON.stringify({ auto_generate_on_create: false }), description: 'Auto-generation settings' }
+    { key: 'auto_generation', value: JSON.stringify({ auto_generate_on_create: true, auto_extend_on_extension: true, allow_overlap: false, conflict_resolution_mode: 'strict', auto_resolve_conflicts: false, notify_on_conflicts: true }), description: 'Auto-generation settings' }
   ];
 
   for (const setting of defaultSettings) {
