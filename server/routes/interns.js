@@ -298,6 +298,7 @@ router.post('/', validateIntern, async (req, res) => {
   }
   
   const { name, gender, batch, start_date, phone_number, initial_unit_id } = req.body;
+  console.log('[POST /interns] Creating new intern:', { name, gender, batch, start_date, phone_number, initial_unit_id });
   
   const query = `
     INSERT INTO interns (name, gender, batch, start_date, phone_number)
@@ -316,6 +317,7 @@ router.post('/', validateIntern, async (req, res) => {
 
   getNextBatch.then((nextBatch) => {
     const finalBatch = batch && ['A','B'].includes(batch) ? batch : (nextBatch || 'A');
+    console.log('[POST /interns] Final batch:', finalBatch);
     
     // Validate finalBatch
     if (!finalBatch || !['A','B'].includes(finalBatch)) {
@@ -339,6 +341,7 @@ router.post('/', validateIntern, async (req, res) => {
       }
       
       const internId = this.lastID;
+      console.log('[POST /interns] Intern created with ID:', internId);
       
       // Validate that internId was returned
       if (!internId) {
@@ -353,6 +356,7 @@ router.post('/', validateIntern, async (req, res) => {
       
       // If initial unit is provided, create rotation
       if (initial_unit_id) {
+        console.log('[POST /interns] Creating initial rotation for unit:', initial_unit_id);
           // Get unit duration
           db.get('SELECT duration_days FROM units WHERE id = ?', [initial_unit_id], (err, unit) => {
             if (err) {
@@ -410,9 +414,10 @@ router.post('/', validateIntern, async (req, res) => {
           });
         } else {
           // Check if auto-generate on create is enabled (from JSON settings)
+          console.log('[POST /interns] No initial unit, checking auto-generate setting');
           db.get('SELECT value FROM settings WHERE key = ?', ['auto_generation'], (err, setting) => {
             if (err) {
-              console.error('[CreateIntern] Error checking auto-generation setting:', err);
+              console.error('[POST /interns] Error checking auto-generation setting:', err);
               return res.status(201).json({
                 id: internId,
                 name,

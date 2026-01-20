@@ -291,6 +291,43 @@ router.get('/upcoming', async (req, res) => {
   }
 });
 
+// GET /api/rotations/categories - Return completed, current, and upcoming rotations
+router.get('/categories', async (req, res) => {
+  try {
+    const now = new Date();
+    const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const todayStr = format(todayUTC, 'yyyy-MM-dd');
+    console.log(`[Rotations/Categories] Querying rotation categories for date: ${todayStr}`);
+
+    const baseSelect = `
+      SELECT 
+        r.*,
+        i.name as intern_name,
+        i.batch as intern_batch,
+        i.status as intern_status,
+        u.name as unit_name,
+        u.workload as unit_workload,
+        u.duration_days
+      FROM rotations r
+      JOIN interns i ON r.intern_id = i.id
+      JOIN units u ON r.unit_id = u.id
+    `;
+
+    const [completed, current, upcoming] = await Promise.all([
+      allAsync(baseSelect + ' WHERE r.end_date < ? ORDER BY r.end_date ASC', [todayStr]),
+      allAsync(baseSelect + ' WHERE r.start_date <= ? AND r.end_date >= ? ORDER BY r.start_date, u.name', [todayStr, todayStr]),
+      allAsync(baseSelect + ' WHERE r.start_date > ? ORDER BY r.start_date ASC', [todayStr])
+    ]);
+
+    console.log(`[Rotations/Categories] Found completed=${completed.length}, current=${current.length}, upcoming=${upcoming.length}`);
+
+    res.json({ completed, current, upcoming });
+  } catch (err) {
+    console.error('[Rotations/Categories] Error fetching categories:', err);
+    res.status(500).json({ error: 'Failed to fetch rotation categories' });
+  }
+});
+
 // POST /api/rotations - Create manual rotation assignment
 router.post('/', validateRotation, (req, res) => {
   const errors = validationResult(req);
