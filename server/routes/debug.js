@@ -82,8 +82,7 @@ router.get('/rotations/:internId', async (req, res) => {
   const { internId } = req.params;
   
   // Trigger auto-advance if enabled
-  const { isAutoRotationEnabled } = require('../utils/autoRotation');
-  const autoRotationEnabled = isAutoRotationEnabled();
+  const autoRotationEnabled = process.env.AUTO_ROTATION === 'true';
   if (autoRotationEnabled && autoAdvanceInternRotation) {
     try {
       console.log(`[Debug] Triggering auto-advance for intern ${internId}...`);

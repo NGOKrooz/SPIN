@@ -148,3 +148,4 @@ For issues or questions:
 2. Run `npm run prisma:verify` to diagnose issues
 3. Use Prisma Studio to inspect database: `npm run prisma:studio`
 
+

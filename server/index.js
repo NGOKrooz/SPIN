@@ -161,6 +161,8 @@ const { initializeDatabase } = require('./database/init');
 const scheduler = require('./services/scheduler');
 const autoRestore = require('./services/autoRestore');
 
+let databaseReady = false;
+
 async function startServer() {
   try {
     // Start server first, then initialize database (non-blocking)
@@ -184,13 +186,45 @@ async function startServer() {
     });
     
     // Initialize database (non-blocking - server already started)
-    try {
-      await initializeDatabase();
-      console.log('✅ Database initialized successfully');
-    } catch (dbError) {
-      console.error('❌ Database initialization failed:', dbError);
-      // Don't exit - server is already running, health check should still work
-    }
+    // This runs in the background; API calls can proceed even if DB isn't ready yet
+    (async () => {
+      const maxDbRetries = 5;
+      let dbRetries = 0;
+      
+      while (dbRetries < maxDbRetries && !databaseReady) {
+        try {
+          console.log(`\n📦 Initializing database (attempt ${dbRetries + 1}/${maxDbRetries})...`);
+          await initializeDatabase();
+          databaseReady = true;
+          console.log('✅ Database initialized successfully');
+          break;
+        } catch (dbError) {
+          dbRetries++;
+          console.error(`❌ Database initialization attempt ${dbRetries} failed:`, dbError.message);
+          
+          if (dbError.message.includes('ENETUNREACH')) {
+            console.error('   💡 ENETUNREACH error detected - IPv6 connection issue');
+            console.error('   💡 Ensure family: 4 is set in connection config to force IPv4');
+          } else if (dbError.message.includes('ECONNREFUSED')) {
+            console.error('   💡 Connection refused - PostgreSQL server may not be responding');
+            console.error('   💡 Check DATABASE_URL is correct and server is running');
+          } else if (dbError.message.includes('password authentication failed')) {
+            console.error('   💡 Authentication failed - check DATABASE_URL credentials');
+            console.error('   💡 Ensure password is properly URL-encoded');
+          }
+          
+          if (dbRetries < maxDbRetries) {
+            const waitTime = Math.min(5000 * dbRetries, 30000); // Max 30 seconds
+            console.log(`⏳ Waiting ${waitTime / 1000} seconds before retry...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+          } else {
+            console.error('❌ Database initialization failed after maximum retries');
+            console.error('⚠️  Server is running but database operations will fail');
+            console.error('⚠️  Check logs above for connection issues');
+          }
+        }
+      }
+    })();
     
     // Initialize backup scheduler
     if (process.env.BACKUP_SCHEDULE && process.env.BACKUP_SCHEDULE !== 'disabled') {

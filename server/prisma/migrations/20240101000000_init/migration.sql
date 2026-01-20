@@ -174,3 +174,4 @@ ALTER TABLE "workload_history" ADD CONSTRAINT "workload_history_unit_id_fkey" FO
 -- AddForeignKey
 ALTER TABLE "activity_log" ADD CONSTRAINT "activity_log_intern_id_fkey" FOREIGN KEY ("intern_id") REFERENCES "interns"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
+

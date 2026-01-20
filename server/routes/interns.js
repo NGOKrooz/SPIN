@@ -271,8 +271,27 @@ router.get('/:id', (req, res) => {
   });
 });
 
+// Helper function to verify database connection before operations
+const verifyDatabaseConnection = () => {
+  return new Promise((resolve) => {
+    db.get('SELECT 1', [], (err) => {
+      resolve(!err);
+    });
+  });
+};
+
 // POST /api/interns - Create new intern
-router.post('/', validateIntern, (req, res) => {
+router.post('/', validateIntern, async (req, res) => {
+  // Verify database is connected before proceeding
+  const dbConnected = await verifyDatabaseConnection();
+  if (!dbConnected) {
+    console.error('❌ Database connection unavailable when creating intern');
+    return res.status(503).json({ 
+      error: 'Database service unavailable',
+      details: 'Cannot establish database connection. Please try again in a moment.'
+    });
+  }
+  
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });

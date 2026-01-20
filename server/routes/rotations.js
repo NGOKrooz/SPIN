@@ -2,7 +2,6 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const db = require('../database/dbWrapper');
 const { addDays, format, parseISO, differenceInDays } = require('date-fns');
-const { isAutoRotationEnabled } = require('../utils/autoRotation');
 
 // Helper functions for async database operations
 const runAsync = (query, params = []) =>
@@ -141,7 +140,7 @@ router.get('/', (req, res) => {
 // GET /api/rotations/current - Get current active rotations
 router.get('/current', async (req, res) => {
   // Auto-advance rotations if enabled (default to true if not set)
-  const autoRotationEnabled = isAutoRotationEnabled();
+  const autoRotationEnabled = process.env.AUTO_ROTATION !== 'false';
   console.log(`[Rotations/Current] Auto-rotation enabled: ${autoRotationEnabled} (env: ${process.env.AUTO_ROTATION})`);
   
   if (autoRotationEnabled) {
@@ -250,7 +249,7 @@ router.get('/upcoming', async (req, res) => {
     console.log(`[Rotations/Upcoming] Querying upcoming rotations for date: ${todayStr}`);
     
     // Auto-advance rotations if enabled before fetching upcoming
-    const autoRotationEnabled = isAutoRotationEnabled();
+    const autoRotationEnabled = process.env.AUTO_ROTATION !== 'false';
     if (autoRotationEnabled) {
       try {
         console.log('[Rotations/Upcoming] Triggering auto-advance before fetching upcoming...');

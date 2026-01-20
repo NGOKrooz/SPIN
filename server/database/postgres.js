@@ -1,42 +1,88 @@
 const { Pool } = require('pg');
+const url = require('url');
 
 // Parse DATABASE_URL or use individual connection parameters
 const getConnectionConfig = () => {
   if (process.env.DATABASE_URL) {
     const connectionString = process.env.DATABASE_URL;
     
-    // For Railway private networking, SSL is typically not required
-    // Check if sslmode is specified in the connection string
-    let ssl = false;
+    console.log('🔧 Parsing DATABASE_URL for PostgreSQL connection...');
     
     try {
-      const url = new URL(connectionString);
-      const sslMode = url.searchParams.get('sslmode');
+      // Parse the connection URL
+      const parsedUrl = url.parse(connectionString, true);
       
-      // Determine SSL settings based on connection string parameters
-      if (sslMode === 'require' || sslMode === 'prefer') {
+      // Extract hostname - critical for IPv6/IPv4 resolution
+      let hostname = parsedUrl.hostname || 'localhost';
+      
+      // Extract credentials and database details
+      const username = parsedUrl.auth ? parsedUrl.auth.split(':')[0] : 'postgres';
+      const password = parsedUrl.auth ? parsedUrl.auth.split(':')[1] : '';
+      const port = parsedUrl.port || 5432;
+      const database = parsedUrl.pathname ? parsedUrl.pathname.slice(1) : 'postgres';
+      
+      console.log(`📡 Database host: ${hostname}:${port}`);
+      console.log(`📊 Database name: ${database}`);
+      console.log(`👤 User: ${username}`);
+      
+      // Determine SSL settings based on protocol or sslmode parameter
+      let ssl = false;
+      const sslMode = parsedUrl.query?.sslmode;
+      
+      // For Supabase and most cloud PostgreSQL providers, SSL is required
+      // Only disable if explicitly set to 'disable'
+      if (sslMode === 'disable') {
+        ssl = false;
+        console.log('🔒 SSL: Disabled (per sslmode parameter)');
+      } else if (sslMode === 'require' || sslMode === 'prefer') {
         ssl = { rejectUnauthorized: false };
-      } else if (sslMode === 'disable') {
-        ssl = false;
+        console.log('🔒 SSL: Enabled (required for Supabase/cloud providers)');
+      } else if (hostname.includes('supabase') || hostname.includes('amazonaws') || hostname.includes('azure')) {
+        // Auto-detect cloud providers that require SSL
+        ssl = { rejectUnauthorized: false };
+        console.log('🔒 SSL: Auto-detected as required for cloud provider');
+      } else if (process.env.NODE_ENV === 'production') {
+        // Default to SSL in production
+        ssl = { rejectUnauthorized: false };
+        console.log('🔒 SSL: Enabled (production environment)');
       } else {
-        // Default for Railway private networking (no SSL)
-        // Private networking connection strings typically use internal hostnames
-        // or have no sslmode specified, so we default to no SSL
-        // This avoids egress fees and is more efficient for internal connections
         ssl = false;
+        console.log('🔒 SSL: Disabled (development/local)');
       }
+      
+      return {
+        host: hostname,
+        port: port,
+        database: database,
+        user: username,
+        password: password,
+        ssl: ssl,
+        // Force IPv4 to avoid ENETUNREACH issues with IPv6 resolution
+        family: 4,
+        // Add connection retry parameters
+        max: 20,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 10000,
+        statement_timeout: 30000,
+      };
     } catch (err) {
-      // If URL parsing fails, default to no SSL (safe for private networking)
-      console.log('Note: Could not parse DATABASE_URL, defaulting to no SSL (safe for Railway private networking)');
-      ssl = false;
+      console.error('❌ Error parsing DATABASE_URL:', err.message);
+      console.log('⚠️  Falling back to connection string parsing');
+      
+      // Fallback: use connection string directly but with IPv4 forcing
+      return {
+        connectionString: connectionString,
+        ssl: { rejectUnauthorized: false }, // Default to SSL for Supabase
+        family: 4, // Force IPv4
+        max: 20,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 10000,
+        statement_timeout: 30000,
+      };
     }
-    
-    return {
-      connectionString: connectionString,
-      ssl: ssl,
-    };
   }
   
+  // Local database connection (no Supabase)
   return {
     host: process.env.DB_HOST || 'localhost',
     port: process.env.DB_PORT || 5432,
@@ -44,27 +90,100 @@ const getConnectionConfig = () => {
     user: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || '',
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    family: 4, // Force IPv4 for consistency
   };
 };
 
 const pool = new Pool(getConnectionConfig());
 
-// Test connection
+let connectionAttempts = 0;
+const MAX_CONNECTION_ATTEMPTS = 5;
+const RETRY_DELAY = 5000; // 5 seconds
+
+// Track connection state
 pool.on('connect', () => {
-  console.log('✅ PostgreSQL connected');
+  console.log('✅ PostgreSQL connected successfully');
+  connectionAttempts = 0; // Reset on successful connection
 });
 
 pool.on('error', (err) => {
-  console.error('❌ PostgreSQL connection error:', err);
-  // Don't exit immediately - let the app try to reconnect
-  console.error('⚠️  Will attempt to reconnect on next query');
+  console.error('❌ PostgreSQL connection error:', err.message);
+  
+  // Log additional diagnostic information
+  if (err.code === 'ENETUNREACH') {
+    console.error('📡 Network unreachable - likely IPv6/IPv4 resolution issue');
+    console.error('   The server is trying to connect to an IPv6 address but IPv6 is not available');
+    console.error('   Fix: Ensure family: 4 is set to force IPv4 resolution');
+  } else if (err.code === 'ECONNREFUSED') {
+    console.error('🚫 Connection refused - PostgreSQL server not responding');
+  } else if (err.code === 'ENOTFOUND') {
+    console.error('🔍 Hostname not found - check DATABASE_URL is correct');
+  }
+  
+  connectionAttempts++;
+  
+  // Only exit if we've exhausted retry attempts and this is a fatal error
+  if (connectionAttempts >= MAX_CONNECTION_ATTEMPTS && process.env.NODE_ENV === 'production') {
+    console.error(`❌ Failed to connect after ${MAX_CONNECTION_ATTEMPTS} attempts. Exiting.`);
+    // Don't exit immediately - let other endpoints serve
+  }
+  // In development or for transient errors, keep the process alive
 });
+
+// Handle pool errors gracefully
+pool.on('error', (err, client) => {
+  if (client) {
+    console.error('Unexpected error on idle client', err);
+  }
+});
+
+// Attempt to reconnect if connection fails
+const attemptConnection = async (delay = 0) => {
+  if (delay > 0) {
+    console.log(`⏳ Retrying database connection in ${delay / 1000} seconds...`);
+    await new Promise(resolve => setTimeout(resolve, delay));
+  }
+  
+  try {
+    const client = await pool.connect();
+    console.log('✅ Database connection successful');
+    client.release();
+    return true;
+  } catch (err) {
+    console.error('❌ Connection retry failed:', err.message);
+    return false;
+  }
+};
 
 // Initialize database tables
 async function initializeDatabase() {
-  const client = await pool.connect();
-  
+  let client;
   try {
+    console.log('🔌 Attempting to connect to PostgreSQL...');
+    
+    // Try to get a connection with multiple attempts
+    let connected = false;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        client = await pool.connect();
+        connected = true;
+        console.log(`✅ Connected on attempt ${attempt}`);
+        break;
+      } catch (err) {
+        console.error(`❌ Connection attempt ${attempt} failed: ${err.message}`);
+        if (attempt < 3) {
+          console.log(`⏳ Waiting ${attempt * 2} seconds before retry...`);
+          await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+        } else {
+          throw err;
+        }
+      }
+    }
+    
+    if (!connected) {
+      throw new Error('Failed to establish database connection after 3 attempts');
+    }
+    
     await client.query('BEGIN');
     
     // Interns table
@@ -232,15 +351,30 @@ async function initializeDatabase() {
     
     console.log('✅ Database tables initialized successfully');
   } catch (err) {
-    try {
-      await client.query('ROLLBACK');
-    } catch (rollbackErr) {
-      // Ignore rollback errors
-      console.error('Error during rollback:', rollbackErr);
+    console.error('❌ Database initialization failed:', err.message);
+    
+    // Attempt rollback if connection is still valid
+    if (client) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackErr) {
+        console.error('⚠️  Rollback error (may be expected):', rollbackErr.message);
+      }
     }
-    throw err;
+    
+    // Re-throw with context but don't kill the process
+    // Server should continue running to serve the health check endpoint
+    const error = new Error(`Database initialization failed: ${err.message}`);
+    error.originalError = err;
+    throw error;
   } finally {
-    client.release();
+    if (client) {
+      try {
+        client.release();
+      } catch (releaseErr) {
+        console.error('⚠️  Error releasing client:', releaseErr.message);
+      }
+    }
   }
 }
 

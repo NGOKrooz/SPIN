@@ -211,4 +211,3 @@ Example service files are provided in `server/services/`:
 - `unitService.js`: Unit management
 
 These can be used as reference when updating existing routes to use Prisma.
-
