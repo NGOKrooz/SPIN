@@ -431,16 +431,21 @@ router.post('/', validateIntern, async (req, res) => {
               });
             }
             
-            let autoGenerate = false;
+            let autoGenerate = true; // Default to TRUE - auto-generate rotations by default
             
             if (setting && setting.value) {
               try {
                 const autoGenSettings = JSON.parse(setting.value);
-                autoGenerate = autoGenSettings.auto_generate_on_create === true;
+                autoGenerate = autoGenSettings.auto_generate_on_create !== false; // Default to true if not explicitly false
               } catch (e) {
-                // If parsing fails, default to false
-                autoGenerate = false;
+                // If parsing fails, default to true
+                console.warn('[POST /interns] Failed to parse auto_generation setting, defaulting to true:', e);
+                autoGenerate = true;
               }
+            } else {
+              // Setting doesn't exist - default to true (auto-generate enabled)
+              console.log('[POST /interns] auto_generation setting not found in database, defaulting to true');
+              autoGenerate = true;
             }
             
             // Log activity (non-blocking)
