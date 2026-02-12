@@ -5,9 +5,8 @@ import ExtensionModal from './ExtensionModal';
 import ReassignModal from './ReassignModal';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
-import { exportToCSV, openPrintableWindow, formatDate } from '../lib/utils';
+import { exportToCSV, openPrintableWindow, formatDate, getBatchColor, getStatusColor, getWorkloadColor, isBeforeToday, isAfterToday, includesToday, normalizeDate, calculateDaysBetween } from '../lib/utils';
 import { api } from '../services/api';
-import { formatDate, getBatchColor, getStatusColor, getWorkloadColor, isBeforeToday, isAfterToday, includesToday, normalizeDate, calculateDaysBetween } from '../lib/utils';
 
 export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   const queryClient = useQueryClient();
