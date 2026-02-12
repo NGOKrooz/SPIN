@@ -91,6 +91,7 @@ export const unitsAPI = {
   getWorkloadHistory: (id, limit = 12) => http.get(`/units/${id}/workload-history`, { params: { limit } }),
   getCompletedInterns: (id) => http.get(`/units/${id}/completed-interns`),
   seedDefaults: () => http.post('/units/seed-defaults'),
+  updateOrder: (order) => http.put('/units/order', { order }),
 };
 
   // Rotations API
@@ -191,6 +192,8 @@ export const api = {
   deleteUnit: (id) => unitsAPI.delete(id),
   updateUnitWorkload: (id, data) => unitsAPI.updateWorkload(id, data),
   updateUnitPatientCount: (id, data) => unitsAPI.updatePatientCount(id, data),
+  updateUnitOrder: (order) => unitsAPI.updateOrder(order),
+  updateOrder: (order) => unitsAPI.updateOrder(order),
   getUnitWorkloadHistory: (id, limit) => unitsAPI.getWorkloadHistory(id, limit),
   getCompletedInterns: (id) => unitsAPI.getCompletedInterns(id),
   seedUnits: () => unitsAPI.seedDefaults(),

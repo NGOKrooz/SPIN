@@ -5,6 +5,7 @@ import { Button } from './ui/button';
 import { X, Users, Calendar, User } from 'lucide-react';
 import { api } from '../services/api';
 import { getBatchColor } from '../lib/utils';
+import { exportToCSV, openPrintableWindow, formatDate } from '../lib/utils';
 
 export default function UnitViewModal({ unit, onClose, showCompletedInterns = false }) {
   const { data: completedInterns, isLoading, error } = useQuery({
@@ -13,13 +14,7 @@ export default function UnitViewModal({ unit, onClose, showCompletedInterns = fa
     enabled: !!unit && showCompletedInterns,
   });
 
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
-  };
+  // use shared formatDate from utils
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -47,9 +42,38 @@ export default function UnitViewModal({ unit, onClose, showCompletedInterns = fa
             <Users className="h-5 w-5" />
             <span>{showCompletedInterns ? `Completed Interns - ${unit.name}` : 'Unit Overview'}</span>
           </CardTitle>
-          <Button variant="ghost" size="icon" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center space-x-2">
+            <Button variant="outline" size="sm" onClick={() => {
+              // Export CSV for current view
+              try {
+                if (showCompletedInterns) {
+                  const rows = (completedInterns || []).map(r => ({ intern_name: r.intern_name, start_date: r.start_date, end_date: r.end_date }));
+                  exportToCSV(`${unit.name}-history`, rows, ['intern_name', 'start_date', 'end_date']);
+                } else {
+                  const rows = (unit.intern_names || []).map(n => ({ intern: n }));
+                  exportToCSV(`${unit.name}-current-interns`, rows, ['intern']);
+                }
+              } catch (err) {
+                alert('Export failed: ' + err.message);
+              }
+            }}>Export CSV</Button>
+            <Button variant="outline" size="sm" onClick={() => {
+              try {
+                if (showCompletedInterns) {
+                  const html = `<table><thead><tr><th>Intern</th><th>Start</th><th>End</th></tr></thead><tbody>${(completedInterns||[]).map(r => `<tr><td>${r.intern_name}</td><td>${formatDate(r.start_date)}</td><td>${formatDate(r.end_date)}</td></tr>`).join('')}</tbody></table>`;
+                  openPrintableWindow(`${unit.name} - Completed Interns`, html);
+                } else {
+                  const html = `<table><thead><tr><th>Intern</th></tr></thead><tbody>${(unit.intern_names||[]).map(n => `<tr><td>${n}</td></tr>`).join('')}</tbody></table>`;
+                  openPrintableWindow(`${unit.name} - Current Interns`, html);
+                }
+              } catch (err) {
+                alert('PDF export failed: ' + err.message);
+              }
+            }}>Download PDF</Button>
+            <Button variant="ghost" size="icon" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {showCompletedInterns ? (

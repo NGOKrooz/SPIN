@@ -5,6 +5,7 @@ import ExtensionModal from './ExtensionModal';
 import ReassignModal from './ReassignModal';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
+import { exportToCSV, openPrintableWindow, formatDate } from '../lib/utils';
 import { api } from '../services/api';
 import { formatDate, getBatchColor, getStatusColor, getWorkloadColor, isBeforeToday, isAfterToday, includesToday, normalizeDate, calculateDaysBetween } from '../lib/utils';
 
@@ -244,6 +245,18 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                 Reassign
               </Button>
               <Button className="hospital-gradient" onClick={() => setShowExtend(true)}>Extension</Button>
+              <Button variant="outline" onClick={() => {
+                try {
+                  const rows = (internSchedule || []).map(r => ({ unit: r.unit_name, start_date: r.start_date, end_date: r.end_date, duration_days: calculateDaysBetween(r.start_date, r.end_date) }));
+                  exportToCSV(`${currentIntern?.name}-rotations`, rows, ['unit','start_date','end_date','duration_days']);
+                } catch (err) { alert('Export failed: ' + err.message); }
+              }}>Export CSV</Button>
+              <Button variant="outline" onClick={() => {
+                try {
+                  const html = `<table><thead><tr><th>Unit</th><th>Start</th><th>End</th><th>Days</th></tr></thead><tbody>${(internSchedule||[]).map(r => `<tr><td>${r.unit_name}</td><td>${formatDate(r.start_date)}</td><td>${formatDate(r.end_date)}</td><td>${calculateDaysBetween(r.start_date, r.end_date)}</td></tr>`).join('')}</tbody></table>`;
+                  openPrintableWindow(`${currentIntern?.name} - Rotations`, html);
+                } catch (err) { alert('PDF export failed: ' + err.message); }
+              }}>Download PDF</Button>
             </div>
             {/* Intern Overview */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

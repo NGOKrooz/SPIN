@@ -72,6 +72,18 @@ if (DB_TYPE === 'postgres') {
         }
       });
 
+      // Add sort_order column if it doesn't exist (for editable unit ordering)
+      db.run(`
+        ALTER TABLE units ADD COLUMN sort_order INTEGER DEFAULT NULL
+      `, (err) => {
+        // Ignore error if column already exists
+        if (err && !err.message.includes('duplicate column name')) {
+          console.error('Error adding sort_order column:', err);
+        } else {
+          console.log('sort_order column added or already exists');
+        }
+      });
+
       // Add is_manual_assignment column to rotations if it doesn't exist (migration for existing databases)
       db.run(`
         ALTER TABLE rotations ADD COLUMN is_manual_assignment BOOLEAN DEFAULT FALSE

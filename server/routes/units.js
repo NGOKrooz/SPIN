@@ -46,7 +46,7 @@ router.get('/', (req, res) => {
       AND r.end_date >= date('now')
     LEFT JOIN interns i ON r.intern_id = i.id
     GROUP BY u.id
-    ORDER BY u.name
+    ORDER BY COALESCE(u.sort_order, 9999), u.name
   `;
   
   db.all(query, [], (err, rows) => {
@@ -81,6 +81,34 @@ router.get('/', (req, res) => {
     });
     
     res.json(units);
+  });
+});
+
+// PUT /api/units/order - Update ordering for units
+router.put('/order', (req, res) => {
+  const { order } = req.body; // expect array of unit ids in desired order
+  if (!Array.isArray(order)) {
+    return res.status(400).json({ error: 'Order must be an array of unit ids' });
+  }
+
+  // Use transaction-like serialize for SQLite
+  db.serialize(() => {
+    try {
+      const stmt = db.prepare(`UPDATE units SET sort_order = ? WHERE id = ?`);
+      order.forEach((id, idx) => {
+        stmt.run(idx + 1, id);
+      });
+      stmt.finalize((err) => {
+        if (err) {
+          console.error('Error saving unit order:', err);
+          return res.status(500).json({ error: 'Failed to save unit order' });
+        }
+        res.json({ message: 'Unit order updated' });
+      });
+    } catch (err) {
+      console.error('Error updating unit order:', err);
+      return res.status(500).json({ error: 'Failed to update unit order' });
+    }
   });
 });
 

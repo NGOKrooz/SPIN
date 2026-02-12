@@ -11,6 +11,7 @@ import { getWorkloadColor, getBatchColor } from '../lib/utils';
 import { useToast } from '../hooks/use-toast';
 import UnitForm from '../components/UnitForm';
 import UnitViewModal from '../components/UnitViewModal';
+import UnitOrderModal from '../components/UnitOrderModal';
 
 export default function Units() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -19,6 +20,7 @@ export default function Units() {
   const [showForm, setShowForm] = useState(false);
   const [editingUnit, setEditingUnit] = useState(null);
   const [selectedUnit, setSelectedUnit] = useState(null);
+  const [showOrderEditor, setShowOrderEditor] = useState(false);
   const [showCompletedInterns, setShowCompletedInterns] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -127,6 +129,9 @@ export default function Units() {
           <Button onClick={() => setShowForm(true)} className="hospital-gradient w-full sm:w-auto">
             <Building2 className="h-4 w-4 mr-2" />
             Add Unit
+          </Button>
+          <Button onClick={() => setShowOrderEditor(true)} variant="outline" className="w-full sm:w-auto">
+            Reorder Units
           </Button>
         </div>
       </div>
@@ -372,6 +377,16 @@ export default function Units() {
             setShowCompletedInterns(false);
           }}
           showCompletedInterns={showCompletedInterns}
+        />
+      )}
+
+      {showOrderEditor && (
+        <UnitOrderModal
+          units={units}
+          onClose={() => setShowOrderEditor(false)}
+          onSaved={() => {
+            queryClient.invalidateQueries({ queryKey: ['units'] });
+          }}
         />
       )}
 

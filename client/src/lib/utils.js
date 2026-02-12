@@ -121,3 +121,38 @@ export function getStatusColor(status) {
       return 'bg-gray-100 text-gray-800';
   }
 }
+
+// Export helpers
+export function exportToCSV(filename, rows = [], headers = []) {
+  try {
+    const cols = headers.length ? headers : Object.keys(rows[0] || {});
+    const csv = [cols.join(',')].concat(rows.map(r => cols.map(c => {
+      const v = r[c] == null ? '' : String(r[c]).replace(/"/g, '""');
+      return `"${v}"`;
+    }).join(','))).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename.endsWith('.csv') ? filename : `${filename}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error('Export CSV failed', err);
+    throw err;
+  }
+}
+
+export function openPrintableWindow(title, htmlContent) {
+  const w = window.open('', '_blank');
+  if (!w) throw new Error('Unable to open print window');
+  w.document.write(`<!doctype html><html><head><title>${title}</title><meta charset="utf-8"/><style>body{font-family:Arial,Helvetica,sans-serif;padding:20px;color:#111}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f3f4f6}</style></head><body><h2>${title}</h2>${htmlContent}</body></html>`);
+  w.document.close();
+  // Give browser a moment to render then open print dialog
+  setTimeout(() => {
+    w.print();
+  }, 300);
+  return w;
+}
