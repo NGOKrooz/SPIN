@@ -5,18 +5,18 @@ const db = require('../database/dbWrapper');
 const router = express.Router();
 
 const defaultUnits = [
-  { name: 'Adult Neurology', duration_days: 2, patient_count: 0 },
-  { name: 'Acute Stroke', duration_days: 2, patient_count: 0 },
-  { name: 'Neurosurgery', duration_days: 2, patient_count: 0 },
-  { name: 'Geriatrics', duration_days: 2, patient_count: 0 },
-  { name: 'Orthopedic Inpatients', duration_days: 2, patient_count: 0 },
-  { name: 'Orthopedic Outpatients', duration_days: 2, patient_count: 0 },
-  { name: 'Electrophysiology', duration_days: 2, patient_count: 0 },
-  { name: 'Exercise Immunology', duration_days: 2, patient_count: 0 },
-  { name: "Women's Health", duration_days: 2, patient_count: 0 },
-  { name: 'Pediatrics Inpatients', duration_days: 2, patient_count: 0 },
-  { name: 'Pediatrics Outpatients', duration_days: 2, patient_count: 0 },
-  { name: 'Cardio Thoracic Unit', duration_days: 2, patient_count: 0 }
+  { name: 'Exercise Immunology', duration_days: 2, patient_count: 0, sort_order: 1 },
+  { name: 'Intensive Care Unit', duration_days: 2, patient_count: 0, sort_order: 2 },
+  { name: 'Pelvic and Women\'s Health', duration_days: 2, patient_count: 0, sort_order: 3 },
+  { name: 'Neurosurgery', duration_days: 2, patient_count: 0, sort_order: 4 },
+  { name: 'Adult Neurology', duration_days: 2, patient_count: 0, sort_order: 5 },
+  { name: 'Medicine and Acute Care', duration_days: 2, patient_count: 0, sort_order: 6 },
+  { name: 'Geriatric and Mental Health', duration_days: 2, patient_count: 0, sort_order: 7 },
+  { name: 'Electrophysiology', duration_days: 2, patient_count: 0, sort_order: 8 },
+  { name: 'Orthopedic Out-Patient', duration_days: 2, patient_count: 0, sort_order: 9 },
+  { name: 'Orthopedic In-Patient', duration_days: 2, patient_count: 0, sort_order: 10 },
+  { name: 'Pediatric-In', duration_days: 2, patient_count: 0, sort_order: 11 },
+  { name: 'Pediatric-Out (NDT)', duration_days: 2, patient_count: 0, sort_order: 12 }
 ];
 
 // Validation middleware
@@ -227,12 +227,12 @@ router.post('/seed-defaults', async (req, res) => {
       else workload = 'High';
       
       const query = isPostgres 
-        ? `INSERT INTO units (name, duration_days, workload, description, patient_count) VALUES ($1, $2, $3, '', $4) ON CONFLICT (name) DO NOTHING`
-        : `INSERT OR IGNORE INTO units (name, duration_days, workload, description, patient_count) VALUES (?, ?, ?, '', ?)`;
+        ? `INSERT INTO units (name, duration_days, workload, description, patient_count, sort_order) VALUES ($1, $2, $3, '', $4, $5) ON CONFLICT (name) DO NOTHING`
+        : `INSERT OR IGNORE INTO units (name, duration_days, workload, description, patient_count, sort_order) VALUES (?, ?, ?, '', ?, ?)`;
       
       const params = isPostgres 
-        ? [unit.name, unit.duration_days, workload, unit.patient_count] 
-        : [unit.name, unit.duration_days, workload, unit.patient_count];
+        ? [unit.name, unit.duration_days, workload, unit.patient_count, unit.sort_order] 
+        : [unit.name, unit.duration_days, workload, unit.patient_count, unit.sort_order];
       
       db.run(query, params, (err) => {
         if (err) reject(err);
@@ -259,8 +259,8 @@ router.post('/seed-defaults', async (req, res) => {
   }
   
   const stmt = db.prepare(`
-    INSERT OR IGNORE INTO units (name, duration_days, workload, description, patient_count)
-    VALUES (?, ?, ?, '', ?)
+    INSERT OR IGNORE INTO units (name, duration_days, workload, description, patient_count, sort_order)
+    VALUES (?, ?, ?, '', ?, ?)
   `);
 
   db.serialize(() => {
@@ -272,7 +272,7 @@ router.post('/seed-defaults', async (req, res) => {
         else if (u.patient_count <= 8) workload = 'Medium';
         else workload = 'High';
         
-        stmt.run(u.name, u.duration_days, workload, u.patient_count);
+        stmt.run(u.name, u.duration_days, workload, u.patient_count, u.sort_order);
       });
       stmt.finalize((err) => {
         if (err) {
