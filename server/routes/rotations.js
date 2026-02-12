@@ -60,6 +60,142 @@ const logActivity = async (activityType, options = {}) => {
 
 const router = express.Router();
 
+// Approved canonical unit names (from project requirements)
+const APPROVED_UNITS = [
+  'Exercise Immunology',
+  'Intensive Care Unit',
+  "Pelvic and Women's Health",
+  'Neurosurgery',
+  'Adult Neurology',
+  'Medicine and Acute Care',
+  'Geriatric and Mental Health',
+  'Electrophysiology',
+  'Orthopedic Out-Patient',
+  'Orthopedic In-Patient',
+  'Pediatric-In',
+  'Pediatric-Out (NDT)'
+];
+
+function normalizeName(n) {
+  if (!n) return '';
+  return String(n).toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+// POST /api/rotations/cleanup-schedule - Validate and clean rotations and units
+router.post('/cleanup-schedule', async (req, res) => {
+  try {
+    const report = { renamedUnits: [], updatedRotations: 0, deletedRotations: 0, errors: [] };
+
+    // Load all units
+    const units = await allAsync('SELECT id, name, duration_days, workload FROM units', []);
+
+    // Build normalized map of approved names for quick lookup
+    const approvedMap = {};
+    APPROVED_UNITS.forEach(name => {
+      approvedMap[normalizeName(name)] = name;
+    });
+
+    // Attempt to map existing units to approved canonical names
+    for (const u of units) {
+      const norm = normalizeName(u.name);
+      if (approvedMap[norm] && u.name !== approvedMap[norm]) {
+        // Rename unit to canonical approved name
+        await runAsync('UPDATE units SET name = ? WHERE id = ?', [approvedMap[norm], u.id]);
+        report.renamedUnits.push({ id: u.id, from: u.name, to: approvedMap[norm] });
+      } else if (!approvedMap[norm]) {
+        // Try fuzzy matching: check if unit name contains an approved token
+        const match = APPROVED_UNITS.find(a => normalizeName(a).includes(norm) || norm.includes(normalizeName(a)));
+        if (match && u.name !== match) {
+          await runAsync('UPDATE units SET name = ? WHERE id = ?', [match, u.id]);
+          report.renamedUnits.push({ id: u.id, from: u.name, to: match });
+        }
+      }
+    }
+
+    // Refresh units map after renames
+    const refreshedUnits = await allAsync('SELECT id, name, duration_days, workload FROM units', []);
+    const unitById = {};
+    refreshedUnits.forEach(u => unitById[u.id] = u);
+
+    // Load rotations
+    const rotations = await allAsync('SELECT * FROM rotations', []);
+
+    for (const r of rotations) {
+      try {
+        // Validate required fields
+        if (!r.id || !r.intern_id || !r.unit_id) {
+          // delete invalid rotation
+          await runAsync('DELETE FROM rotations WHERE id = ?', [r.id]);
+          report.deletedRotations++;
+          continue;
+        }
+
+        // Ensure unit exists and is approved
+        const unit = unitById[r.unit_id];
+        if (!unit || !APPROVED_UNITS.includes(unit.name)) {
+          // Try to find by normalized name
+          const candidate = refreshedUnits.find(u => normalizeName(u.name) in approvedMap || APPROVED_UNITS.includes(u.name));
+          if (candidate) {
+            // Reassign rotation to candidate unit id
+            await runAsync('UPDATE rotations SET unit_id = ? WHERE id = ?', [candidate.id, r.id]);
+            report.updatedRotations++;
+          } else {
+            // No suitable unit - delete rotation
+            await runAsync('DELETE FROM rotations WHERE id = ?', [r.id]);
+            report.deletedRotations++;
+            continue;
+          }
+        }
+
+        // Normalize dates
+        const start = normalizeDbDate(r.start_date);
+        const end = normalizeDbDate(r.end_date);
+        if (!start || !end) {
+          // If start missing but unit exists, attempt to reconstruct using sequence or delete
+          await runAsync('DELETE FROM rotations WHERE id = ?', [r.id]);
+          report.deletedRotations++;
+          continue;
+        }
+
+        // Reformat dates to ISO yyyy-MM-dd (database uses this format elsewhere)
+        const startStr = format(start, 'yyyy-MM-dd');
+        const endStr = format(end, 'yyyy-MM-dd');
+
+        // Ensure duration consistency for automatic rotations (is_manual_assignment = 0)
+        const isManual = r.is_manual_assignment ? true : false;
+        const unitFinal = unitById[r.unit_id];
+        if (!unitFinal) {
+          await runAsync('DELETE FROM rotations WHERE id = ?', [r.id]);
+          report.deletedRotations++;
+          continue;
+        }
+
+        const expectedEnd = addDays(start, Math.max(1, (unitFinal.duration_days || 1)) - 1);
+        const expectedEndStr = format(expectedEnd, 'yyyy-MM-dd');
+
+        if (!isManual && endStr !== expectedEndStr) {
+          // Update end_date to expected
+          await runAsync('UPDATE rotations SET start_date = ?, end_date = ? WHERE id = ?', [startStr, expectedEndStr, r.id]);
+          report.updatedRotations++;
+        } else {
+          // Ensure stored string format is normalized
+          if (r.start_date !== startStr || r.end_date !== endStr) {
+            await runAsync('UPDATE rotations SET start_date = ?, end_date = ? WHERE id = ?', [startStr, endStr, r.id]);
+            report.updatedRotations++;
+          }
+        }
+      } catch (err) {
+        console.error('[Cleanup] Error processing rotation', r.id, err);
+        report.errors.push({ id: r.id, error: String(err) });
+      }
+    }
+
+    res.json({ message: 'Cleanup complete', report });
+  } catch (err) {
+    console.error('[Cleanup] Error running cleanup-schedule:', err);
+    res.status(500).json({ error: 'Failed to cleanup schedule', details: String(err) });
+  }
+});
 // Validation middleware
 const validateRotation = [
   body('intern_id').isInt().withMessage('Intern ID must be a number'),
