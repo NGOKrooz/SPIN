@@ -1,4 +1,4 @@
-# Use Debian-based image for better prebuilt binaries (sqlite3, etc.)
+# Use Debian-based image for PostgreSQL and Prisma compatibility
 # Node.js 20+ required for Prisma
 FROM node:20-bullseye-slim
 

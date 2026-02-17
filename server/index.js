@@ -4,12 +4,42 @@ const path = require('path');
 const fs = require('fs');
 require('dotenv').config();
 
-// Default autorotation to true if not defined
-const autoRotation = process.env.AUTO_ROTATION
-  ? process.env.AUTO_ROTATION === 'true'
-  : true;
+// ═══════════════════════════════════════════════════════════
+// Production Environment Validation (Critical)
+// ═══════════════════════════════════════════════════════════
+const requiredEnvVars = ['DATABASE_URL'];
+const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
 
-console.log('🌀 Autorotation status:', autoRotation);
+if (missingEnvVars.length > 0) {
+  console.error('');
+  console.error('═════════════════════════════════════════════════════════');
+  console.error('❌ STARTUP ERROR: Missing Required Environment Variables');
+  console.error('═════════════════════════════════════════════════════════');
+  console.error('');
+  console.error('Missing variables:');
+  missingEnvVars.forEach(varName => console.error(`  - ${varName}`));
+  console.error('');
+  console.error('For Render deployment:');
+  console.error('  1. Go to Dashboard > Environment');
+  console.error('  2. Add DATABASE_URL with Supabase connection string');
+  console.error('  3. Ensure ADMIN_PASSWORD is set (optional but recommended)');
+  console.error('');
+  console.error('═════════════════════════════════════════════════════════');
+  console.error('');
+  process.exit(1);
+}
+
+// Log startup configuration (without credentials)
+console.log('');
+console.log('🚀 SPIN Server Starting...');
+console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+console.log(`📦 Environment: ${process.env.NODE_ENV || 'development'}`);
+console.log(`🔌 Port: ${process.env.PORT || 5000}`);
+console.log(`🗄️  Database: PostgreSQL (Supabase)`);
+console.log(`🔒 Admin Auth: ${process.env.ADMIN_PASSWORD ? 'Configured ✓' : 'Not Set ⚠️'}`);
+console.log(`🔄 Auto-Rotation: ${process.env.AUTO_ROTATION !== 'false' ? 'Enabled' : 'Disabled'}`);
+console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+console.log('');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -272,5 +302,3 @@ process.on('uncaughtException', (error) => {
 
 startServer();
 
-// Export autoRotation for use in other modules
-module.exports = { autoRotation };
