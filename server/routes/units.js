@@ -32,7 +32,7 @@ router.get('/', (req, res) => {
       AND r.end_date >= date('now')
     LEFT JOIN interns i ON r.intern_id = i.id
     GROUP BY u.id
-    ORDER BY COALESCE(u.order_index, 9999), u.name
+    ORDER BY COALESCE(u.position, u.order_index, 9999), u.name
   `;
   
   db.all(query, [], (err, rows) => {
@@ -71,33 +71,79 @@ router.get('/', (req, res) => {
   });
 });
 
-// PUT /api/units/order - Update ordering for units
-router.put('/order', (req, res) => {
-  const { order } = req.body; // expect array of unit ids in desired order
-  if (!Array.isArray(order)) {
-    return res.status(400).json({ error: 'Order must be an array of unit ids' });
+const normalizeReorderPayload = (body) => {
+  if (!Array.isArray(body)) {
+    return null;
   }
 
-  // Use transaction-like serialize for ordered updates
-  db.serialize(() => {
-    try {
-      const stmt = db.prepare(`UPDATE units SET order_index = ? WHERE id = ?`);
-      order.forEach((id, idx) => {
-        stmt.run(idx + 1, id);
-      });
-      stmt.finalize((err) => {
-        if (err) {
-          console.error('Error saving unit order:', err);
+  if (body.length === 0) {
+    return [];
+  }
+
+  if (typeof body[0] === 'number') {
+    return body.map((id, index) => ({ id, position: index + 1 }));
+  }
+
+  if (typeof body[0] === 'object' && body[0] !== null) {
+    return body
+      .filter(item => item && item.id !== undefined && item.position !== undefined)
+      .map(item => ({ id: item.id, position: item.position }));
+  }
+
+  return null;
+};
+
+const handleReorder = (req, res) => {
+  const items = normalizeReorderPayload(req.body);
+
+  if (!items) {
+    return res.status(400).json({ error: 'Payload must be an array of { id, position } objects' });
+  }
+
+  db.run('BEGIN TRANSACTION', (err) => {
+    if (err) {
+      console.error('Error starting reorder transaction:', err);
+      return res.status(500).json({ error: 'Failed to start transaction' });
+    }
+
+    const updateNext = (index) => {
+      if (index >= items.length) {
+        return db.run('COMMIT', (commitErr) => {
+          if (commitErr) {
+            db.run('ROLLBACK');
+            console.error('Error committing reorder transaction:', commitErr);
+            return res.status(500).json({ error: 'Failed to save unit order' });
+          }
+          res.json({ message: 'Unit order updated' });
+        });
+      }
+
+      const { id, position } = items[index];
+      db.run('UPDATE units SET position = ? WHERE id = ?', [position, id], function(updateErr) {
+        if (updateErr) {
+          db.run('ROLLBACK');
+          console.error('Error updating unit position:', updateErr);
           return res.status(500).json({ error: 'Failed to save unit order' });
         }
-        res.json({ message: 'Unit order updated' });
+
+        if (this.changes === 0) {
+          db.run('ROLLBACK');
+          return res.status(404).json({ error: `Unit not found: ${id}` });
+        }
+
+        updateNext(index + 1);
       });
-    } catch (err) {
-      console.error('Error updating unit order:', err);
-      return res.status(500).json({ error: 'Failed to update unit order' });
-    }
+    };
+
+    updateNext(0);
   });
-});
+};
+
+// PUT /api/units/reorder - Update ordering for units
+router.put('/reorder', handleReorder);
+
+// PUT /api/units/order - Backward-compatible ordering endpoint
+router.put('/order', handleReorder);
 
 // GET /api/units/:id - Get specific unit
 router.get('/:id', (req, res) => {
@@ -202,21 +248,21 @@ router.post('/', validateUnitPayload, async (req, res) => {
       else finalWorkload = 'High';
     }
     
-    const orderQuery = 'SELECT COALESCE(MAX(order_index), 0) as max_order FROM units';
-    const orderResult = await new Promise((resolve, reject) => {
-      db.get(orderQuery, [], (err, row) => {
+    const positionQuery = 'SELECT COALESCE(MAX(position), MAX(order_index), 0) as max_position FROM units';
+    const positionResult = await new Promise((resolve, reject) => {
+      db.get(positionQuery, [], (err, row) => {
         if (err) reject(err);
         else resolve(row);
       });
     });
-    const nextOrderIndex = (orderResult?.max_order || 0) + 1;
+    const nextPosition = (positionResult?.max_position || 0) + 1;
 
     const insertQuery = `
-      INSERT INTO units (name, duration_days, workload, description, patient_count, order_index)
+      INSERT INTO units (name, duration_days, workload, description, patient_count, position)
       VALUES (?, ?, ?, ?, ?, ?)
     `;
     
-    const params = [finalName, parsedDuration, finalWorkload, description || '', count || 0, nextOrderIndex];
+    const params = [finalName, parsedDuration, finalWorkload, description || '', count || 0, nextPosition];
     
     const insertResult = await new Promise((resolve, reject) => {
       db.run(insertQuery, params, function(err) {
@@ -242,7 +288,7 @@ router.post('/', validateUnitPayload, async (req, res) => {
       workload: finalWorkload,
       description: description || '',
       patient_count: count || 0,
-      order_index: nextOrderIndex
+      position: nextPosition
     });
   } catch (err) {
     console.error('Error creating unit:', err);

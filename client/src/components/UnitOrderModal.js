@@ -26,7 +26,11 @@ export default function UnitOrderModal({ units = [], onClose, onSaved }) {
 
   const handleSave = async () => {
     try {
-      await api.updateOrder(items.map(i => i.id));
+      const payload = items.map((item, index) => ({
+        id: item.id,
+        position: index + 1,
+      }));
+      await api.updateUnitOrder(payload);
       toast({ title: 'Saved', description: 'Unit order updated' });
       if (typeof onSaved === 'function') onSaved();
       onClose();

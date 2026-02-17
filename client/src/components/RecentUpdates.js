@@ -1,6 +1,7 @@
 import React from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Button } from './ui/button';
 import { 
   Clock, 
   UserPlus, 
@@ -29,6 +30,7 @@ const activityColors = {
 };
 
 export default function RecentUpdates() {
+  const queryClient = useQueryClient();
   const { data, isLoading, error } = useQuery({
     queryKey: ['recentActivities'],
     queryFn: () => api.getRecentActivities(10),
@@ -73,21 +75,40 @@ export default function RecentUpdates() {
 
   const activities = data || [];
 
+  const handleClear = async () => {
+    const confirmed = window.confirm('Clear all recent updates? This action cannot be undone.');
+    if (!confirmed) return;
+
+    try {
+      await api.clearRecentActivities();
+      queryClient.invalidateQueries({ queryKey: ['recentActivities'] });
+    } catch (err) {
+      alert(err.message || 'Failed to clear updates');
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center space-x-2">
-          <Clock className="h-5 w-5" />
-          <span>Recent Updates</span>
-        </CardTitle>
-        <CardDescription>
-          Latest activities in the system
-        </CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center space-x-2">
+              <Clock className="h-5 w-5" />
+              <span>Recent Updates</span>
+            </CardTitle>
+            <CardDescription>
+              Latest activities in the system
+            </CardDescription>
+          </div>
+          <Button variant="outline" size="sm" onClick={handleClear}>
+            Clear Updates
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         {activities.length === 0 ? (
           <div className="text-center py-8 text-sm text-gray-500">
-            No recent activity
+            No recent updates
           </div>
         ) : (
           <div className="space-y-3 max-h-96 overflow-y-auto">

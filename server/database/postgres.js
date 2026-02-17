@@ -203,6 +203,7 @@ async function initializeDatabase() {
         patient_count INTEGER DEFAULT 0,
         description TEXT,
         order_index INTEGER UNIQUE,
+        position INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -251,6 +252,52 @@ async function initializeDatabase() {
       }
     } else {
       console.log('order_index column already exists');
+    }
+
+    // Add position column if it doesn't exist (persistent ordering)
+    const positionCheck = await client.query(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'units' AND column_name = 'position'
+    `);
+
+    if (positionCheck.rows.length === 0) {
+      try {
+        await client.query(`
+          ALTER TABLE units ADD COLUMN position INTEGER
+        `);
+        console.log('position column added');
+      } catch (err) {
+        console.error('Error adding position column:', err);
+        await client.query('ROLLBACK');
+        throw err;
+      }
+    } else {
+      console.log('position column already exists');
+    }
+
+    // Backfill position from order_index or creation order
+    try {
+      await client.query(`
+        UPDATE units
+        SET position = order_index
+        WHERE position IS NULL AND order_index IS NOT NULL
+      `);
+
+      await client.query(`
+        WITH ordered AS (
+          SELECT id, ROW_NUMBER() OVER (ORDER BY created_at, id) AS rn
+          FROM units
+        )
+        UPDATE units u
+        SET position = ordered.rn
+        FROM ordered
+        WHERE u.id = ordered.id AND u.position IS NULL
+      `);
+    } catch (err) {
+      console.error('Error backfilling unit positions:', err);
+      await client.query('ROLLBACK');
+      throw err;
     }
 
     // Add is_manual_assignment column to rotations if it doesn't exist (migration for existing databases)

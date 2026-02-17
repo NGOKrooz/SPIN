@@ -10,7 +10,6 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { api } from '../services/api';
-import { formatDate } from '../lib/utils';
 import RecentUpdates from '../components/RecentUpdates';
 
 export default function Dashboard() {
@@ -27,6 +26,13 @@ export default function Dashboard() {
   const { data: currentRotations, isLoading: rotationsLoading } = useQuery({
     queryKey: ['rotations', 'current'],
     queryFn: api.getCurrentRotations,
+  });
+
+  const todayLabel = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
   });
 
   // removed unused systemInfo
@@ -130,12 +136,7 @@ export default function Dashboard() {
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-gray-600">
-          Welcome to SPIN - Smart Physiotherapy Internship Network
-        </p>
-        <p className="text-sm text-gray-500">
-          Last updated: {formatDate(new Date())}
-        </p>
+        <p className="text-gray-600">{todayLabel}</p>
       </div>
 
       {/* Stats Grid */}
@@ -158,37 +159,9 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Batch Distribution */}
+      {/* Recent Updates and Coverage */}
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <Users className="h-5 w-5" />
-              <span>Batch Distribution</span>
-            </CardTitle>
-            <CardDescription>
-              Current distribution of active interns by batch
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <div className="w-3 h-3 rounded-full bg-batch-a"></div>
-                  <span className="text-sm font-medium">Batch A</span>
-                </div>
-                <span className="text-lg font-bold">{batchAInterns.length}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <div className="w-3 h-3 rounded-full bg-batch-b"></div>
-                  <span className="text-sm font-medium">Batch B</span>
-                </div>
-                <span className="text-lg font-bold">{batchBInterns.length}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <RecentUpdates />
 
         <Card>
           <CardHeader>
@@ -235,7 +208,7 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Quick Actions and Recent Updates */}
+      {/* Quick Actions and Batch Distribution */}
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
       <Card>
         <CardHeader>
@@ -266,8 +239,35 @@ export default function Dashboard() {
           </div>
         </CardContent>
       </Card>
-
-        <RecentUpdates />
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <Users className="h-5 w-5" />
+              <span>Batch Distribution</span>
+            </CardTitle>
+            <CardDescription>
+              Current distribution of active interns by batch
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 rounded-full bg-batch-a"></div>
+                  <span className="text-sm font-medium">Batch A</span>
+                </div>
+                <span className="text-lg font-bold">{batchAInterns.length}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 rounded-full bg-batch-b"></div>
+                  <span className="text-sm font-medium">Batch B</span>
+                </div>
+                <span className="text-lg font-bold">{batchBInterns.length}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
       {/* Removed Recent Rotations per requirements */}
     </div>

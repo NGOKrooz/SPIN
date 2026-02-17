@@ -61,6 +61,14 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
     queryFn: api.getUnits,
   });
 
+  const { data: systemSettings } = useQuery({
+    queryKey: ['system-settings'],
+    queryFn: api.getSystemSettings,
+  });
+
+  const rotationDurationWeeks = Number(systemSettings?.rotation_duration_weeks) || 4;
+  const rotationDurationDays = rotationDurationWeeks * 7;
+
   // Debug logging
   React.useEffect(() => {
     if (internSchedule) {
@@ -252,7 +260,73 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
               }}>Export CSV</Button>
               <Button variant="outline" onClick={() => {
                 try {
-                  const html = `<table><thead><tr><th>Unit</th><th>Start</th><th>End</th><th>Days</th></tr></thead><tbody>${(internSchedule||[]).map(r => `<tr><td>${r.unit_name}</td><td>${formatDate(r.start_date)}</td><td>${formatDate(r.end_date)}</td><td>${calculateDaysBetween(r.start_date, r.end_date)}</td></tr>`).join('')}</tbody></table>`;
+                  const upcomingRows = upcomingRotations.map(r => `
+                    <tr>
+                      <td>${r.unit_name}</td>
+                      <td>${formatDate(r.start_date)}</td>
+                      <td>${calculateDaysBetween(r.start_date, r.end_date)} days</td>
+                    </tr>
+                  `).join('');
+
+                  const completedRows = completedRotations.map(r => `
+                    <tr>
+                      <td>${r.unit_name}</td>
+                      <td>${formatDate(r.start_date)}</td>
+                      <td>${formatDate(r.end_date)}</td>
+                      <td>${calculateDaysBetween(r.start_date, r.end_date)} days</td>
+                    </tr>
+                  `).join('');
+
+                  const remainingRows = remainingUnits.map(u => `
+                    <tr>
+                      <td>${u.name}</td>
+                      <td>${rotationDurationDays} days</td>
+                    </tr>
+                  `).join('');
+
+                  const html = `
+                    <h2>${currentIntern?.name}</h2>
+                    <h3>1. Upcoming Units</h3>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Unit Name</th>
+                          <th>Start Date</th>
+                          <th>Duration</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${upcomingRows || '<tr><td colspan="3">No upcoming units</td></tr>'}
+                      </tbody>
+                    </table>
+                    <h3>2. Completed Units</h3>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Unit Name</th>
+                          <th>Start Date</th>
+                          <th>End Date</th>
+                          <th>Total Duration</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${completedRows || '<tr><td colspan="4">No completed units</td></tr>'}
+                      </tbody>
+                    </table>
+                    <h3>3. Remaining Units</h3>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Unit Name</th>
+                          <th>Estimated Duration</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${remainingRows || '<tr><td colspan="2">No remaining units</td></tr>'}
+                      </tbody>
+                    </table>
+                  `;
+
                   openPrintableWindow(`${currentIntern?.name} - Rotations`, html);
                 } catch (err) { alert('PDF export failed: ' + err.message); }
               }}>Download PDF</Button>
@@ -468,7 +542,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                       <div key={unit.id} className="flex items-center justify-between p-3 border rounded-lg">
                         <div>
                           <h4 className="font-medium">{unit.name}</h4>
-                          <p className="text-sm text-gray-600">{unit.duration_days} days</p>
+                          <p className="text-sm text-gray-600">{rotationDurationDays} days</p>
                         </div>
                         <div className="text-right">
                           <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getWorkloadColor(unit.workload)}`}>

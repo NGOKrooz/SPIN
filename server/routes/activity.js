@@ -22,4 +22,16 @@ router.get('/recent', (req, res) => {
   });
 });
 
+// DELETE /api/activity/clear - Clear all activity logs
+router.delete('/clear', (req, res) => {
+  db.run('DELETE FROM activity_logs', [], (err) => {
+    if (err) {
+      console.error('Error clearing activity logs:', err);
+      return res.status(500).json({ error: 'Failed to clear activity logs' });
+    }
+
+    res.json({ success: true, message: 'Activity logs cleared' });
+  });
+});
+
 module.exports = router;

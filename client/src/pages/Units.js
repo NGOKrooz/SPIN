@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, AlertTriangle, Edit, BarChart3, Eye, Trash2 } from 'lucide-react';
+import { Building2, AlertTriangle, Edit, Eye, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -8,7 +8,6 @@ import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { api } from '../services/api';
 import { getWorkloadColor, getBatchColor } from '../lib/utils';
-import { exportToCSV, openPrintableWindow } from '../lib/utils';
 import { useToast } from '../hooks/use-toast';
 import UnitForm from '../components/UnitForm';
 import UnitViewModal from '../components/UnitViewModal';
@@ -22,7 +21,6 @@ export default function Units() {
   const [editingUnit, setEditingUnit] = useState(null);
   const [selectedUnit, setSelectedUnit] = useState(null);
   const [showOrderEditor, setShowOrderEditor] = useState(false);
-  const [showCompletedInterns, setShowCompletedInterns] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -101,49 +99,6 @@ export default function Units() {
           <p className="text-sm sm:text-base text-gray-600">Manage hospital units and their workload</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 sm:space-x-2">
-          <Button 
-            variant="outline" 
-            onClick={() => {
-              try {
-                const rows = filteredUnits.map(u => ({
-                  name: u.name,
-                  duration_days: u.duration_days,
-                  workload: u.workload,
-                  patient_count: u.patient_count,
-                  current_interns: u.current_interns,
-                  coverage_status: u.coverage_status
-                }));
-                exportToCSV('units-export', rows, ['name', 'duration_days', 'workload', 'patient_count', 'current_interns', 'coverage_status']);
-              } catch (err) {
-                toast({
-                  title: 'Export Failed',
-                  description: err.message,
-                  variant: 'destructive',
-                });
-              }
-            }}
-            className="w-full sm:w-auto"
-          >
-            Export CSV
-          </Button>
-          <Button 
-            variant="outline" 
-            onClick={() => {
-              try {
-                const html = `<table><thead><tr><th>Unit Name</th><th>Duration (Days)</th><th>Workload</th><th>Patient Count</th><th>Current Interns</th><th>Coverage</th></tr></thead><tbody>${filteredUnits.map(u => `<tr><td>${u.name}</td><td>${u.duration_days}</td><td>${u.workload}</td><td>${u.patient_count}</td><td>${u.current_interns}</td><td>${u.coverage_status}</td></tr>`).join('')}</tbody></table>`;
-                openPrintableWindow('Units Report', html);
-              } catch (err) {
-                toast({
-                  title: 'PDF Export Failed',
-                  description: err.message,
-                  variant: 'destructive',
-                });
-              }
-            }}
-            className="w-full sm:w-auto"
-          >
-            Download PDF
-          </Button>
           <Button onClick={() => setShowForm(true)} className="hospital-gradient w-full sm:w-auto">
             <Building2 className="h-4 w-4 mr-2" />
             Add Unit
@@ -352,17 +307,6 @@ export default function Units() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => {
-                    setSelectedUnit(unit);
-                    setShowCompletedInterns(true);
-                  }}
-                >
-                  <BarChart3 className="h-4 w-4 mr-1" />
-                  History
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
                   onClick={() => handleEdit(unit)}
                 >
                   <Edit className="h-4 w-4 mr-1" />
@@ -382,7 +326,6 @@ export default function Units() {
                   size="sm"
                   onClick={() => {
                     setSelectedUnit(unit);
-                    setShowCompletedInterns(false);
                   }}
                 >
                   <Eye className="h-4 w-4 mr-1" />
@@ -410,9 +353,7 @@ export default function Units() {
           unit={selectedUnit} 
           onClose={() => {
             setSelectedUnit(null);
-            setShowCompletedInterns(false);
           }}
-          showCompletedInterns={showCompletedInterns}
         />
       )}
 

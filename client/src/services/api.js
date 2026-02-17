@@ -90,7 +90,7 @@ export const unitsAPI = {
   updatePatientCount: (id, data) => http.post(`/units/${id}/patient-count`, data),
   getWorkloadHistory: (id, limit = 12) => http.get(`/units/${id}/workload-history`, { params: { limit } }),
   getCompletedInterns: (id) => http.get(`/units/${id}/completed-interns`),
-  updateOrder: (order) => http.put('/units/order', { order }),
+  updateOrder: (order) => http.put('/units/reorder', order),
 };
 
   // Rotations API
@@ -114,6 +114,7 @@ export const autoAdvanceAPI = {
 // Activity logs API
 export const activityAPI = {
   getRecent: (limit = 10) => http.get('/activity/recent', { params: { limit } }),
+  clear: () => http.delete('/activity/clear'),
 };
 
 // Settings API
@@ -152,7 +153,6 @@ export const api = {
   updateUnitWorkload: (id, data) => unitsAPI.updateWorkload(id, data),
   updateUnitPatientCount: (id, data) => unitsAPI.updatePatientCount(id, data),
   updateUnitOrder: (order) => unitsAPI.updateOrder(order),
-  updateOrder: (order) => unitsAPI.updateOrder(order),
   getUnitWorkloadHistory: (id, limit) => unitsAPI.getWorkloadHistory(id, limit),
   getCompletedInterns: (id) => unitsAPI.getCompletedInterns(id),
   testPatientCount: (id, data) => http.post(`/units/${id}/test-patient-count`, data),
@@ -170,6 +170,7 @@ export const api = {
 
   // Activity
   getRecentActivities: (limit) => activityAPI.getRecent(limit),
+  clearRecentActivities: () => activityAPI.clear(),
 
   // Settings
   getSystemSettings: () => settingsAPI.getSystem(),
