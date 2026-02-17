@@ -1,8 +1,10 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const db = require('../database/dbWrapper');
-const { getState, setState } = require('../database/systemState');
 const { addDays, format, parseISO, differenceInDays } = require('date-fns');
+
+// Simple in-memory counter for round-robin (resets on server restart - acceptable)
+let roundRobinOffset = 0;
 
 // Helper functions for async database operations
 const runAsync = (query, params = []) =>
@@ -937,13 +939,11 @@ async function getNextUnitForIntern(internId, units, interns, lastRotation) {
 }
 
 async function getRoundRobinCounter() {
-  const value = await getState('round_robin_offset', '0');
-  const parsed = parseInt(value, 10);
-  return Number.isFinite(parsed) ? parsed : 0;
+  return roundRobinOffset;
 }
 
 async function setRoundRobinCounter(value) {
-  await setState('round_robin_offset', String(value), 'Tracks next starting unit for round-robin');
+  roundRobinOffset = value;
 }
 
 // Helper function to automatically advance interns to their next rotation

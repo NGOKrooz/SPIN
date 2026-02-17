@@ -188,8 +188,6 @@ app.use('/api/*', (req, res) => {
 
 // Initialize database and start server
 const { initializeDatabase } = require('./database/init');
-const scheduler = require('./services/scheduler');
-const autoRestore = require('./services/autoRestore');
 
 let databaseReady = false;
 
@@ -255,32 +253,6 @@ async function startServer() {
         }
       }
     })();
-    
-    // Initialize backup scheduler
-    if (process.env.BACKUP_SCHEDULE && process.env.BACKUP_SCHEDULE !== 'disabled') {
-      try {
-        scheduler.initializeScheduler();
-        console.log('✅ Backup scheduler initialized');
-      } catch (schedulerError) {
-        console.error('⚠️  Backup scheduler initialization failed:', schedulerError);
-      }
-    }
-    
-    // Perform auto-restore if needed (on fresh deployment)
-    if (process.env.AUTO_RESTORE_ENABLED !== 'false') {
-      setTimeout(async () => {
-        try {
-          const restoreResult = await autoRestore.performAutoRestore();
-          if (restoreResult.performed) {
-            console.log(`✅ Auto-restore completed: ${restoreResult.backupFile}`);
-          } else {
-            console.log(`ℹ️  Auto-restore skipped: ${restoreResult.reason || 'No action needed'}`);
-          }
-        } catch (error) {
-          console.error('⚠️  Auto-restore error:', error.message);
-        }
-      }, 2000); // Wait 2 seconds after server start
-    }
   } catch (error) {
     console.error('❌ Failed to start server:', error);
     console.error('Error stack:', error.stack);
