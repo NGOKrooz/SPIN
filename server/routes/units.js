@@ -471,57 +471,107 @@ router.get('/:id/completed-interns', (req, res) => {
   });
 });
 
-// DELETE /api/units/:id - Delete unit (with safety check)
+// DELETE /api/units/:id - Delete unit and unassign interns
 router.delete('/:id', (req, res) => {
   const { id } = req.params;
-  
-  // Check if ANY interns are assigned to this unit (past, present, or future)
-  const checkQuery = `
-    SELECT COUNT(*) as count FROM rotations 
-    WHERE unit_id = ?
-  `;
-  
-  db.get(checkQuery, [id], (err, row) => {
-    if (err) {
-      console.error('Error checking unit usage:', err);
-      return res.status(500).json({ error: 'Failed to check unit usage' });
-    }
-    
-    if (row.count > 0) {
-      return res.status(400).json({ 
-        error: 'Cannot delete unit with assigned interns',
-        message: 'This unit has interns assigned to it. Please unassign them first before deleting.'
-      });
-    }
-    
-    // First get unit name for activity log
-    db.get('SELECT name FROM units WHERE id = ?', [id], (err, unit) => {
-      const unitName = unit?.name || 'Unknown Unit';
-      
-      const deleteQuery = 'DELETE FROM units WHERE id = ?';
-      
-      db.run(deleteQuery, [id], function(err) {
+
+  // Use a transaction to ensure data consistency
+  db.serialize(() => {
+    db.run('BEGIN TRANSACTION', (err) => {
+      if (err) {
+        console.error('Error starting transaction:', err);
+        return res.status(500).json({ error: 'Failed to start transaction' });
+      }
+
+      // Step 1: Get unit name before deletion
+      db.get('SELECT name FROM units WHERE id = ?', [id], (err, unit) => {
         if (err) {
-          console.error('Error deleting unit:', err);
-          return res.status(500).json({ error: 'Failed to delete unit' });
+          db.run('ROLLBACK');
+          console.error('Error fetching unit:', err);
+          return res.status(500).json({ error: 'Failed to fetch unit' });
         }
-        
-        if (this.changes === 0) {
+
+        if (!unit) {
+          db.run('ROLLBACK');
           return res.status(404).json({ error: 'Unit not found' });
         }
-        
-        // Log activity
-        db.run(
-          'INSERT INTO activity_logs (action, description) VALUES (?, ?)',
-          ['unit_deleted', `Unit "${unitName}" was deleted`],
-          (logErr) => {
-            if (logErr) console.error('Error logging activity:', logErr);
+
+        const unitName = unit.name || 'Unknown Unit';
+
+        // Step 2: Count interns currently assigned to this unit (active rotations)
+        const countQuery = `
+          SELECT COUNT(DISTINCT intern_id) as count
+          FROM rotations
+          WHERE unit_id = ? AND end_date >= date('now')
+        `;
+
+        db.get(countQuery, [id], (err, countRow) => {
+          if (err) {
+            db.run('ROLLBACK');
+            console.error('Error counting assigned interns:', err);
+            return res.status(500).json({ error: 'Failed to count interns' });
           }
-        );
-        
-        res.json({ 
-          success: true,
-          message: 'Unit deleted successfully' 
+
+          const assignedCount = countRow?.count || 0;
+
+          // Step 3: Delete all rotations for this unit (unassign interns)
+          const deleteRotationsQuery = `
+            DELETE FROM rotations WHERE unit_id = ?
+          `;
+
+          db.run(deleteRotationsQuery, [id], function(err) {
+            if (err) {
+              db.run('ROLLBACK');
+              console.error('Error deleting rotations:', err);
+              return res.status(500).json({ error: 'Failed to unassign interns' });
+            }
+
+            // Step 4: Delete the unit
+            db.run('DELETE FROM units WHERE id = ?', [id], function(err) {
+              if (err) {
+                db.run('ROLLBACK');
+                console.error('Error deleting unit:', err);
+                return res.status(500).json({ error: 'Failed to delete unit' });
+              }
+
+              if (this.changes === 0) {
+                db.run('ROLLBACK');
+                return res.status(404).json({ error: 'Unit not found' });
+              }
+
+              // Step 5: Log activity
+              const activityMessage = assignedCount > 0
+                ? `Unit "${unitName}" deleted. ${assignedCount} interns were unassigned.`
+                : `Unit "${unitName}" was deleted.`;
+
+              db.run(
+                'INSERT INTO activity_logs (action, description) VALUES (?, ?)',
+                ['unit_deleted', activityMessage],
+                (logErr) => {
+                  if (logErr) {
+                    db.run('ROLLBACK');
+                    console.error('Error logging activity:', logErr);
+                    return res.status(500).json({ error: 'Failed to log activity' });
+                  }
+
+                  // Step 6: Commit transaction
+                  db.run('COMMIT', (commitErr) => {
+                    if (commitErr) {
+                      db.run('ROLLBACK');
+                      console.error('Error committing transaction:', commitErr);
+                      return res.status(500).json({ error: 'Failed to commit transaction' });
+                    }
+
+                    res.json({
+                      success: true,
+                      message: 'Unit deleted successfully',
+                      internsUnassigned: assignedCount,
+                    });
+                  });
+                }
+              );
+            });
+          });
         });
       });
     });
