@@ -6,8 +6,7 @@ import {
   Building2, 
   AlertTriangle,
   UserCheck,
-  UserPlus,
-  FileText
+  UserPlus
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { api } from '../services/api';
@@ -123,13 +122,6 @@ export default function Dashboard() {
       href: '/manual-assignment',
       icon: UserPlus,
       color: 'batchB',
-    },
-    {
-      title: 'Generate Reports',
-      description: 'Export schedules and summaries',
-      href: '/reports',
-      icon: FileText,
-      color: 'secondary',
     },
   ];
 

@@ -6,7 +6,6 @@ import {
   Users, 
   Building2, 
   UserPlus, 
-  FileText, 
   Settings,
   Stethoscope
 } from 'lucide-react';
@@ -17,7 +16,6 @@ const navigation = [
   { name: 'Interns', href: '/interns', icon: Users },
   { name: 'Units', href: '/units', icon: Building2 },
   { name: 'Manual Assignment', href: '/manual-assignment', icon: UserPlus },
-  { name: 'Reports', href: '/reports', icon: FileText },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 

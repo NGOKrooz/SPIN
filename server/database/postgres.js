@@ -353,6 +353,16 @@ async function initializeDatabase() {
         FOREIGN KEY (unit_id) REFERENCES units (id) ON DELETE SET NULL
       )
     `);
+    
+    // Simple activity logs table for general actions
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS activity_logs (
+        id SERIAL PRIMARY KEY,
+        action TEXT NOT NULL,
+        description TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
     await client.query('COMMIT');
     

@@ -1,81 +1,39 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Button } from './ui/button';
 import { 
   Clock, 
   UserPlus, 
-  Calendar, 
+  Building2, 
   ArrowRight,
-  CheckCircle,
   AlertCircle,
-  ExternalLink
+  Trash2
 } from 'lucide-react';
 import { api } from '../services/api';
 import { formatDistanceToNow } from 'date-fns';
-import ActivityHistoryModal from './ActivityHistoryModal';
 
 const activityIcons = {
-  extension: Calendar,
-  reassignment: ArrowRight,
-  unit_change: ArrowRight,
-  status_change: CheckCircle,
-  new_intern: UserPlus,
-  auto_advance: Clock,
-  rotation_update: Calendar,
+  unit_created: Building2,
+  unit_deleted: Trash2,
+  intern_created: UserPlus,
+  intern_moved: ArrowRight,
+  default: Clock,
 };
 
 const activityColors = {
-  extension: 'text-blue-600 bg-blue-50',
-  reassignment: 'text-purple-600 bg-purple-50',
-  unit_change: 'text-indigo-600 bg-indigo-50',
-  status_change: 'text-green-600 bg-green-50',
-  new_intern: 'text-emerald-600 bg-emerald-50',
-  auto_advance: 'text-orange-600 bg-orange-50',
-  rotation_update: 'text-cyan-600 bg-cyan-50',
-};
-
-const formatActivityMessage = (activity) => {
-  const { activity_type, intern_name, unit_name, details } = activity;
-  
-  switch (activity_type) {
-    case 'extension':
-      // Use details if available (includes intern name and unit), otherwise construct message
-      if (details) {
-        return details;
-      }
-      return `${intern_name || 'An intern'}'s rotation${unit_name ? ` in ${unit_name}` : ''} was extended`;
-    case 'reassignment':
-      return `${intern_name || 'An intern'} was reassigned${unit_name ? ` to ${unit_name}` : ''}`;
-    case 'unit_change':
-      return `${intern_name || 'An intern'} moved${unit_name ? ` to ${unit_name}` : ' to a new unit'}`;
-    case 'status_change':
-      return `${intern_name || 'An intern'}'s status was updated`;
-    case 'new_intern':
-      // Always show intern name prominently
-      if (intern_name) {
-        return `${intern_name} was added${details ? ` - ${details}` : ''}`;
-      }
-      return details || 'A new intern was added';
-    case 'auto_advance':
-      return details || `${intern_name || 'An intern'} was auto-advanced to next unit`;
-    case 'rotation_update':
-      return details || `${intern_name || 'An intern'}'s rotation was updated`;
-    default:
-      return details || 'Activity occurred';
-  }
+  unit_created: 'text-blue-600 bg-blue-50',
+  unit_deleted: 'text-red-600 bg-red-50',
+  intern_created: 'text-green-600 bg-green-50',
+  intern_moved: 'text-purple-600 bg-purple-50',
+  default: 'text-gray-600 bg-gray-50',
 };
 
 export default function RecentUpdates() {
-  const [showHistoryModal, setShowHistoryModal] = useState(false);
-  
   const { data, isLoading, error } = useQuery({
     queryKey: ['recentActivities'],
-    queryFn: () => api.getRecentActivities(15),
+    queryFn: () => api.getRecentActivities(10),
     refetchInterval: 30000, // Refetch every 30 seconds
   });
-
-  const activities = data?.activities || [];
 
   if (isLoading) {
     return (
@@ -113,31 +71,18 @@ export default function RecentUpdates() {
     );
   }
 
+  const activities = data || [];
+
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center space-x-2">
-              <Clock className="h-5 w-5" />
-              <span>Recent Updates</span>
-            </CardTitle>
-            <CardDescription>
-              Latest activities and changes in the system
-            </CardDescription>
-          </div>
-          {activities.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowHistoryModal(true)}
-              className="text-sm text-blue-600 hover:text-blue-700"
-            >
-              <ExternalLink className="h-4 w-4 mr-1" />
-              View More
-            </Button>
-          )}
-        </div>
+        <CardTitle className="flex items-center space-x-2">
+          <Clock className="h-5 w-5" />
+          <span>Recent Updates</span>
+        </CardTitle>
+        <CardDescription>
+          Latest activities in the system
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {activities.length === 0 ? (
@@ -147,9 +92,8 @@ export default function RecentUpdates() {
         ) : (
           <div className="space-y-3 max-h-96 overflow-y-auto">
             {activities.map((activity) => {
-              const Icon = activityIcons[activity.activity_type] || Clock;
-              const colorClass = activityColors[activity.activity_type] || 'text-gray-600 bg-gray-50';
-              const message = formatActivityMessage(activity);
+              const Icon = activityIcons[activity.action] || activityIcons.default;
+              const colorClass = activityColors[activity.action] || activityColors.default;
               const timeAgo = activity.created_at 
                 ? formatDistanceToNow(new Date(activity.created_at), { addSuffix: true })
                 : 'Recently';
@@ -163,7 +107,7 @@ export default function RecentUpdates() {
                     <Icon className="h-4 w-4" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900">{message}</p>
+                    <p className="text-sm font-medium text-gray-900">{activity.description}</p>
                     <p className="text-xs text-gray-500 mt-1">{timeAgo}</p>
                   </div>
                 </div>
@@ -172,10 +116,6 @@ export default function RecentUpdates() {
           </div>
         )}
       </CardContent>
-      {showHistoryModal && (
-        <ActivityHistoryModal onClose={() => setShowHistoryModal(false)} />
-      )}
     </Card>
   );
 }
-

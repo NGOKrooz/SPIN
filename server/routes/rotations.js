@@ -824,6 +824,14 @@ router.put('/:id', validateRotationUpdate, async (req, res) => {
         unitName: newUnit?.name || null,
         details: `Reassigned from ${oldUnit?.name || 'previous unit'} to ${newUnit?.name || 'new unit'}`
       });
+      
+      // Also log to simple activity_logs table
+      if (unitChanged) {
+        await runAsync(
+          'INSERT INTO activity_logs (action, description) VALUES (?, ?)',
+          ['intern_moved', `${intern?.name || 'Intern'} moved from ${oldUnit?.name || 'previous unit'} to ${newUnit?.name || 'new unit'}`]
+        );
+      }
     } catch (logErr) {
       console.error(`[ReassignRotation] Error logging activity:`, logErr);
     }

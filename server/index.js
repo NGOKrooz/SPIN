@@ -119,7 +119,7 @@ try {
   app.use('/api/interns', require('./routes/interns'));
   app.use('/api/units', require('./routes/units'));
   app.use('/api/rotations', require('./routes/rotations'));
-  app.use('/api/reports', require('./routes/reports'));
+  app.use('/api/activity', require('./routes/activity'));
   app.use('/api/settings', require('./routes/settings').router);
   app.use('/api/config', require('./routes/config'));
   app.use('/api/debug', require('./routes/debug'));

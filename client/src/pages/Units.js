@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, AlertTriangle, Edit, BarChart3, Eye } from 'lucide-react';
+import { Building2, AlertTriangle, Edit, BarChart3, Eye, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -42,6 +42,28 @@ export default function Units() {
   const handleEdit = (unit) => {
     setEditingUnit(unit);
     setShowForm(true);
+  };
+
+  const handleDelete = async (unit) => {
+    if (!window.confirm(`Are you sure you want to delete "${unit.name}"?\n\nThis action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await api.deleteUnit(unit.id);
+      queryClient.invalidateQueries(['units']);
+      queryClient.invalidateQueries(['recentActivities']);
+      toast({
+        title: 'Unit Deleted',
+        description: `${unit.name} has been deleted successfully.`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Delete Failed',
+        description: error.response?.data?.error || error.message || 'Failed to delete unit',
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleFormClose = () => {
@@ -345,6 +367,15 @@ export default function Units() {
                 >
                   <Edit className="h-4 w-4 mr-1" />
                   Edit
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleDelete(unit)}
+                  className="text-red-600 hover:text-red-700 hover:border-red-300"
+                >
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  Delete
                 </Button>
                 <Button
                   variant="outline"

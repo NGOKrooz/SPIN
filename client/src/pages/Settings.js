@@ -12,9 +12,9 @@ export default function Settings() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState({
-    system_name: '',
-    default_rotation_duration_days: '',
-    auto_rotation_enabled: true,
+    rotation_duration_weeks: 4,
+    allow_reassignment: true,
+    auto_log_activity: true,
   });
   const [hasChanges, setHasChanges] = useState(false);
 
@@ -45,9 +45,9 @@ export default function Settings() {
   useEffect(() => {
     if (settings) {
       setFormData({
-        system_name: settings.system_name || 'SPIN',
-        default_rotation_duration_days: settings.default_rotation_duration_days ?? '',
-        auto_rotation_enabled: settings.auto_rotation_enabled ?? true,
+        rotation_duration_weeks: settings.rotation_duration_weeks ?? 4,
+        allow_reassignment: settings.allow_reassignment ?? true,
+        auto_log_activity: settings.auto_log_activity ?? true,
       });
       setHasChanges(false);
     }
@@ -59,21 +59,10 @@ export default function Settings() {
   };
 
   const handleSave = () => {
-    if (!formData.system_name.trim()) {
-      toast({
-        title: 'Error',
-        description: 'System name is required',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    const durationValue = formData.default_rotation_duration_days;
     const payload = {
-      system_name: formData.system_name.trim(),
-      default_rotation_duration_days:
-        durationValue === '' ? null : parseInt(durationValue, 10),
-      auto_rotation_enabled: !!formData.auto_rotation_enabled,
+      rotation_duration_weeks: parseInt(formData.rotation_duration_weeks, 10),
+      allow_reassignment: !!formData.allow_reassignment,
+      auto_log_activity: !!formData.auto_log_activity,
     };
 
     updateMutation.mutate(payload);
@@ -100,45 +89,53 @@ export default function Settings() {
             <SettingsIcon className="h-5 w-5" />
             <span>System Settings</span>
           </CardTitle>
-          <CardDescription>Configure core system options</CardDescription>
+          <CardDescription>Configure rotation management system</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div>
-            <Label htmlFor="system_name">System Name *</Label>
+            <Label htmlFor="rotation_duration_weeks">Rotation Duration (Weeks)</Label>
             <Input
-              id="system_name"
-              value={formData.system_name}
-              onChange={(e) => handleChange('system_name', e.target.value)}
-              placeholder="Enter system name"
-              required
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="default_rotation_duration_days">Default Rotation Duration (Days)</Label>
-            <Input
-              id="default_rotation_duration_days"
+              id="rotation_duration_weeks"
               type="number"
               min="1"
-              value={formData.default_rotation_duration_days}
-              onChange={(e) => handleChange('default_rotation_duration_days', e.target.value)}
-              placeholder="Optional"
+              max="52"
+              value={formData.rotation_duration_weeks}
+              onChange={(e) => handleChange('rotation_duration_weeks', e.target.value)}
+              placeholder="4"
             />
-            <p className="text-xs text-gray-500 mt-1">Leave empty to require duration on each unit.</p>
+            <p className="text-xs text-gray-500 mt-1">Default rotation duration in weeks</p>
           </div>
 
           <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
             <div className="flex-1">
-              <Label className="font-medium">Enable Auto Rotation</Label>
+              <Label className="font-medium">Allow Manual Reassignment</Label>
               <p className="text-sm text-gray-500 mt-1">
-                Automatically advance rotations when they end
+                Enable manual reassignment of interns between units
               </p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
               <input
                 type="checkbox"
-                checked={formData.auto_rotation_enabled}
-                onChange={(e) => handleChange('auto_rotation_enabled', e.target.checked)}
+                checked={formData.allow_reassignment}
+                onChange={(e) => handleChange('allow_reassignment', e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+
+          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+            <div className="flex-1">
+              <Label className="font-medium">Auto Log Activity</Label>
+              <p className="text-sm text-gray-500 mt-1">
+                Automatically log system activities (unit/intern changes)
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.auto_log_activity}
+                onChange={(e) => handleChange('auto_log_activity', e.target.checked)}
                 className="sr-only peer"
               />
               <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>

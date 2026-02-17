@@ -30,32 +30,31 @@ const setSetting = (key, value, description = '') => new Promise((resolve, rejec
 });
 
 const normalizeSystemSettings = (raw) => {
-  const systemName = raw.system_name?.trim() || 'SPIN';
-  const defaultDurationRaw = raw.default_rotation_duration_days;
-  const defaultDuration = defaultDurationRaw === '' || defaultDurationRaw === null || defaultDurationRaw === undefined
-    ? null
-    : parseInt(defaultDurationRaw, 10);
+  const rotationDurationWeeksRaw = raw.rotation_duration_weeks;
+  const rotationDurationWeeks = rotationDurationWeeksRaw === '' || rotationDurationWeeksRaw === null || rotationDurationWeeksRaw === undefined
+    ? 4
+    : parseInt(rotationDurationWeeksRaw, 10);
 
   return {
-    system_name: systemName,
-    default_rotation_duration_days: Number.isFinite(defaultDuration) ? defaultDuration : null,
-    auto_rotation_enabled: String(raw.auto_rotation_enabled ?? 'true').toLowerCase() === 'true',
+    rotation_duration_weeks: Number.isFinite(rotationDurationWeeks) ? rotationDurationWeeks : 4,
+    allow_reassignment: String(raw.allow_reassignment ?? 'true').toLowerCase() === 'true',
+    auto_log_activity: String(raw.auto_log_activity ?? 'true').toLowerCase() === 'true',
   };
 };
 
 // GET /api/settings/system - Get system settings
 router.get('/system', async (req, res) => {
   try {
-    const [systemName, defaultDuration, autoRotation] = await Promise.all([
-      getSetting('system_name', 'SPIN'),
-      getSetting('default_rotation_duration_days', ''),
-      getSetting('auto_rotation_enabled', 'true'),
+    const [rotationDurationWeeks, allowReassignment, autoLogActivity] = await Promise.all([
+      getSetting('rotation_duration_weeks', '4'),
+      getSetting('allow_reassignment', 'true'),
+      getSetting('auto_log_activity', 'true'),
     ]);
 
     res.json(normalizeSystemSettings({
-      system_name: systemName,
-      default_rotation_duration_days: defaultDuration,
-      auto_rotation_enabled: autoRotation,
+      rotation_duration_weeks: rotationDurationWeeks,
+      allow_reassignment: allowReassignment,
+      auto_log_activity: autoLogActivity,
     }));
   } catch (err) {
     console.error('Error fetching system settings:', err);
@@ -72,9 +71,9 @@ router.get('/', (req, res) => {
 router.put(
   '/system',
   [
-    body('system_name').optional().trim().isLength({ min: 2, max: 100 }),
-    body('default_rotation_duration_days').optional().isInt({ min: 1 }),
-    body('auto_rotation_enabled').optional().isBoolean(),
+    body('rotation_duration_weeks').optional().isInt({ min: 1, max: 52 }),
+    body('allow_reassignment').optional().isBoolean(),
+    body('auto_log_activity').optional().isBoolean(),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -84,30 +83,30 @@ router.put(
 
     try {
       const updates = [];
-      if (req.body.system_name !== undefined) {
-        updates.push(setSetting('system_name', req.body.system_name, 'System display name'));
+      if (req.body.rotation_duration_weeks !== undefined) {
+        updates.push(setSetting('rotation_duration_weeks', req.body.rotation_duration_weeks, 'Rotation duration in weeks'));
       }
-      if (req.body.default_rotation_duration_days !== undefined) {
-        updates.push(setSetting('default_rotation_duration_days', req.body.default_rotation_duration_days, 'Default rotation duration'));
+      if (req.body.allow_reassignment !== undefined) {
+        updates.push(setSetting('allow_reassignment', req.body.allow_reassignment, 'Allow manual reassignment'));
       }
-      if (req.body.auto_rotation_enabled !== undefined) {
-        updates.push(setSetting('auto_rotation_enabled', req.body.auto_rotation_enabled, 'Auto-rotation enabled'));
+      if (req.body.auto_log_activity !== undefined) {
+        updates.push(setSetting('auto_log_activity', req.body.auto_log_activity, 'Automatically log activity'));
       }
 
       if (updates.length > 0) {
         await Promise.all(updates);
       }
 
-      const [systemName, defaultDuration, autoRotation] = await Promise.all([
-        getSetting('system_name', 'SPIN'),
-        getSetting('default_rotation_duration_days', ''),
-        getSetting('auto_rotation_enabled', 'true'),
+      const [rotationDurationWeeks, allowReassignment, autoLogActivity] = await Promise.all([
+        getSetting('rotation_duration_weeks', '4'),
+        getSetting('allow_reassignment', 'true'),
+        getSetting('auto_log_activity', 'true'),
       ]);
 
       res.json(normalizeSystemSettings({
-        system_name: systemName,
-        default_rotation_duration_days: defaultDuration,
-        auto_rotation_enabled: autoRotation,
+        rotation_duration_weeks: rotationDurationWeeks,
+        allow_reassignment: allowReassignment,
+        auto_log_activity: autoLogActivity,
       }));
     } catch (err) {
       console.error('Error updating system settings:', err);

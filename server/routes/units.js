@@ -225,6 +225,15 @@ router.post('/', validateUnitPayload, async (req, res) => {
       });
     });
     
+    // Log activity
+    db.run(
+      'INSERT INTO activity_logs (action, description) VALUES (?, ?)',
+      ['unit_created', `Unit "${finalName}" was created`],
+      (logErr) => {
+        if (logErr) console.error('Error logging activity:', logErr);
+      }
+    );
+    
     res.status(201).json({
       id: insertResult.id,
       name: finalName,
@@ -462,14 +471,14 @@ router.get('/:id/completed-interns', (req, res) => {
   });
 });
 
-// DELETE /api/units/:id - Delete unit
+// DELETE /api/units/:id - Delete unit (with safety check)
 router.delete('/:id', (req, res) => {
   const { id } = req.params;
   
-  // Check if unit has active rotations
+  // Check if ANY interns are assigned to this unit (past, present, or future)
   const checkQuery = `
     SELECT COUNT(*) as count FROM rotations 
-    WHERE unit_id = ? AND end_date >= date('now')
+    WHERE unit_id = ?
   `;
   
   db.get(checkQuery, [id], (err, row) => {
@@ -480,23 +489,41 @@ router.delete('/:id', (req, res) => {
     
     if (row.count > 0) {
       return res.status(400).json({ 
-        error: 'Cannot delete unit with active rotations' 
+        error: 'Cannot delete unit with assigned interns',
+        message: 'This unit has interns assigned to it. Please unassign them first before deleting.'
       });
     }
     
-    const deleteQuery = 'DELETE FROM units WHERE id = ?';
-    
-    db.run(deleteQuery, [id], function(err) {
-      if (err) {
-        console.error('Error deleting unit:', err);
-        return res.status(500).json({ error: 'Failed to delete unit' });
-      }
+    // First get unit name for activity log
+    db.get('SELECT name FROM units WHERE id = ?', [id], (err, unit) => {
+      const unitName = unit?.name || 'Unknown Unit';
       
-      if (this.changes === 0) {
-        return res.status(404).json({ error: 'Unit not found' });
-      }
+      const deleteQuery = 'DELETE FROM units WHERE id = ?';
       
-      res.json({ message: 'Unit deleted successfully' });
+      db.run(deleteQuery, [id], function(err) {
+        if (err) {
+          console.error('Error deleting unit:', err);
+          return res.status(500).json({ error: 'Failed to delete unit' });
+        }
+        
+        if (this.changes === 0) {
+          return res.status(404).json({ error: 'Unit not found' });
+        }
+        
+        // Log activity
+        db.run(
+          'INSERT INTO activity_logs (action, description) VALUES (?, ?)',
+          ['unit_deleted', `Unit "${unitName}" was deleted`],
+          (logErr) => {
+            if (logErr) console.error('Error logging activity:', logErr);
+          }
+        );
+        
+        res.json({ 
+          success: true,
+          message: 'Unit deleted successfully' 
+        });
+      });
     });
   });
 });

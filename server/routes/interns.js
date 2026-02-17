@@ -421,6 +421,15 @@ router.post('/', validateIntern, async (req, res) => {
             internName: name,
             details: `New intern added${autoGenerate ? ' with auto-generated rotations' : ''}`
           }).catch(err => console.error('Error logging activity:', err));
+          
+          // Also log to simple activity_logs table
+          db.run(
+            'INSERT INTO activity_logs (action, description) VALUES (?, ?)',
+            ['intern_created', `Intern "${name}" (${finalBatch}) was created`],
+            (logErr) => {
+              if (logErr) console.error('Error logging to activity_logs:', logErr);
+            }
+          );
 
           // Send response first, then generate rotations in background
           res.status(201).json({

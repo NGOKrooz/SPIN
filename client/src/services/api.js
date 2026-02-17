@@ -111,23 +111,9 @@ export const autoAdvanceAPI = {
   triggerForIntern: (internId) => http.post(`/interns/${internId}/auto-advance`),
 };
 
-// Reports API
-export const reportsAPI = {
-  getSummary: (params = {}) => http.get('/reports/summary', { params }),
-  getMonthlySchedule: (month, year) => http.get('/reports/monthly-schedule', { 
-    params: { month, year } 
-  }),
-  getInternProgress: (params = {}) => http.get('/reports/intern-progress', { params }),
-  exportExcel: (type, params = {}) => {
-    const queryString = new URLSearchParams(params).toString();
-    const url = `${API_BASE_URL}/reports/export/excel?type=${type}&${queryString}`;
-    window.open(url, '_blank');
-  },
-  exportPDF: (type, params = {}) => {
-    const queryString = new URLSearchParams(params).toString();
-    const url = `${API_BASE_URL}/reports/export/pdf?type=${type}&${queryString}`;
-    window.open(url, '_blank');
-  },
+// Activity logs API
+export const activityAPI = {
+  getRecent: (limit = 10) => http.get('/activity/recent', { params: { limit } }),
 };
 
 // Settings API
@@ -156,7 +142,6 @@ export const api = {
   deleteIntern: (id) => internsAPI.delete(id),
   extendInternship: (id, data) => internsAPI.extend(id, data),
   getInternSchedule: (id) => internsAPI.getSchedule(id),
-  getRecentActivities: (limit) => internsAPI.getRecentActivities(limit),
 
   // Units
   getUnits: (params) => unitsAPI.getAll(params),
@@ -183,12 +168,8 @@ export const api = {
   generateRotations: (startDate) => rotationsAPI.generate(startDate),
   autoAdvanceRotations: () => rotationsAPI.autoAdvance(),
 
-  // Reports
-  getSummaryReport: (params) => reportsAPI.getSummary(params),
-  getMonthlySchedule: (month, year) => reportsAPI.getMonthlySchedule(month, year),
-  getInternProgress: (params) => reportsAPI.getInternProgress(params),
-  exportExcel: (type, params) => reportsAPI.exportExcel(type, params),
-  exportPDF: (type, params) => reportsAPI.exportPDF(type, params),
+  // Activity
+  getRecentActivities: (limit) => activityAPI.getRecent(limit),
 
   // Settings
   getSystemSettings: () => settingsAPI.getSystem(),
