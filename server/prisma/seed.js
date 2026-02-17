@@ -9,14 +9,9 @@ async function main() {
   // Seed default settings
   console.log('📝 Seeding default settings...');
   const defaultSettings = [
-    { key: 'batch_a_off_day_week1', value: 'Monday', description: 'Day of the week when Batch A is off in weeks 1&2' },
-    { key: 'batch_b_off_day_week1', value: 'Wednesday', description: 'Day of the week when Batch B is off in weeks 1&2' },
-    { key: 'batch_a_off_day_week3', value: 'Wednesday', description: 'Day of the week when Batch A is off in weeks 3&4' },
-    { key: 'batch_b_off_day_week3', value: 'Monday', description: 'Day of the week when Batch B is off in weeks 3&4' },
-    { key: 'schedule_start_date', value: '2024-01-01', description: 'Reference date for calculating alternating schedule weeks' },
-    { key: 'internship_duration_months', value: '12', description: 'Total internship duration in months' },
-    { key: 'rotation_buffer_days', value: '2', description: 'Buffer days between rotations' },
-    { key: 'auto_generation', value: JSON.stringify({ auto_generate_on_create: true, auto_extend_on_extension: true, allow_overlap: false, conflict_resolution_mode: 'strict', auto_resolve_conflicts: false, notify_on_conflicts: true }), description: 'Auto-generation settings' }
+    { key: 'system_name', value: 'SPIN', description: 'Display name for the system' },
+    { key: 'default_rotation_duration_days', value: '', description: 'Optional default rotation duration in days' },
+    { key: 'auto_rotation_enabled', value: 'true', description: 'Enable or disable automatic rotation advancement' }
   ];
 
   for (const setting of defaultSettings) {
@@ -27,43 +22,6 @@ async function main() {
     });
   }
   console.log(`✅ Seeded ${defaultSettings.length} settings`);
-
-  // Seed default units
-  console.log('🏥 Seeding default units...');
-  const defaultUnits = [
-    { name: 'Adult Neurology', durationDays: 2, patientCount: 0 },
-    { name: 'Acute Stroke', durationDays: 2, patientCount: 0 },
-    { name: 'Neurosurgery', durationDays: 2, patientCount: 0 },
-    { name: 'Geriatrics', durationDays: 2, patientCount: 0 },
-    { name: 'Orthopedic Inpatients', durationDays: 2, patientCount: 0 },
-    { name: 'Orthopedic Outpatients', durationDays: 2, patientCount: 0 },
-    { name: 'Electrophysiology', durationDays: 2, patientCount: 0 },
-    { name: 'Exercise Immunology', durationDays: 2, patientCount: 0 },
-    { name: 'Women\'s Health', durationDays: 2, patientCount: 0 },
-    { name: 'Pediatrics Inpatients', durationDays: 2, patientCount: 0 },
-    { name: 'Pediatrics Outpatients', durationDays: 2, patientCount: 0 },
-    { name: 'Cardio Thoracic Unit', durationDays: 2, patientCount: 0 }
-  ];
-
-  for (const unit of defaultUnits) {
-    // Calculate workload from patient_count
-    let workload = 'Medium';
-    if (unit.patientCount <= 4) workload = 'Low';
-    else if (unit.patientCount <= 8) workload = 'Medium';
-    else workload = 'High';
-
-    await prisma.unit.upsert({
-      where: { name: unit.name },
-      update: {},
-      create: {
-        name: unit.name,
-        durationDays: unit.durationDays,
-        patientCount: unit.patientCount,
-        workload: workload,
-      },
-    });
-  }
-  console.log(`✅ Seeded ${defaultUnits.length} units`);
 
   // Optional: Generate rotations for existing interns if they don't have any
   const internsWithoutRotations = await prisma.intern.findMany({

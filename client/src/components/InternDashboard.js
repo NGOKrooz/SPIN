@@ -5,7 +5,7 @@ import ExtensionModal from './ExtensionModal';
 import ReassignModal from './ReassignModal';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
-import { exportToCSV, openPrintableWindow, formatDate, getBatchColor, getStatusColor, getWorkloadColor, isBeforeToday, isAfterToday, includesToday, normalizeDate, calculateDaysBetween } from '../lib/utils';
+import { exportToCSV, openPrintableWindow, formatDate, getBatchColor, getStatusColor, getWorkloadColor, normalizeDate, calculateDaysBetween } from '../lib/utils';
 import { api } from '../services/api';
 
 export default function InternDashboard({ intern, onClose, onInternUpdated }) {
@@ -334,7 +334,6 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                           <p className="text-sm font-medium text-blue-600">
                             {(() => {
                               const startDate = normalizeDate(rotation.start_date);
-                              const endDate = normalizeDate(rotation.end_date);
                               const currentDate = normalizeDate(new Date());
                               // Always calculate from actual dates to account for extensions
                               // Use calculateDaysBetween for consistent inclusive day calculation

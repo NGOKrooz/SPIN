@@ -65,8 +65,8 @@ npm run prisma:seed
 
 This will:
 - Insert default settings
-- Insert default units (12 units with 2-day durations)
-- Optionally generate rotations for existing interns without rotations
+- Not insert any units (units are user-created)
+- Optionally generate rotations for existing interns without rotations if units exist
 
 ## Database Schema
 

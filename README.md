@@ -10,7 +10,7 @@ SPIN automates and manages rotation schedules for physiotherapy interns across d
 
 - **Intern Management**: Add, view, and edit intern profiles with automatic duration calculation
 - **Batch Alternation**: Batch A (Monday off) and Batch B (Wednesday off) with continuous coverage
-- **Unit Management**: 12 predefined units with varying durations (21-30 days)
+- **Unit Management**: User-defined units with configurable durations
 - **Rotation Logic**: Automatic rotation calculation based on start dates
 - **Manual Assignment**: Admin override capabilities for special cases
 - **Workload Tracking**: Weekly workload updates with coverage warnings
@@ -20,7 +20,7 @@ SPIN automates and manages rotation schedules for physiotherapy interns across d
 
 - **Frontend**: React with TailwindCSS and shadcn/ui
 - **Backend**: Node.js with Express.js
-- **Database**: SQLite for development, PostgreSQL for production
+- **Database**: PostgreSQL (Supabase)
 - **API**: RESTful endpoints for all operations
 
 ## 🚀 Quick Start
@@ -60,18 +60,7 @@ SPIN/
 
 ## 🏥 Hospital Units
 
-1. Adult Neurology – 21 days
-2. Acute Stroke – 30 days
-3. Neurosurgery – 30 days
-4. Geriatrics – 30 days
-5. Orthopedic Inpatients – 30 days
-6. Orthopedic Outpatients – 30 days
-7. Electrophysiology – 30 days
-8. Exercise Immunology – 30 days
-9. Women's Health – 30 days
-10. Pediatrics Inpatients – 21 days
-11. Pediatrics Outpatients – 21 days
-12. Cardio Thoracic Unit – 30 days
+Units are fully user-created and user-managed. The system does not ship with any predefined units.
 
 ## 📋 Batch Schedule
 

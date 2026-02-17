@@ -26,7 +26,7 @@ When you click "Refresh Rotations" in the intern dashboard, you should see:
 [autoAdvance] Intern 4: last rotation end_date=2025-11-02, today=2025-11-04
 [autoAdvance] Intern 4: FORCING rotation creation - last rotation completed...
 [autoAdvance] ✅ Created UPCOMING rotation for intern 4:
-   - Unit: Adult Neurology
+   - Unit: <unit name>
    - Start: 2025-11-05 (> today: true)
    - End: 2025-11-05
 ```

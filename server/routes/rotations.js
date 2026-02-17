@@ -1,6 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const db = require('../database/dbWrapper');
+const { getState, setState } = require('../database/systemState');
 const { addDays, format, parseISO, differenceInDays } = require('date-fns');
 
 // Helper functions for async database operations
@@ -42,6 +43,22 @@ const normalizeDbDate = (value) => {
   }
 };
 
+const getAutoRotationEnabled = async () => {
+  return new Promise((resolve) => {
+    db.get('SELECT value FROM settings WHERE key = ?', ['auto_rotation_enabled'], (err, row) => {
+      if (err) {
+        console.error('[AutoRotation] Failed to read setting:', err);
+        return resolve(true);
+      }
+      const value = row?.value;
+      if (value === undefined || value === null || value === '') {
+        return resolve(true);
+      }
+      resolve(String(value).toLowerCase() === 'true');
+    });
+  });
+};
+
 // Helper function to log activities for Recent Updates
 const logActivity = async (activityType, options = {}) => {
   try {
@@ -60,59 +77,12 @@ const logActivity = async (activityType, options = {}) => {
 
 const router = express.Router();
 
-// Approved canonical unit names (from project requirements)
-const APPROVED_UNITS = [
-  'Exercise Immunology',
-  'Intensive Care Unit',
-  "Pelvic and Women's Health",
-  'Neurosurgery',
-  'Adult Neurology',
-  'Medicine and Acute Care',
-  'Geriatric and Mental Health',
-  'Electrophysiology',
-  'Orthopedic Out-Patient',
-  'Orthopedic In-Patient',
-  'Pediatric-In',
-  'Pediatric-Out (NDT)'
-];
-
-function normalizeName(n) {
-  if (!n) return '';
-  return String(n).toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
 // POST /api/rotations/cleanup-schedule - Validate and clean rotations and units
 router.post('/cleanup-schedule', async (req, res) => {
   try {
     const report = { renamedUnits: [], updatedRotations: 0, deletedRotations: 0, errors: [] };
 
     // Load all units
-    const units = await allAsync('SELECT id, name, duration_days, workload FROM units', []);
-
-    // Build normalized map of approved names for quick lookup
-    const approvedMap = {};
-    APPROVED_UNITS.forEach(name => {
-      approvedMap[normalizeName(name)] = name;
-    });
-
-    // Attempt to map existing units to approved canonical names
-    for (const u of units) {
-      const norm = normalizeName(u.name);
-      if (approvedMap[norm] && u.name !== approvedMap[norm]) {
-        // Rename unit to canonical approved name
-        await runAsync('UPDATE units SET name = ? WHERE id = ?', [approvedMap[norm], u.id]);
-        report.renamedUnits.push({ id: u.id, from: u.name, to: approvedMap[norm] });
-      } else if (!approvedMap[norm]) {
-        // Try fuzzy matching: check if unit name contains an approved token
-        const match = APPROVED_UNITS.find(a => normalizeName(a).includes(norm) || norm.includes(normalizeName(a)));
-        if (match && u.name !== match) {
-          await runAsync('UPDATE units SET name = ? WHERE id = ?', [match, u.id]);
-          report.renamedUnits.push({ id: u.id, from: u.name, to: match });
-        }
-      }
-    }
-
-    // Refresh units map after renames
     const refreshedUnits = await allAsync('SELECT id, name, duration_days, workload FROM units', []);
     const unitById = {};
     refreshedUnits.forEach(u => unitById[u.id] = u);
@@ -130,21 +100,12 @@ router.post('/cleanup-schedule', async (req, res) => {
           continue;
         }
 
-        // Ensure unit exists and is approved
+        // Ensure unit exists
         const unit = unitById[r.unit_id];
-        if (!unit || !APPROVED_UNITS.includes(unit.name)) {
-          // Try to find by normalized name
-          const candidate = refreshedUnits.find(u => normalizeName(u.name) in approvedMap || APPROVED_UNITS.includes(u.name));
-          if (candidate) {
-            // Reassign rotation to candidate unit id
-            await runAsync('UPDATE rotations SET unit_id = ? WHERE id = ?', [candidate.id, r.id]);
-            report.updatedRotations++;
-          } else {
-            // No suitable unit - delete rotation
-            await runAsync('DELETE FROM rotations WHERE id = ?', [r.id]);
-            report.deletedRotations++;
-            continue;
-          }
+        if (!unit) {
+          await runAsync('DELETE FROM rotations WHERE id = ?', [r.id]);
+          report.deletedRotations++;
+          continue;
         }
 
         // Normalize dates
@@ -276,8 +237,8 @@ router.get('/', (req, res) => {
 // GET /api/rotations/current - Get current active rotations
 router.get('/current', async (req, res) => {
   // Auto-advance rotations if enabled (default to true if not set)
-  const autoRotationEnabled = process.env.AUTO_ROTATION !== 'false';
-  console.log(`[Rotations/Current] Auto-rotation enabled: ${autoRotationEnabled} (env: ${process.env.AUTO_ROTATION})`);
+  const autoRotationEnabled = await getAutoRotationEnabled();
+  console.log(`[Rotations/Current] Auto-rotation enabled: ${autoRotationEnabled}`);
   
   if (autoRotationEnabled) {
     try {
@@ -385,7 +346,7 @@ router.get('/upcoming', async (req, res) => {
     console.log(`[Rotations/Upcoming] Querying upcoming rotations for date: ${todayStr}`);
     
     // Auto-advance rotations if enabled before fetching upcoming
-    const autoRotationEnabled = process.env.AUTO_ROTATION !== 'false';
+    const autoRotationEnabled = await getAutoRotationEnabled();
     if (autoRotationEnabled) {
       try {
         console.log('[Rotations/Upcoming] Triggering auto-advance before fetching upcoming...');
@@ -632,15 +593,6 @@ router.post('/generate', async (req, res) => {
       });
     });
     
-    // Get settings
-    const settingsQuery = 'SELECT key, value FROM settings';
-    const settings = await new Promise((resolve, reject) => {
-      db.all(settingsQuery, [], (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {}));
-      });
-    });
-    
     const generatedRotations = [];
     let roundRobinCounter = await getRoundRobinCounter();
     
@@ -655,7 +607,6 @@ router.post('/generate', async (req, res) => {
         intern, 
         units, 
         parseISO(rotationStartDate),
-        settings,
         internIndex  // Pass intern index for offset calculation
       );
       generatedRotations.push(...internRotations);
@@ -986,49 +937,13 @@ async function getNextUnitForIntern(internId, units, interns, lastRotation) {
 }
 
 async function getRoundRobinCounter() {
-  return new Promise((resolve, reject) => {
-    db.get(
-      `SELECT value FROM settings WHERE key = 'round_robin_offset'`,
-      [],
-      (err, row) => {
-        if (err) return reject(err);
-        const value = row && row.value !== undefined ? parseInt(row.value, 10) : 0;
-        resolve(Number.isFinite(value) ? value : 0);
-      }
-    );
-  });
+  const value = await getState('round_robin_offset', '0');
+  const parsed = parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 async function setRoundRobinCounter(value) {
-  const counterValue = String(value);
-  return new Promise((resolve, reject) => {
-    db.get(
-      `SELECT key FROM settings WHERE key = 'round_robin_offset'`,
-      [],
-      (err, row) => {
-        if (err) return reject(err);
-        if (row) {
-          db.run(
-            `UPDATE settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = 'round_robin_offset'`,
-            [counterValue],
-            function(updateErr) {
-              if (updateErr) reject(updateErr);
-              else resolve();
-            }
-          );
-        } else {
-          db.run(
-            `INSERT INTO settings (key, value, description, updated_at) VALUES ('round_robin_offset', ?, 'Tracks next starting unit for round-robin', CURRENT_TIMESTAMP)`,
-            [counterValue],
-            function(insertErr) {
-              if (insertErr) reject(insertErr);
-              else resolve();
-            }
-          );
-        }
-      }
-    );
-  });
+  await setState('round_robin_offset', String(value), 'Tracks next starting unit for round-robin');
 }
 
 // Helper function to automatically advance interns to their next rotation
@@ -1407,7 +1322,7 @@ async function autoAdvanceRotations() {
 }
 
 // Helper function to generate rotations for a single intern
-function generateInternRotations(intern, units, startDate, settings, internIndex = 0) {
+function generateInternRotations(intern, units, startDate, internIndex = 0) {
   const rotations = [];
   if (!units || units.length === 0) {
     return rotations;

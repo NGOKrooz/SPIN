@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { getDatabase } = require('../database/init');
+const { getState, setState } = require('../database/systemState');
 
 // Conditional imports for cloud services
 let Client, ConfidentialClientApplication, google;
@@ -14,8 +14,6 @@ try {
 } catch (error) {
   console.warn('Cloud backup dependencies not installed. Install with: npm install @microsoft/microsoft-graph-client googleapis @azure/msal-node');
 }
-
-const db = getDatabase();
 
 // OneDrive configuration
 const getOneDriveClient = async () => {
@@ -82,26 +80,12 @@ const getGoogleDriveClient = async () => {
 
 // Helper to get/set tokens from database
 async function getStoredToken(key) {
-  return new Promise((resolve, reject) => {
-    db.get('SELECT value FROM settings WHERE key = ?', [key], (err, row) => {
-      if (err) return reject(err);
-      resolve(row?.value || null);
-    });
-  });
+  const value = await getState(key, null);
+  return value || null;
 }
 
 async function setStoredToken(key, value) {
-  return new Promise((resolve, reject) => {
-    db.run(
-      `INSERT OR REPLACE INTO settings (key, value, description, updated_at) 
-       VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
-      [key, value, `OAuth token for ${key}`],
-      (err) => {
-        if (err) return reject(err);
-        resolve();
-      }
-    );
-  });
+  await setState(key, value, `OAuth token for ${key}`);
 }
 
 // Upload backup to OneDrive

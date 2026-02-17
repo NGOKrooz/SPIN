@@ -1,5 +1,6 @@
 const dbWrapper = require('../database/dbWrapper');
 const cloudBackup = require('./cloudBackup');
+const { setState } = require('../database/systemState');
 
 // Check if this is a fresh deployment (empty or minimal database)
 async function checkIfFreshDeployment() {
@@ -88,14 +89,11 @@ async function autoRestore(backupData) {
       }
       
       // Log restore operation
-      dbWrapper.run(
-        `INSERT INTO settings (key, value, description, updated_at) 
-         VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
-        ['last_auto_restore', new Date().toISOString(), 'Timestamp of last automatic restore'],
-        (err) => {
-          if (err) console.error('Error logging restore:', err);
-        }
-      );
+      try {
+        await setState('last_auto_restore', new Date().toISOString(), 'Timestamp of last automatic restore');
+      } catch (err) {
+        console.error('Error logging restore:', err);
+      }
       
       resolve({
         success: true,

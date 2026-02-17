@@ -413,77 +413,39 @@ router.post('/', validateIntern, async (req, res) => {
             });
           });
         } else {
-          // Check if auto-generate on create is enabled (from JSON settings)
-          console.log('[POST /interns] No initial unit, checking auto-generate setting');
-          db.get('SELECT value FROM settings WHERE key = ?', ['auto_generation'], (err, setting) => {
-            if (err) {
-              console.error('[POST /interns] Error checking auto-generation setting:', err);
-              return res.status(201).json({
-                id: internId,
-                name,
-                gender,
-                batch: finalBatch,
-                start_date,
-                phone_number,
-                status: 'Active',
-                extension_days: 0,
-                auto_generated_rotations: false
-              });
-            }
-            
-            let autoGenerate = true; // Default to TRUE - auto-generate rotations by default
-            
-            if (setting && setting.value) {
-              try {
-                const autoGenSettings = JSON.parse(setting.value);
-                autoGenerate = autoGenSettings.auto_generate_on_create !== false; // Default to true if not explicitly false
-              } catch (e) {
-                // If parsing fails, default to true
-                console.warn('[POST /interns] Failed to parse auto_generation setting, defaulting to true:', e);
-                autoGenerate = true;
-              }
-            } else {
-              // Setting doesn't exist - default to true (auto-generate enabled)
-              console.log('[POST /interns] auto_generation setting not found in database, defaulting to true');
-              autoGenerate = true;
-            }
-            
-            // Log activity (non-blocking)
-            logActivity('new_intern', {
-              internId,
-              internName: name,
-              details: `New intern added${autoGenerate ? ' with auto-generated rotations' : ''}`
-            }).catch(err => console.error('Error logging activity:', err));
-            
-            // Send response first, then generate rotations in background
-            res.status(201).json({
-              id: internId,
-              name,
-              gender,
-              batch: finalBatch,
-              start_date,
-              phone_number,
-              status: 'Active',
-              extension_days: 0,
-              auto_generated_rotations: autoGenerate
-            });
-            
-            // Generate rotations asynchronously if enabled (don't block response)
-            if (autoGenerate) {
-              console.log(`[POST /interns] Starting background rotation generation for intern ${internId}: batch=${finalBatch}, start_date=${start_date}`);
-              generateRotationsForIntern(internId, finalBatch, start_date)
-                .then(() => {
-                  console.log(`[POST /interns] ✅ Successfully completed rotation generation for intern ${internId}`);
-                })
-                .catch(err => {
-                  console.error(`[POST /interns] ❌ Error auto-generating rotations for intern ${internId}:`, err);
-                  console.error(`[POST /interns] Error details:`, err.message || String(err));
-                  console.error(`[POST /interns] Error stack:`, err.stack);
-                });
-            } else {
-              console.log(`[POST /interns] Auto-generation disabled, skipping rotation creation for intern ${internId}`);
-            }
+          const autoGenerate = true;
+
+          // Log activity (non-blocking)
+          logActivity('new_intern', {
+            internId,
+            internName: name,
+            details: `New intern added${autoGenerate ? ' with auto-generated rotations' : ''}`
+          }).catch(err => console.error('Error logging activity:', err));
+
+          // Send response first, then generate rotations in background
+          res.status(201).json({
+            id: internId,
+            name,
+            gender,
+            batch: finalBatch,
+            start_date,
+            phone_number,
+            status: 'Active',
+            extension_days: 0,
+            auto_generated_rotations: autoGenerate
           });
+
+          // Generate rotations asynchronously (don't block response)
+          console.log(`[POST /interns] Starting background rotation generation for intern ${internId}: batch=${finalBatch}, start_date=${start_date}`);
+          generateRotationsForIntern(internId, finalBatch, start_date)
+            .then(() => {
+              console.log(`[POST /interns] ✅ Successfully completed rotation generation for intern ${internId}`);
+            })
+            .catch(err => {
+              console.error(`[POST /interns] ❌ Error auto-generating rotations for intern ${internId}:`, err);
+              console.error(`[POST /interns] Error details:`, err.message || String(err));
+              console.error(`[POST /interns] Error stack:`, err.stack);
+            });
         }
       });
     }).catch(err => {
@@ -708,58 +670,35 @@ router.post('/:id/extend', [
           }
         }
 
-        // If we have a rotation, adjust it using SQL date arithmetic (works for both SQLite and PostgreSQL)
+        // If we have a rotation, adjust it using SQL date arithmetic
         // Date format: YYYY-MM-DD HH:MM:SS - we preserve the time component to avoid drift
         // daysDifference can be positive (adding days) or negative (removing days)
         if (rotation && rotation.id) {
           try {
-            const isPostgres = !!process.env.DATABASE_URL;
-            
             // CRITICAL: Store the ORIGINAL end_date BEFORE updating
             // We need this to find upcoming rotations correctly
             const originalEndDate = normalizeDbDate(rotation.end_date);
             const originalEndStr = originalEndDate ? format(originalEndDate, 'yyyy-MM-dd') : null;
             
-            // Use SQL date arithmetic for reliable cross-database updates
-            // SQLite: datetime(end_date, '+X days') or datetime(end_date, '-X days') - preserves time component
-            // PostgreSQL: end_date + INTERVAL 'X days' or end_date - INTERVAL 'X days' - preserves time component
+            // Use SQL date arithmetic for PostgreSQL updates
             let updateQuery;
             const absDays = Math.abs(daysDifference);
             const isAdding = daysDifference > 0;
             
-            if (isPostgres) {
-              if (isAdding) {
-                updateQuery = `
-                  UPDATE rotations 
-                  SET end_date = end_date + INTERVAL '${absDays} days',
-                      is_manual_assignment = TRUE
-                  WHERE id = $1
-                `;
-              } else {
-                updateQuery = `
-                  UPDATE rotations 
-                  SET end_date = end_date - INTERVAL '${absDays} days',
-                      is_manual_assignment = TRUE
-                  WHERE id = $1
-                `;
-              }
+            if (isAdding) {
+              updateQuery = `
+                UPDATE rotations 
+                SET end_date = end_date + INTERVAL '${absDays} days',
+                    is_manual_assignment = TRUE
+                WHERE id = $1
+              `;
             } else {
-              // SQLite: Use datetime() instead of date() to preserve time component (HH:MM:SS)
-              if (isAdding) {
-                updateQuery = `
-                  UPDATE rotations 
-                  SET end_date = datetime(end_date, '+${absDays} days'),
-                      is_manual_assignment = 1
-                  WHERE id = ?
-                `;
-              } else {
-                updateQuery = `
-                  UPDATE rotations 
-                  SET end_date = datetime(end_date, '-${absDays} days'),
-                      is_manual_assignment = 1
-                  WHERE id = ?
-                `;
-              }
+              updateQuery = `
+                UPDATE rotations 
+                SET end_date = end_date - INTERVAL '${absDays} days',
+                    is_manual_assignment = TRUE
+                WHERE id = $1
+              `;
             }
             
             console.log(`[ExtendInternship] ${isAdding ? 'Extending' : 'Reducing'} rotation ${rotation.id} by ${absDays} day(s) (difference: ${daysDifference})`);

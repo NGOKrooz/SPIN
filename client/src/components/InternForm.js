@@ -8,7 +8,6 @@ import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { api } from '../services/api';
 import { useToast } from '../hooks/use-toast';
-import { addDays, format } from 'date-fns';
 
 export default function InternForm({ intern, onClose, onSuccess }) {
   const [formData, setFormData] = useState({

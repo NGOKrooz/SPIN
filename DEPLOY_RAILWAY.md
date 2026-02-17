@@ -53,9 +53,7 @@ Once deployed:
 3. Click "Generate Domain" (free Railway domain)
 4. Or add your own custom domain
 
-### Step 6: Add Database (Optional - For Production)
-
-If you want PostgreSQL instead of SQLite:
+### Step 6: Add Database (Required)
 
 1. In your Railway project, click "New"
 2. Select "Database" → "PostgreSQL"
@@ -147,14 +145,11 @@ Railway will automatically:
    - Render: 750 hours/month free
    - Both include HTTPS automatically
 
-2. **Database Choice**:
-   - SQLite: Simpler, included, perfect for small teams
-   - PostgreSQL: Better for production, scales better
+2. **Database**:
+   - PostgreSQL is required (no SQLite fallback)
 
 3. **Backup Strategy**:
-   - SQLite: Database file is in the Docker container
-   - Enable cloud backup for important data
-   - Use PostgreSQL for better data persistence
+   - Enable cloud backups for PostgreSQL
 
 4. **Performance**:
    - First load might be slow (cold start)
@@ -180,8 +175,7 @@ Railway will automatically:
 - Verify admin password is set
 
 ### Database Issues
-- SQLite: Works automatically
-- PostgreSQL: Ensure DATABASE_URL is set by Railway
+- Ensure DATABASE_URL is set by Railway
 
 ---
 

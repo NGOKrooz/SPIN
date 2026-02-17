@@ -86,7 +86,7 @@ Example output:
 [GenerateRotations] STARTING for intern 5 (batch=A, start_date=2024-01-15)
 [GenerateRotations] Found 3 active/extended interns
 [GenerateRotations] Intern 5 is at index 2
-[GenerateRotations] Found 12 units: Adult Neurology, Acute Stroke, ...
+[GenerateRotations] Found N units from database
 [GenerateRotations] Generated 12 rotations for intern 5
   Rotation 1: Unit ID 3, 2024-01-15 to 2024-01-16
   Rotation 2: Unit ID 4, 2024-01-17 to 2024-01-18
@@ -171,7 +171,7 @@ Response should include:
     {
       "id": 1,
       "unit_id": 1,
-      "unit_name": "Adult Neurology",
+      "unit_name": "User-created Unit",
       "start_date": "2024-02-01",
       "end_date": "2024-02-02"
     },
@@ -183,7 +183,7 @@ Response should include:
 ### 5. Frontend Dashboard
 1. Navigate to Interns page
 2. Click on the new intern
-3. Should see "Upcoming Rotations" populated with 12 units
+3. Should see "Upcoming Rotations" populated with all available units
 
 ## Configuration
 

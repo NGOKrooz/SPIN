@@ -43,7 +43,7 @@
 // - Detect if DATABASE_URL is set (= using Postgres)
 // - Initialize DB BEFORE listening on port
 // - Exit with error if Postgres is unreachable
-// - Keeps non-blocking SQLite startup for local dev
+// - Fails fast if PostgreSQL is unreachable
 ```
 
 **Result:** If Postgres is down, server fails immediately with clear error — no silent failures.
@@ -67,11 +67,9 @@ GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO postgres;
 **Rationale:** Backend uses `postgres` role (service_role equivalent) which doesn't need RLS policy restrictions. RLS is useful for client-facing access (e.g., Supabase Auth), not for backend service connections. If you later add frontend auth, you can enable RLS with policies specific to that use case.
 
 ### 5. Seeded Sample Data
-- 12 default units (Adult Neurology, Acute Stroke, etc.)
-- 7 default settings (batch schedules, internship duration, etc.)
-- 1 sample intern (Jane Doe, Batch A) — allows immediate testing
+- Default settings only (no units are seeded)
 
-**Result:** You can now create/query interns without a blank database.
+**Result:** Units are fully user-defined and must be created in the UI.
 
 ### 6. Added Detailed Logging to Create-Intern
 Log trace now shows:
@@ -187,7 +185,7 @@ Check server logs for:
 - [ ] Test create-intern endpoint with the curl commands above
 - [ ] Verify interns appear in Supabase dashboard (Data → interns table)
 - [ ] Optional: Enable RLS with policies if you add frontend auth later
-- [ ] Optional: Create a migration script to seed additional units/settings from config
+- [ ] Optional: Create a migration script for settings only (units remain user-managed)
 
 ## Files Changed
 

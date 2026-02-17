@@ -1,138 +1,163 @@
-import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { 
-  Settings as SettingsIcon, 
-  Save, 
-  Calendar, 
-  Users, 
-  Building2, 
-  LogOut,
-  RotateCcw,
-  Mail,
-  Database,
-  Palette,
-  Bell,
-  AlertCircle,
-  CheckCircle,
-  Clock
-} from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Settings as SettingsIcon, Save, LogOut } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
 import { useToast } from '../hooks/use-toast';
 import { api } from '../services/api';
 
-// Import section components (will create these)
-import BatchScheduleSection from '../components/settings/BatchScheduleSection';
-import AutoGenerationSection from '../components/settings/AutoGenerationSection';
-import WorkloadSection from '../components/settings/WorkloadSection';
-import NotificationSection from '../components/settings/NotificationSection';
-import DataManagementSection from '../components/settings/DataManagementSection';
-import UIPreferencesSection from '../components/settings/UIPreferencesSection';
-
-const TABS = [
-  { id: 'general', label: 'General', icon: Calendar },
-  { id: 'rotations', label: 'Rotation Management', icon: RotateCcw },
-  { id: 'workload', label: 'Workload & Coverage', icon: Building2 },
-  { id: 'notifications', label: 'Notifications', icon: Bell },
-  { id: 'data', label: 'Data Management', icon: Database },
-  { id: 'appearance', label: 'Appearance', icon: Palette },
-];
-
 export default function Settings() {
-  const [activeTab, setActiveTab] = useState('general');
-  const [unsavedChanges, setUnsavedChanges] = useState({});
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [formData, setFormData] = useState({
+    system_name: '',
+    default_rotation_duration_days: '',
+    auto_rotation_enabled: true,
+  });
+  const [hasChanges, setHasChanges] = useState(false);
 
-  const ActiveIcon = TABS.find(t => t.id === activeTab)?.icon || SettingsIcon;
+  const { data: settings, isLoading } = useQuery({
+    queryKey: ['system-settings'],
+    queryFn: api.getSystemSettings,
+  });
 
-  const markUnsaved = (section) => {
-    setUnsavedChanges(prev => ({ ...prev, [section]: true }));
+  const updateMutation = useMutation({
+    mutationFn: api.updateSystemSettings,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['system-settings'] });
+      toast({
+        title: 'Success',
+        description: 'System settings updated successfully',
+      });
+      setHasChanges(false);
+    },
+    onError: (error) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to update system settings',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  useEffect(() => {
+    if (settings) {
+      setFormData({
+        system_name: settings.system_name || 'SPIN',
+        default_rotation_duration_days: settings.default_rotation_duration_days ?? '',
+        auto_rotation_enabled: settings.auto_rotation_enabled ?? true,
+      });
+      setHasChanges(false);
+    }
+  }, [settings]);
+
+  const handleChange = (field, value) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+    setHasChanges(true);
   };
 
-  const markSaved = (section) => {
-    setUnsavedChanges(prev => {
-      const next = { ...prev };
-      delete next[section];
-      return next;
-    });
+  const handleSave = () => {
+    if (!formData.system_name.trim()) {
+      toast({
+        title: 'Error',
+        description: 'System name is required',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const durationValue = formData.default_rotation_duration_days;
+    const payload = {
+      system_name: formData.system_name.trim(),
+      default_rotation_duration_days:
+        durationValue === '' ? null : parseInt(durationValue, 10),
+      auto_rotation_enabled: !!formData.auto_rotation_enabled,
+    };
+
+    updateMutation.mutate(payload);
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
-        <p className="text-gray-600">Configure your SPIN platform settings for maximum efficiency</p>
+        <p className="text-gray-600">Manage core system configuration</p>
       </div>
 
-      {/* Tabs */}
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8 overflow-x-auto">
-          {TABS.map((tab) => {
-            const Icon = tab.icon;
-            const hasUnsaved = unsavedChanges[tab.id];
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`
-                  flex items-center space-x-2 whitespace-nowrap border-b-2 px-1 py-4 text-sm font-medium transition-colors
-                  ${activeTab === tab.id
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-                  }
-                `}
-              >
-                <Icon className="h-4 w-4" />
-                <span>{tab.label}</span>
-                {hasUnsaved && (
-                  <span className="ml-1 h-2 w-2 rounded-full bg-orange-500"></span>
-                )}
-              </button>
-            );
-          })}
-        </nav>
+      <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
+        <CardHeader>
+          <CardTitle className="flex items-center space-x-2">
+            <SettingsIcon className="h-5 w-5" />
+            <span>System Settings</span>
+          </CardTitle>
+          <CardDescription>Configure core system options</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div>
+            <Label htmlFor="system_name">System Name *</Label>
+            <Input
+              id="system_name"
+              value={formData.system_name}
+              onChange={(e) => handleChange('system_name', e.target.value)}
+              placeholder="Enter system name"
+              required
+            />
           </div>
 
-      {/* Tab Content */}
-      <div className="mt-6">
-        {activeTab === 'general' && (
-          <BatchScheduleSection 
-            onSave={() => markSaved('general')}
-            onUnsaved={() => markUnsaved('general')}
-          />
-        )}
-        {activeTab === 'rotations' && (
-          <AutoGenerationSection 
-            onSave={() => markSaved('rotations')}
-            onUnsaved={() => markUnsaved('rotations')}
-          />
-        )}
-        {activeTab === 'workload' && (
-          <WorkloadSection 
-            onSave={() => markSaved('workload')}
-            onUnsaved={() => markUnsaved('workload')}
-          />
-        )}
-        {activeTab === 'notifications' && (
-          <NotificationSection 
-            onSave={() => markSaved('notifications')}
-            onUnsaved={() => markUnsaved('notifications')}
-          />
-        )}
-        {activeTab === 'data' && (
-          <DataManagementSection />
-        )}
-        {activeTab === 'appearance' && (
-          <UIPreferencesSection 
-            onSave={() => markSaved('appearance')}
-            onUnsaved={() => markUnsaved('appearance')}
-          />
-        )}
+          <div>
+            <Label htmlFor="default_rotation_duration_days">Default Rotation Duration (Days)</Label>
+            <Input
+              id="default_rotation_duration_days"
+              type="number"
+              min="1"
+              value={formData.default_rotation_duration_days}
+              onChange={(e) => handleChange('default_rotation_duration_days', e.target.value)}
+              placeholder="Optional"
+            />
+            <p className="text-xs text-gray-500 mt-1">Leave empty to require duration on each unit.</p>
           </div>
 
-      {/* Account Section - Always visible at bottom */}
+          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+            <div className="flex-1">
+              <Label className="font-medium">Enable Auto Rotation</Label>
+              <p className="text-sm text-gray-500 mt-1">
+                Automatically advance rotations when they end
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.auto_rotation_enabled}
+                onChange={(e) => handleChange('auto_rotation_enabled', e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+
+          <div className="flex items-center justify-end space-x-3 pt-4 border-t">
+            <Button
+              onClick={handleSave}
+              disabled={updateMutation.isPending || !hasChanges}
+              className="hospital-gradient"
+            >
+              <Save className="h-4 w-4 mr-2" />
+              {updateMutation.isPending ? 'Saving...' : 'Save Settings'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
         <CardHeader>
           <CardTitle className="flex items-center space-x-2">
@@ -148,9 +173,9 @@ export default function Settings() {
               onClick={() => {
                 localStorage.removeItem('adminKey');
                 localStorage.removeItem('role');
-                toast({ 
-                  title: 'Signed out', 
-                  description: 'Admin session ended' 
+                toast({
+                  title: 'Signed out',
+                  description: 'Admin session ended',
                 });
                 window.location.reload();
               }}

@@ -11,6 +11,7 @@ try {
 }
 
 const cloudBackup = require('./cloudBackup');
+const { setState } = require('../database/systemState');
 const db = getDatabase();
 
 // Create local backup
@@ -93,14 +94,11 @@ async function performScheduledBackup() {
     }
     
     // Log backup operation
-    db.run(
-      `INSERT INTO settings (key, value, description, updated_at) 
-       VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
-      ['last_scheduled_backup', new Date().toISOString(), 'Timestamp of last scheduled backup'],
-      (err) => {
-        if (err) console.error('[Scheduler] Error logging backup:', err);
-      }
-    );
+    try {
+      await setState('last_scheduled_backup', new Date().toISOString(), 'Timestamp of last scheduled backup');
+    } catch (err) {
+      console.error('[Scheduler] Error logging backup:', err);
+    }
     
     // Clean up old local backups (keep last 5)
     try {

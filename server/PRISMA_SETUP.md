@@ -16,9 +16,9 @@ Prisma has been successfully set up for the SPIN application with PostgreSQL (Su
 - Ready to deploy to Supabase
 
 ### 3. Seed Script (`prisma/seed.js`)
-- Seeds default settings (batch schedules, rotation buffers, etc.)
-- Seeds 12 default units with 2-day durations
-- Optionally generates rotations for existing interns
+- Seeds default settings only
+- Does not insert any units (units are user-created)
+- Optionally generates rotations for existing interns if units already exist
 - Can be run with: `npm run prisma:seed`
 
 ### 4. Service Files

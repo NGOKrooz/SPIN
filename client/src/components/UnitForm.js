@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { X, Save, Building2, Clock, BarChart3 } from 'lucide-react';
+import { X, Save, Building2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -80,6 +80,7 @@ export default function UnitForm({ unit, onClose, onSuccess }) {
 
     const submitData = {
       ...formData,
+      unit_name: formData.name,
       duration_days: parseInt(formData.duration_days),
       patient_count: parseInt(formData.patient_count) || 0,
     };

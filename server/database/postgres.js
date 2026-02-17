@@ -82,16 +82,7 @@ const getConnectionConfig = () => {
     }
   }
   
-  // Local database connection (no Supabase)
-  return {
-    host: process.env.DB_HOST || 'localhost',
-    port: process.env.DB_PORT || 5432,
-    database: process.env.DB_NAME || 'spin',
-    user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || '',
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-    family: 4, // Force IPv4 for consistency
-  };
+  throw new Error('DATABASE_URL is required for PostgreSQL connections');
 };
 
 const pool = new Pool(getConnectionConfig());
@@ -207,10 +198,11 @@ async function initializeDatabase() {
       CREATE TABLE IF NOT EXISTS units (
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL UNIQUE,
-        duration_days INTEGER NOT NULL,
+        duration_days INTEGER NOT NULL CHECK (duration_days > 0),
         workload TEXT NOT NULL DEFAULT 'Medium' CHECK (workload IN ('Low', 'Medium', 'High')),
         patient_count INTEGER DEFAULT 0,
         description TEXT,
+        order_index INTEGER UNIQUE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -237,6 +229,28 @@ async function initializeDatabase() {
       }
     } else {
       console.log('Patient count column already exists');
+    }
+
+    // Add order_index column if it doesn't exist (for user-defined ordering)
+    const orderIndexCheck = await client.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'units' AND column_name = 'order_index'
+    `);
+    
+    if (orderIndexCheck.rows.length === 0) {
+      try {
+        await client.query(`
+          ALTER TABLE units ADD COLUMN order_index INTEGER UNIQUE
+        `);
+        console.log('order_index column added');
+      } catch (err) {
+        console.error('Error adding order_index column:', err);
+        await client.query('ROLLBACK');
+        throw err;
+      }
+    } else {
+      console.log('order_index column already exists');
     }
 
     // Add is_manual_assignment column to rotations if it doesn't exist (migration for existing databases)
@@ -276,9 +290,20 @@ async function initializeDatabase() {
       )
     `);
 
-    // Settings table
+    // Settings table (user-configurable system settings only)
     await client.query(`
       CREATE TABLE IF NOT EXISTS settings (
+        id SERIAL PRIMARY KEY,
+        key TEXT NOT NULL UNIQUE,
+        value TEXT NOT NULL,
+        description TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // System state table (internal operational state)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS system_state (
         id SERIAL PRIMARY KEY,
         key TEXT NOT NULL UNIQUE,
         value TEXT NOT NULL,
@@ -331,23 +356,8 @@ async function initializeDatabase() {
 
     await client.query('COMMIT');
     
-    // Insert default settings and units outside of transaction
+    // Insert default settings outside of transaction
     await insertDefaultSettings();
-    await insertDefaultUnits();
-    
-    // Set all unit durations to 2 days
-    try {
-      const unitsResult = await client.query('SELECT id, name, duration_days FROM units');
-      if (unitsResult.rows && unitsResult.rows.length > 0) {
-        for (const unit of unitsResult.rows) {
-          await client.query('UPDATE units SET duration_days = $1 WHERE id = $2', [2, unit.id]);
-        }
-        console.log(`✅ Set all ${unitsResult.rows.length} unit(s) to 2 days duration`);
-      }
-    } catch (err) {
-      console.error('Error setting unit durations to 2 days:', err);
-      // Don't fail initialization if this fails
-    }
     
     console.log('✅ Database tables initialized successfully');
   } catch (err) {
@@ -380,13 +390,9 @@ async function initializeDatabase() {
 
 async function insertDefaultSettings() {
   const defaultSettings = [
-    { key: 'batch_a_off_day_week1', value: 'Monday', description: 'Day of the week when Batch A is off in weeks 1&2' },
-    { key: 'batch_b_off_day_week1', value: 'Wednesday', description: 'Day of the week when Batch B is off in weeks 1&2' },
-    { key: 'batch_a_off_day_week3', value: 'Wednesday', description: 'Day of the week when Batch A is off in weeks 3&4' },
-    { key: 'batch_b_off_day_week3', value: 'Monday', description: 'Day of the week when Batch B is off in weeks 3&4' },
-    { key: 'schedule_start_date', value: '2024-01-01', description: 'Reference date for calculating alternating schedule weeks' },
-    { key: 'internship_duration_months', value: '12', description: 'Total internship duration in months' },
-    { key: 'rotation_buffer_days', value: '2', description: 'Buffer days between rotations' }
+    { key: 'system_name', value: 'SPIN', description: 'Display name for the system' },
+    { key: 'default_rotation_duration_days', value: '', description: 'Optional default rotation duration in days' },
+    { key: 'auto_rotation_enabled', value: 'true', description: 'Enable or disable automatic rotation advancement' }
   ];
 
   for (const setting of defaultSettings) {
@@ -395,38 +401,6 @@ async function insertDefaultSettings() {
        VALUES ($1, $2, $3) 
        ON CONFLICT (key) DO NOTHING`,
       [setting.key, setting.value, setting.description]
-    );
-  }
-}
-
-async function insertDefaultUnits() {
-  const defaultUnits = [
-    { name: 'Adult Neurology', duration_days: 2, patient_count: 0 },
-    { name: 'Acute Stroke', duration_days: 2, patient_count: 0 },
-    { name: 'Neurosurgery', duration_days: 2, patient_count: 0 },
-    { name: 'Geriatrics', duration_days: 2, patient_count: 0 },
-    { name: 'Orthopedic Inpatients', duration_days: 2, patient_count: 0 },
-    { name: 'Orthopedic Outpatients', duration_days: 2, patient_count: 0 },
-    { name: 'Electrophysiology', duration_days: 2, patient_count: 0 },
-    { name: 'Exercise Immunology', duration_days: 2, patient_count: 0 },
-    { name: 'Women\'s Health', duration_days: 2, patient_count: 0 },
-    { name: 'Pediatrics Inpatients', duration_days: 2, patient_count: 0 },
-    { name: 'Pediatrics Outpatients', duration_days: 2, patient_count: 0 },
-    { name: 'Cardio Thoracic Unit', duration_days: 2, patient_count: 0 }
-  ];
-
-  for (const unit of defaultUnits) {
-    // Calculate workload from patient_count
-    let workload;
-    if (unit.patient_count <= 4) workload = 'Low';
-    else if (unit.patient_count <= 8) workload = 'Medium';
-    else workload = 'High';
-    
-    await pool.query(
-      `INSERT INTO units (name, duration_days, patient_count, workload) 
-       VALUES ($1, $2, $3, $4) 
-       ON CONFLICT (name) DO NOTHING`,
-      [unit.name, unit.duration_days, unit.patient_count, workload]
     );
   }
 }

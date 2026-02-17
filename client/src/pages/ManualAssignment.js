@@ -53,14 +53,6 @@ export default function ManualAssignment() {
         start_date: '',
         end_date: '',
       });
-      setConflicts([]);
-    },
-    onError: (error) => {
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to create manual assignment',
-        variant: 'destructive',
-      });
     },
   });
 
@@ -184,7 +176,7 @@ export default function ManualAssignment() {
         }
       }
     }
-  }, [formData.unit_id, formData.start_date, units]);
+  }, [formData.unit_id, formData.start_date, formData.end_date, units]);
 
   const selectedIntern = interns?.find(intern => intern.id === parseInt(formData.intern_id));
   const selectedUnit = units?.find(unit => unit.id === parseInt(formData.unit_id));
@@ -262,18 +254,25 @@ export default function ManualAssignment() {
                     <SelectValue placeholder="Choose a unit" />
                   </SelectTrigger>
                   <SelectContent>
-                    {units?.map((unit) => (
-                      <SelectItem key={unit.id} value={unit.id.toString()}>
-                        <div className="flex items-center justify-between w-full">
-                          <span>{unit.name}</span>
-                          <span className={`ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium text-white ${getWorkloadColor(unit.workload)}`}>
-                            {unit.workload}
-                          </span>
-                        </div>
-                      </SelectItem>
-                    ))}
+                    {(!units || units.length === 0) ? (
+                      <div className="px-2 py-1 text-sm text-gray-500">No units available. Please create a unit.</div>
+                    ) : (
+                      units.map((unit) => (
+                        <SelectItem key={unit.id} value={unit.id.toString()}>
+                          <div className="flex items-center justify-between w-full">
+                            <span>{unit.name}</span>
+                            <span className={`ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium text-white ${getWorkloadColor(unit.workload)}`}>
+                              {unit.workload}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
+                {(!units || units.length === 0) && (
+                  <p className="text-xs text-yellow-600 mt-1">No units available. Please create a unit.</p>
+                )}
               </div>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

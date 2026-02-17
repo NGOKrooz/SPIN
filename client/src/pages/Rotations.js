@@ -226,13 +226,20 @@ export default function Rotations() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">All units</SelectItem>
-                  {units?.map((unit) => (
-                    <SelectItem key={unit.id} value={unit.id.toString()}>
-                      {unit.name}
-                    </SelectItem>
-                  ))}
+                  {(!units || units.length === 0) ? (
+                    <div className="px-2 py-1 text-sm text-gray-500">No units available. Please create a unit.</div>
+                  ) : (
+                    units.map((unit) => (
+                      <SelectItem key={unit.id} value={unit.id.toString()}>
+                        {unit.name}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
+              {(!units || units.length === 0) && (
+                <p className="text-xs text-yellow-600 mt-1">No units available. Please create a unit.</p>
+              )}
             </div>
             <div>
               <Label htmlFor="status">Status</Label>

@@ -4,24 +4,10 @@ const db = require('../database/dbWrapper');
 
 const router = express.Router();
 
-const defaultUnits = [
-  { name: 'Exercise Immunology', duration_days: 2, patient_count: 0, sort_order: 1 },
-  { name: 'Intensive Care Unit', duration_days: 2, patient_count: 0, sort_order: 2 },
-  { name: 'Pelvic and Women\'s Health', duration_days: 2, patient_count: 0, sort_order: 3 },
-  { name: 'Neurosurgery', duration_days: 2, patient_count: 0, sort_order: 4 },
-  { name: 'Adult Neurology', duration_days: 2, patient_count: 0, sort_order: 5 },
-  { name: 'Medicine and Acute Care', duration_days: 2, patient_count: 0, sort_order: 6 },
-  { name: 'Geriatric and Mental Health', duration_days: 2, patient_count: 0, sort_order: 7 },
-  { name: 'Electrophysiology', duration_days: 2, patient_count: 0, sort_order: 8 },
-  { name: 'Orthopedic Out-Patient', duration_days: 2, patient_count: 0, sort_order: 9 },
-  { name: 'Orthopedic In-Patient', duration_days: 2, patient_count: 0, sort_order: 10 },
-  { name: 'Pediatric-In', duration_days: 2, patient_count: 0, sort_order: 11 },
-  { name: 'Pediatric-Out (NDT)', duration_days: 2, patient_count: 0, sort_order: 12 }
-];
-
 // Validation middleware
-const validateUnit = [
-  body('name').trim().isLength({ min: 2, max: 100 }).withMessage('Name must be 2-100 characters'),
+const validateUnitPayload = [
+  body('unit_name').optional().trim().isLength({ min: 2, max: 100 }).withMessage('Unit name must be 2-100 characters'),
+  body('name').optional().trim().isLength({ min: 2, max: 100 }).withMessage('Unit name must be 2-100 characters'),
   body('duration_days').isInt({ min: 1, max: 365 }).withMessage('Duration must be 1-365 days'),
   body('workload').optional().isIn(['Low', 'Medium', 'High']).withMessage('Workload must be Low, Medium, or High'),
   body('patient_count').optional().isInt({ min: 0 }).withMessage('Patient count must be a non-negative integer')
@@ -46,7 +32,7 @@ router.get('/', (req, res) => {
       AND r.end_date >= date('now')
     LEFT JOIN interns i ON r.intern_id = i.id
     GROUP BY u.id
-    ORDER BY COALESCE(u.sort_order, 9999), u.name
+    ORDER BY COALESCE(u.order_index, 9999), u.name
   `;
   
   db.all(query, [], (err, rows) => {
@@ -73,6 +59,7 @@ router.get('/', (req, res) => {
       
       return {
         ...row,
+        unit_name: row.name,
         workload: workload,
         current_interns: parseInt(row.current_interns) || 0,
         intern_names: row.intern_names ? row.intern_names.split(', ') : [],
@@ -91,10 +78,10 @@ router.put('/order', (req, res) => {
     return res.status(400).json({ error: 'Order must be an array of unit ids' });
   }
 
-  // Use transaction-like serialize for SQLite
+  // Use transaction-like serialize for ordered updates
   db.serialize(() => {
     try {
-      const stmt = db.prepare(`UPDATE units SET sort_order = ? WHERE id = ?`);
+      const stmt = db.prepare(`UPDATE units SET order_index = ? WHERE id = ?`);
       order.forEach((id, idx) => {
         stmt.run(idx + 1, id);
       });
@@ -145,6 +132,7 @@ router.get('/:id', (req, res) => {
     
     const unit = {
       ...rows[0],
+      unit_name: rows[0].name,
       current_rotations: rows
         .filter(row => row.rotation_id)
         .map(row => ({
@@ -172,131 +160,105 @@ router.get('/:id', (req, res) => {
 });
 
 // POST /api/units - Create new unit
-router.post('/', validateUnit, (req, res) => {
+router.post('/', validateUnitPayload, async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
-  
-  const { name, duration_days, workload, description, patient_count } = req.body;
 
-  // Derive workload from patient_count if not provided
-  let finalWorkload = workload;
-  const count = typeof patient_count === 'number' ? patient_count : parseInt(patient_count || '0');
-  if (!finalWorkload) {
-    if (count <= 4) finalWorkload = 'Low';
-    else if (count <= 8) finalWorkload = 'Medium';
-    else finalWorkload = 'High';
+  const { unit_name, name, duration_days, workload, description, patient_count } = req.body;
+  const finalName = (unit_name || name || '').trim();
+  const parsedDuration = parseInt(duration_days, 10);
+
+  // Validate required fields
+  if (!finalName) {
+    return res.status(400).json({ error: 'Unit name is required' });
   }
-  
-  const query = `
-    INSERT INTO units (name, duration_days, workload, description, patient_count)
-    VALUES (?, ?, ?, ?, ?)
-  `;
-  
-  db.run(query, [name, duration_days, finalWorkload, description, count || 0], function(err) {
-    if (err) {
-      console.error('Error creating unit:', err);
-      if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-        return res.status(400).json({ error: 'Unit name already exists' });
-      }
-      return res.status(500).json({ error: 'Failed to create unit' });
+  if (!Number.isInteger(parsedDuration) || parsedDuration < 1) {
+    return res.status(400).json({ error: 'Duration days must be a positive integer' });
+  }
+
+  try {
+    // Check for duplicate name
+    const duplicateQuery = 'SELECT id FROM units WHERE LOWER(name) = LOWER(?)';
+    
+    const duplicateResult = await new Promise((resolve, reject) => {
+      db.get(duplicateQuery, [finalName], (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      });
+    });
+
+    if (duplicateResult) {
+      return res.status(400).json({ error: 'Unit name already exists' });
+    }
+
+    // Derive workload from patient_count if not provided
+    let finalWorkload = workload;
+    const count = typeof patient_count === 'number' ? patient_count : parseInt(patient_count || '0');
+    if (!finalWorkload) {
+      if (count <= 4) finalWorkload = 'Low';
+      else if (count <= 8) finalWorkload = 'Medium';
+      else finalWorkload = 'High';
     }
     
-    res.status(201).json({
-      id: this.lastID,
-      name,
-      duration_days,
-      workload: finalWorkload,
-      description,
-      patient_count: count || 0
-    });
-  });
-});
-
-// POST /api/units/seed-defaults - Seed default units (idempotent)
-router.post('/seed-defaults', async (req, res) => {
-
-  // Use a function to handle INSERT OR IGNORE for both SQLite and PostgreSQL
-  const insertUnit = async (unit) => {
-    return new Promise((resolve, reject) => {
-      // Calculate workload from patient_count
-      let workload;
-      if (unit.patient_count <= 4) workload = 'Low';
-      else if (unit.patient_count <= 8) workload = 'Medium';
-      else workload = 'High';
-      
-      const query = isPostgres 
-        ? `INSERT INTO units (name, duration_days, workload, description, patient_count, sort_order) VALUES ($1, $2, $3, '', $4, $5) ON CONFLICT (name) DO NOTHING`
-        : `INSERT OR IGNORE INTO units (name, duration_days, workload, description, patient_count, sort_order) VALUES (?, ?, ?, '', ?, ?)`;
-      
-      const params = isPostgres 
-        ? [unit.name, unit.duration_days, workload, unit.patient_count, unit.sort_order] 
-        : [unit.name, unit.duration_days, workload, unit.patient_count, unit.sort_order];
-      
-      db.run(query, params, (err) => {
+    const orderQuery = 'SELECT COALESCE(MAX(order_index), 0) as max_order FROM units';
+    const orderResult = await new Promise((resolve, reject) => {
+      db.get(orderQuery, [], (err, row) => {
         if (err) reject(err);
-        else resolve();
+        else resolve(row);
       });
     });
-  };
-  
-  const DB_TYPE = process.env.DATABASE_URL ? 'postgres' : (process.env.DB_TYPE || 'sqlite');
-  const isPostgres = DB_TYPE === 'postgres';
-  
-  // Use prepared statement for SQLite, direct queries for PostgreSQL
-  if (isPostgres) {
-    try {
-      for (const unit of defaultUnits) {
-        await insertUnit(unit);
-      }
-      res.json({ message: 'Default units seeded (idempotent)' });
-    } catch (err) {
-      console.error('Error seeding units:', err);
-      return res.status(500).json({ error: 'Failed to seed units' });
-    }
-    return;
-  }
-  
-  const stmt = db.prepare(`
-    INSERT OR IGNORE INTO units (name, duration_days, workload, description, patient_count, sort_order)
-    VALUES (?, ?, ?, '', ?, ?)
-  `);
+    const nextOrderIndex = (orderResult?.max_order || 0) + 1;
 
-  db.serialize(() => {
-    try {
-      defaultUnits.forEach(u => {
-        // Calculate workload from patient_count
-        let workload;
-        if (u.patient_count <= 4) workload = 'Low';
-        else if (u.patient_count <= 8) workload = 'Medium';
-        else workload = 'High';
-        
-        stmt.run(u.name, u.duration_days, workload, u.patient_count, u.sort_order);
+    const insertQuery = `
+      INSERT INTO units (name, duration_days, workload, description, patient_count, order_index)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `;
+    
+    const params = [finalName, parsedDuration, finalWorkload, description || '', count || 0, nextOrderIndex];
+    
+    const insertResult = await new Promise((resolve, reject) => {
+      db.run(insertQuery, params, function(err) {
+        if (err) return reject(err);
+        resolve({ id: this.lastID });
       });
-      stmt.finalize((err) => {
-        if (err) {
-          console.error('Error seeding units:', err);
-          return res.status(500).json({ error: 'Failed to seed units' });
-        }
-        res.json({ message: 'Default units seeded (idempotent)' });
-      });
-    } catch (e) {
-      console.error('Seed error:', e);
-      return res.status(500).json({ error: 'Failed to seed units' });
-    }
-  });
+    });
+    
+    res.status(201).json({
+      id: insertResult.id,
+      name: finalName,
+      unit_name: finalName,
+      duration_days: parsedDuration,
+      workload: finalWorkload,
+      description: description || '',
+      patient_count: count || 0,
+      order_index: nextOrderIndex
+    });
+  } catch (err) {
+    console.error('Error creating unit:', err);
+    res.status(500).json({ error: 'Failed to create unit' });
+  }
 });
 
 // PUT /api/units/:id - Update unit
-router.put('/:id', validateUnit, (req, res) => {
+router.put('/:id', validateUnitPayload, (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
   
   const { id } = req.params;
-  const { name, duration_days, workload, description, patient_count } = req.body;
+  const { unit_name, name, duration_days, workload, description, patient_count } = req.body;
+  const finalName = (unit_name || name || '').trim();
+  const parsedDuration = parseInt(duration_days, 10);
+
+  if (!finalName) {
+    return res.status(400).json({ error: 'Unit name is required' });
+  }
+  if (!Number.isInteger(parsedDuration) || parsedDuration < 1) {
+    return res.status(400).json({ error: 'Duration days must be a positive integer' });
+  }
 
   // Derive workload from patient_count if not provided
   let finalWorkload = workload;
@@ -313,10 +275,10 @@ router.put('/:id', validateUnit, (req, res) => {
     WHERE id = ?
   `;
   
-  db.run(query, [name, duration_days, finalWorkload, description, count || 0, id], function(err) {
+  db.run(query, [finalName, parsedDuration, finalWorkload, description, count || 0, id], function(err) {
     if (err) {
       console.error('Error updating unit:', err);
-      if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      if (err.code === '23505') {
         return res.status(400).json({ error: 'Unit name already exists' });
       }
       return res.status(500).json({ error: 'Failed to update unit' });

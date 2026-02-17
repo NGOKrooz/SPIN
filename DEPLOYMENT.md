@@ -16,7 +16,7 @@ Create `server/.env` with production values:
 PORT=5000
 NODE_ENV=production
 JWT_SECRET=your_secure_jwt_secret_here
-DB_PATH=./database/spin.db
+DATABASE_URL=postgresql://user:password@host:port/database?sslmode=require
 CORS_ORIGIN=https://yourdomain.com
 ```
 
@@ -26,15 +26,7 @@ Create `client/.env` with production values:
 REACT_APP_API_URL=https://yourdomain.com/api
 ```
 
-### 2. Database Setup
-
-#### For SQLite (Development/Testing)
-```bash
-# Database will be created automatically
-npm run dev
-```
-
-#### For PostgreSQL (Production)
+### 2. Database Setup (PostgreSQL)
 1. Install PostgreSQL
 2. Create database:
 ```sql
@@ -43,7 +35,7 @@ CREATE USER spin_user WITH PASSWORD 'secure_password';
 GRANT ALL PRIVILEGES ON DATABASE spin_production TO spin_user;
 ```
 
-3. Update server configuration to use PostgreSQL
+3. Set `DATABASE_URL` in `server/.env`
 
 ### 3. Build and Deploy
 
@@ -134,10 +126,6 @@ sudo certbot --nginx -d yourdomain.com
 
 #### Database Backup
 ```bash
-# SQLite backup
-cp server/database/spin.db backups/spin_$(date +%Y%m%d_%H%M%S).db
-
-# PostgreSQL backup
 pg_dump -h localhost -U spin_user spin_production > backups/spin_$(date +%Y%m%d_%H%M%S).sql
 ```
 
@@ -150,12 +138,12 @@ BACKUP_DIR="/path/to/backups"
 mkdir -p $BACKUP_DIR
 
 # Database backup
-cp server/database/spin.db $BACKUP_DIR/spin_$DATE.db
+pg_dump -h localhost -U spin_user spin_production > $BACKUP_DIR/spin_$DATE.sql
 
 # Keep only last 30 days
-find $BACKUP_DIR -name "spin_*.db" -mtime +30 -delete
+find $BACKUP_DIR -name "spin_*.sql" -mtime +30 -delete
 
-echo "Backup completed: spin_$DATE.db"
+echo "Backup completed: spin_$DATE.sql"
 ```
 
 ### 7. Monitoring

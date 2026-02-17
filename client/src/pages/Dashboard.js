@@ -50,7 +50,6 @@ export default function Dashboard() {
   const batchBInterns = allActiveInterns.filter(intern => intern.batch === 'B');
 
   // Compute coverage issues from current rotations by unit and batch
-  const rotationList = currentRotations?.rotations || [];
   const unitCoverageData = currentRotations?.unit_coverage || {};
   
   const criticalUnits = [];

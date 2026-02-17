@@ -90,7 +90,6 @@ export const unitsAPI = {
   updatePatientCount: (id, data) => http.post(`/units/${id}/patient-count`, data),
   getWorkloadHistory: (id, limit = 12) => http.get(`/units/${id}/workload-history`, { params: { limit } }),
   getCompletedInterns: (id) => http.get(`/units/${id}/completed-interns`),
-  seedDefaults: () => http.post('/units/seed-defaults'),
   updateOrder: (order) => http.put('/units/order', { order }),
 };
 
@@ -133,33 +132,8 @@ export const reportsAPI = {
 
 // Settings API
 export const settingsAPI = {
-  getAll: () => http.get('/settings'),
-  getByKey: (key) => http.get(`/settings/${key}`),
-  update: (key, value) => http.put(`/settings/${key}`, { value }),
-  create: (data) => http.post('/settings', data),
-  delete: (key) => http.delete(`/settings/${key}`),
-  getBatchSchedule: () => http.get('/settings/batch-schedule'),
-  updateBatchSchedule: (data) => http.put('/settings/batch-schedule', data),
-  getSystemInfo: () => http.get('/settings/system-info'),
-  getWorkloadThresholds: () => http.get('/settings/workload-thresholds'),
-  updateWorkloadThresholds: (data) => http.put('/settings/workload-thresholds', data),
-  getCoverageRules: () => http.get('/settings/coverage-rules'),
-  updateCoverageRules: (data) => http.put('/settings/coverage-rules', data),
-  getAutoGeneration: () => http.get('/settings/auto-generation'),
-  updateAutoGeneration: (data) => http.put('/settings/auto-generation', data),
-  getNotifications: () => http.get('/settings/notifications'),
-  updateNotifications: (data) => http.put('/settings/notifications', data),
-  getNotificationTemplates: () => http.get('/settings/notification-templates'),
-  updateNotificationTemplates: (data) => http.put('/settings/notification-templates', data),
-  getExportFormat: () => http.get('/settings/export-format'),
-  updateExportFormat: (data) => http.put('/settings/export-format', data),
-  createBackup: (type = 'full') => http.post('/settings/backup', { type }),
-  restoreBackup: (backup, tables = []) => http.post('/settings/restore', { backup, tables, confirm: 'true' }),
-  getCloudConfig: () => http.get('/settings/backup/cloud-config'),
-  updateCloudConfig: (data) => http.put('/settings/backup/cloud-config', data),
-  backupToCloud: (type = 'critical') => http.post('/settings/backup/cloud', { type }),
-  listCloudBackups: () => http.get('/settings/backup/cloud/list'),
-  triggerAutoRestore: () => http.post('/settings/auto-restore'),
+  getSystem: () => http.get('/settings/system'),
+  updateSystem: (data) => http.put('/settings/system', data),
 };
 
 // Health check
@@ -196,7 +170,6 @@ export const api = {
   updateOrder: (order) => unitsAPI.updateOrder(order),
   getUnitWorkloadHistory: (id, limit) => unitsAPI.getWorkloadHistory(id, limit),
   getCompletedInterns: (id) => unitsAPI.getCompletedInterns(id),
-  seedUnits: () => unitsAPI.seedDefaults(),
   testPatientCount: (id, data) => http.post(`/units/${id}/test-patient-count`, data),
   getUnitsSchema: () => http.get('/units/schema'),
 
@@ -218,33 +191,8 @@ export const api = {
   exportPDF: (type, params) => reportsAPI.exportPDF(type, params),
 
   // Settings
-  getSettings: () => settingsAPI.getAll(),
-  getSetting: (key) => settingsAPI.getByKey(key),
-  updateSetting: (key, value) => settingsAPI.update(key, value),
-  createSetting: (data) => settingsAPI.create(data),
-  deleteSetting: (key) => settingsAPI.delete(key),
-  getBatchSchedule: () => settingsAPI.getBatchSchedule(),
-  updateBatchSchedule: (data) => settingsAPI.updateBatchSchedule(data),
-  getSystemInfo: () => settingsAPI.getSystemInfo(),
-  getWorkloadThresholds: () => settingsAPI.getWorkloadThresholds(),
-  updateWorkloadThresholds: (data) => settingsAPI.updateWorkloadThresholds(data),
-  getCoverageRules: () => settingsAPI.getCoverageRules(),
-  updateCoverageRules: (data) => settingsAPI.updateCoverageRules(data),
-  getAutoGeneration: () => settingsAPI.getAutoGeneration(),
-  updateAutoGeneration: (data) => settingsAPI.updateAutoGeneration(data),
-  getNotifications: () => settingsAPI.getNotifications(),
-  updateNotifications: (data) => settingsAPI.updateNotifications(data),
-  getNotificationTemplates: () => settingsAPI.getNotificationTemplates(),
-  updateNotificationTemplates: (data) => settingsAPI.updateNotificationTemplates(data),
-  getExportFormat: () => settingsAPI.getExportFormat(),
-  updateExportFormat: (data) => settingsAPI.updateExportFormat(data),
-  createBackup: (type) => settingsAPI.createBackup(type),
-  restoreBackup: (backup, tables) => settingsAPI.restoreBackup(backup, tables),
-  getCloudConfig: () => settingsAPI.getCloudConfig(),
-  updateCloudConfig: (data) => settingsAPI.updateCloudConfig(data),
-  backupToCloud: (type) => settingsAPI.backupToCloud(type),
-  listCloudBackups: () => settingsAPI.listCloudBackups(),
-  triggerAutoRestore: () => settingsAPI.triggerAutoRestore(),
+  getSystemSettings: () => settingsAPI.getSystem(),
+  updateSystemSettings: (data) => settingsAPI.updateSystem(data),
 
   // Health
   healthCheck: () => healthAPI.check(),
