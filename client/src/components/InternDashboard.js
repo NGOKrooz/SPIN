@@ -74,27 +74,43 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
     if (internSchedule) {
       console.log('[InternDashboard] Schedule data:', internSchedule);
       console.log('[InternDashboard] Today:', normalizeDate(new Date()));
-      internSchedule.forEach(r => {
+      const rotationRows = Array.isArray(internSchedule) ? internSchedule : (internSchedule?.rotations || []);
+      rotationRows.forEach(r => {
         console.log(`[InternDashboard] Rotation: ${r.unit_name} ${r.start_date}-${r.end_date}, is_manual=${r.is_manual_assignment}`);
       });
     }
   }, [internSchedule]);
 
+  const schedulePayload = React.useMemo(
+    () => (Array.isArray(internSchedule) ? null : internSchedule),
+    [internSchedule]
+  );
+
+  const scheduleRows = React.useMemo(
+    () => (Array.isArray(internSchedule) ? internSchedule : (internSchedule?.rotations || [])),
+    [internSchedule]
+  );
+
   // Separate completed and upcoming rotations using normalized dates to handle extensions correctly
-  const completedRotations = internSchedule?.filter(r =>
-    normalizeDate(r.end_date) < normalizeDate(new Date())
-  ) || [];
-  
-  const currentRotations = internSchedule?.filter(r => {
-    const start = normalizeDate(r.start_date);
-    const end = normalizeDate(r.end_date);
-    const today = normalizeDate(new Date());
-    return start <= today && end >= today;
-  }) || [];
-  
-  const upcomingRotations = internSchedule?.filter(r =>
-    normalizeDate(r.start_date) > normalizeDate(new Date())
-  ) || [];
+  const completedRotations = React.useMemo(() => {
+    if (schedulePayload?.completed) return schedulePayload.completed;
+    return scheduleRows.filter(r => normalizeDate(r.end_date) < normalizeDate(new Date()));
+  }, [schedulePayload, scheduleRows]);
+
+  const currentRotations = React.useMemo(() => {
+    if (schedulePayload?.current) return [schedulePayload.current];
+    return scheduleRows.filter(r => {
+      const start = normalizeDate(r.start_date);
+      const end = normalizeDate(r.end_date);
+      const today = normalizeDate(new Date());
+      return start <= today && end >= today;
+    });
+  }, [schedulePayload, scheduleRows]);
+
+  const upcomingRotations = React.useMemo(() => {
+    if (schedulePayload?.upcoming) return schedulePayload.upcoming;
+    return scheduleRows.filter(r => normalizeDate(r.start_date) > normalizeDate(new Date()));
+  }, [schedulePayload, scheduleRows]);
 
   // Debug logging for filtered results
   React.useEffect(() => {
@@ -254,7 +270,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
               <Button className="hospital-gradient" onClick={() => setShowExtend(true)}>Extension</Button>
               <Button variant="outline" onClick={() => {
                 try {
-                  const rows = (internSchedule || []).map(r => ({ unit: r.unit_name, start_date: r.start_date, end_date: r.end_date, duration_days: calculateDaysBetween(r.start_date, r.end_date) }));
+                  const rows = (scheduleRows || []).map(r => ({ unit: r.unit_name, start_date: r.start_date, end_date: r.end_date, duration_days: r.start_date && r.end_date ? calculateDaysBetween(r.start_date, r.end_date) : '' }));
                   exportToCSV(`${currentIntern?.name}-rotations`, rows, ['unit','start_date','end_date','duration_days']);
                 } catch (err) { alert('Export failed: ' + err.message); }
               }}>Export CSV</Button>
@@ -263,8 +279,8 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                   const upcomingRows = upcomingRotations.map(r => `
                     <tr>
                       <td>${r.unit_name}</td>
-                      <td>${formatDate(r.start_date)}</td>
-                      <td>${calculateDaysBetween(r.start_date, r.end_date)} days</td>
+                      <td>${r.start_date ? formatDate(r.start_date) : 'Pending'}</td>
+                      <td>${r.start_date && r.end_date ? `${calculateDaysBetween(r.start_date, r.end_date)} days` : `${r.duration_days || rotationDurationDays} days`}</td>
                     </tr>
                   `).join('');
 
@@ -464,19 +480,23 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                 {upcomingRotations.length > 0 ? (
                   <div className="space-y-2">
                     {upcomingRotations.map((rotation) => (
-                      <div key={rotation.id} className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
+                      <div key={rotation.id || `upcoming-${rotation.unit_id}`} className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
                         <div>
                           <h4 className="font-medium">{rotation.unit_name}</h4>
                           <p className="text-sm text-gray-600">
-                            {formatDate(rotation.start_date)} - {formatDate(rotation.end_date)}
+                            {rotation.start_date && rotation.end_date
+                              ? `${formatDate(rotation.start_date)} - ${formatDate(rotation.end_date)}`
+                              : 'Pending scheduling'}
                           </p>
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-medium text-yellow-600">
-                            {getRotationDuration(rotation)} days
+                            {rotation.start_date && rotation.end_date
+                              ? `${getRotationDuration(rotation)} days`
+                              : `${rotation.duration_days || rotationDurationDays} days`}
                           </p>
                           <span className="text-xs text-gray-500">
-                            {rotation.workload} workload
+                            {(rotation.workload || 'N/A')} workload
                           </span>
                         </div>
                       </div>

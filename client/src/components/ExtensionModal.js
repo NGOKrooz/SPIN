@@ -26,17 +26,21 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
     queryKey: ['intern-schedule', intern.id],
     queryFn: () => api.getInternSchedule(intern.id),
   });
+
+  const scheduleRows = useMemo(() => (
+    Array.isArray(schedule) ? schedule : (schedule?.rotations || [])
+  ), [schedule]);
   
   // Find the most recent rotation (current or just completed within last 7 days)
   // This ensures we extend the correct unit even if the rotation just ended
   const activeUnits = useMemo(() => {
-    if (!schedule || schedule.length === 0) return [];
+    if (!scheduleRows || scheduleRows.length === 0) return [];
     
     const now = normalizeDate(new Date());
     const sevenDaysAgo = now - (7 * 24 * 60 * 60 * 1000);
     
     // First, try to find an active rotation (today is between start and end)
-    const current = schedule.find(r => {
+    const current = scheduleRows.find(r => {
       const start = normalizeDate(r.start_date);
       const end = normalizeDate(r.end_date);
       return start <= now && end >= now;
@@ -46,7 +50,7 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
     
     // If no active rotation, find the most recent rotation (by end_date)
     // that ended within the last 7 days
-    const recent = schedule
+    const recent = scheduleRows
       .filter(r => {
         const end = normalizeDate(r.end_date);
         return end >= sevenDaysAgo && end <= now;
@@ -58,7 +62,7 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
       })[0];
     
     return recent ? [recent] : [];
-  }, [schedule]);
+  }, [scheduleRows]);
   
   const currentExtension = intern.extension_days || 0;
   const hasExtension = currentExtension > 0;

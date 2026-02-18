@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const db = require('../database/dbWrapper');
 const { addDays, format, parseISO } = require('date-fns');
+const { buildInternSchedule } = require('../services/internScheduleService');
 // Lazy load to avoid circular dependency - rotations.js is loaded after interns.js in index.js
 let getNextUnitForIntern, getRoundRobinCounter, setRoundRobinCounter;
 function getRotationHelpers() {
@@ -1015,41 +1016,41 @@ router.get('/:id/schedule', async (req, res) => {
     }
   }
   
-  const query = `
-    SELECT 
-      r.*,
-      u.name as unit_name,
-      u.duration_days,
-      u.workload
-    FROM rotations r
-    JOIN units u ON r.unit_id = u.id
-    WHERE r.intern_id = ?
-    ORDER BY r.start_date
-  `;
-  
-  db.all(query, [id], (err, rows) => {
-    if (err) {
-      console.error('Error fetching schedule:', err);
-      return res.status(500).json({ error: 'Failed to fetch schedule' });
-    }
-    
-    // DEBUG: Log schedule data format to verify date format before finalizing fix
-    console.log('[DEBUG schedule]', JSON.stringify(rows, null, 2));
-    if (rows && rows.length > 0) {
-      const sample = rows[0];
-      console.log('[DEBUG schedule sample]', {
-        id: sample.id,
-        start_date: sample.start_date,
-        start_date_type: typeof sample.start_date,
-        end_date: sample.end_date,
-        end_date_type: typeof sample.end_date,
-        start_date_value: sample.start_date ? new Date(sample.start_date).toISOString() : null,
-        end_date_value: sample.end_date ? new Date(sample.end_date).toISOString() : null,
-      });
-    }
-    
-    res.json(rows);
-  });
+  try {
+    const rotationsQuery = `
+      SELECT 
+        r.*,
+        u.name as unit_name,
+        u.duration_days,
+        u.workload
+      FROM rotations r
+      LEFT JOIN units u ON r.unit_id = u.id
+      WHERE r.intern_id = ?
+      ORDER BY r.start_date
+    `;
+
+    const unitsQuery = `
+      SELECT id, name, duration_days, workload, position
+      FROM units
+      ORDER BY COALESCE(position, 2147483647) ASC, id ASC
+    `;
+
+    const [rotations, units] = await Promise.all([
+      allAsync(rotationsQuery, [id]),
+      allAsync(unitsQuery, []),
+    ]);
+
+    const schedule = buildInternSchedule({
+      internId: Number(id),
+      rotations,
+      orderedUnits: units,
+    });
+
+    res.json(schedule);
+  } catch (err) {
+    console.error('Error fetching schedule:', err);
+    res.status(500).json({ error: 'Failed to fetch schedule' });
+  }
 });
 
 // POST /api/interns/:id/force-auto-advance - Manually trigger auto-advance (for testing/debugging)
@@ -1115,7 +1116,7 @@ async function ensureInternStatusIsCorrect(internId) {
     if (!intern) return;
     
     // Get all units
-    const units = await allAsync('SELECT * FROM units ORDER BY id', []);
+    const units = await allAsync('SELECT * FROM units ORDER BY COALESCE(position, 2147483647), id ASC', []);
     if (units.length === 0) return;
     
     // Get all rotations for this intern
@@ -1204,7 +1205,7 @@ async function autoAdvanceInternRotation(internId) {
   
   // Get all units in order (rotation sequence)
   const units = await new Promise((resolve, reject) => {
-    db.all('SELECT * FROM units ORDER BY id', [], (err, rows) => {
+    db.all('SELECT * FROM units ORDER BY COALESCE(position, 2147483647), id ASC', [], (err, rows) => {
       if (err) reject(err);
       else resolve(rows || []);
     });
@@ -1534,7 +1535,7 @@ async function generateRotationsForIntern(internId, batch, start_date) {
     
     // Get all units ordered by ID for consistent round-robin sequence
     const units = await new Promise((resolve, reject) => {
-      db.all('SELECT * FROM units ORDER BY id ASC', [], (err, rows) => {
+      db.all('SELECT * FROM units ORDER BY COALESCE(position, 2147483647), id ASC', [], (err, rows) => {
         if (err) reject(err);
         else resolve(rows || []);
       });

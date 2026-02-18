@@ -26,18 +26,22 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
     queryFn: () => api.getInternSchedule(intern.id),
   });
 
+  const scheduleRows = React.useMemo(() => (
+    Array.isArray(internSchedule) ? internSchedule : (internSchedule?.rotations || [])
+  ), [internSchedule]);
+
   // Get units the intern has done in the PAST (exclude current and future rotations)
   // IMPORTANT: When reassigning FROM a unit, that unit should become available again
   // So we DON'T exclude the current unit - reassigning from it makes it available for future rotations
   const today = format(new Date(), 'yyyy-MM-dd');
-  const pastRotations = internSchedule?.filter(r => {
+  const pastRotations = scheduleRows.filter(r => {
     const endDate = r.end_date ? format(parseISO(r.end_date), 'yyyy-MM-dd') : null;
     const rotationId = r.id;
     const currentRotationId = currentRotation?.id;
     // Exclude the current rotation from past rotations (even if it ended in the past)
     // because reassigning from it makes that unit available again
     return endDate && endDate < today && rotationId !== currentRotationId;
-  }) || [];
+  });
   
   const pastUnitIds = pastRotations.map(r => r.unit_id);
   

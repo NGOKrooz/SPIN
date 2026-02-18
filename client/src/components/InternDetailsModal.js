@@ -6,7 +6,7 @@ import { api } from '../services/api';
 import { formatDate } from '../lib/utils';
 
 export default function InternDetailsModal({ intern, onClose }) {
-  const [schedule, setSchedule] = useState([]);
+  const [schedule, setSchedule] = useState({ rotations: [], completed: [], current: null, upcoming: [] });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -15,10 +15,14 @@ export default function InternDetailsModal({ intern, onClose }) {
       try {
         const data = await api.getInternSchedule(intern.id);
         if (mounted) {
-          setSchedule(data || []);
+          if (Array.isArray(data)) {
+            setSchedule({ rotations: data, completed: [], current: null, upcoming: [] });
+          } else {
+            setSchedule({ rotations: [], completed: [], current: null, upcoming: [], ...(data || {}) });
+          }
         }
       } catch (e) {
-        setSchedule([]);
+        setSchedule({ rotations: [], completed: [], current: null, upcoming: [] });
       } finally {
         if (mounted) setLoading(false);
       }
@@ -26,9 +30,16 @@ export default function InternDetailsModal({ intern, onClose }) {
     return () => { mounted = false; };
   }, [intern.id]);
 
-  const completedUnits = schedule.filter((r) => new Date(r.end_date) < new Date());
-  const currentUnits = schedule.filter((r) => new Date(r.start_date) <= new Date() && new Date(r.end_date) >= new Date());
-  const remainingUnits = schedule.filter((r) => new Date(r.start_date) > new Date());
+  const allRotations = schedule.rotations || [];
+  const completedUnits = (schedule.completed && schedule.completed.length > 0)
+    ? schedule.completed
+    : allRotations.filter((r) => new Date(r.end_date) < new Date());
+  const currentUnits = schedule.current
+    ? [schedule.current]
+    : allRotations.filter((r) => new Date(r.start_date) <= new Date() && new Date(r.end_date) >= new Date());
+  const remainingUnits = (schedule.upcoming && schedule.upcoming.length > 0)
+    ? schedule.upcoming
+    : allRotations.filter((r) => new Date(r.start_date) > new Date());
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
