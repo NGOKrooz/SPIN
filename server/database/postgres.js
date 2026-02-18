@@ -193,6 +193,25 @@ async function initializeDatabase() {
       )
     `);
 
+    const internCreatedAtCheck = await client.query(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'interns' AND column_name = 'created_at'
+    `);
+
+    if (internCreatedAtCheck.rows.length === 0) {
+      try {
+        await client.query(`
+          ALTER TABLE interns ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        `);
+        console.log('interns.created_at column added');
+      } catch (err) {
+        console.error('Error adding interns.created_at column:', err);
+        await client.query('ROLLBACK');
+        throw err;
+      }
+    }
+
     // Units table
     await client.query(`
       CREATE TABLE IF NOT EXISTS units (

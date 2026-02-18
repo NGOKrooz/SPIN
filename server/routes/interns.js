@@ -3,6 +3,7 @@ const { body, validationResult } = require('express-validator');
 const db = require('../database/dbWrapper');
 const { addDays, format, parseISO } = require('date-fns');
 const { buildInternSchedule } = require('../services/internScheduleService');
+const { logRecentUpdateSafe } = require('../services/recentUpdatesService');
 // Lazy load to avoid circular dependency - rotations.js is loaded after interns.js in index.js
 let getNextUnitForIntern, getRoundRobinCounter, setRoundRobinCounter;
 function getRotationHelpers() {
@@ -83,7 +84,7 @@ const validateIntern = [
 
 // GET /api/interns - Get all interns
 router.get('/', (req, res) => {
-  const { batch, status, unit_id } = req.query;
+  const { batch, status, unit_id, sort } = req.query;
   
   let query = `
     SELECT 
@@ -119,7 +120,9 @@ router.get('/', (req, res) => {
     query += ' WHERE ' + conditions.join(' AND ');
   }
   
-  query += ' GROUP BY i.id ORDER BY i.start_date DESC';
+  const sortMode = String(sort || 'newest').toLowerCase() === 'oldest' ? 'oldest' : 'newest';
+  const orderDirection = sortMode === 'oldest' ? 'ASC' : 'DESC';
+  query += ` GROUP BY i.id ORDER BY COALESCE(i.created_at, i.updated_at, NOW()) ${orderDirection}, i.id ${orderDirection}`;
   
   db.all(query, params, async (err, rows) => {
     if (err) {
@@ -395,6 +398,7 @@ router.post('/', validateIntern, async (req, res) => {
                   unitName: unit?.name || null,
                   details: `New intern added to ${unit?.name || 'unit'}`
                 });
+                await logRecentUpdateSafe('intern_created', `Intern ${name} was added.`);
               } catch (logErr) {
                 console.error('Error logging activity:', logErr);
               }
@@ -422,15 +426,7 @@ router.post('/', validateIntern, async (req, res) => {
             internName: name,
             details: `New intern added${autoGenerate ? ' with auto-generated rotations' : ''}`
           }).catch(err => console.error('Error logging activity:', err));
-          
-          // Also log to simple activity_logs table
-          db.run(
-            'INSERT INTO activity_logs (action, description) VALUES (?, ?)',
-            ['intern_created', `Intern "${name}" (${finalBatch}) was created`],
-            (logErr) => {
-              if (logErr) console.error('Error logging to activity_logs:', logErr);
-            }
-          );
+          logRecentUpdateSafe('intern_created', `Intern ${name} was added.`);
 
           // Send response first, then generate rotations in background
           res.status(201).json({
@@ -496,6 +492,7 @@ router.put('/:id', validateIntern, (req, res) => {
     if (this.changes === 0) {
       return res.status(404).json({ error: 'Intern not found' });
     }
+    logRecentUpdateSafe('intern_updated', `Intern ${name} was updated.`);
     
     res.json({ message: 'Intern updated successfully' });
   });
@@ -915,6 +912,10 @@ router.post('/:id/extend', [
         unitName: unit?.name || null,
         details: detailsMessage
       });
+      await logRecentUpdateSafe(
+        'intern_extended',
+        `${internName} rotation extended by ${Math.abs(daysDifference)} day(s).`
+      );
     } catch (logErr) {
       console.error(`[ExtendInternship] Error logging activity:`, logErr);
     }
@@ -973,23 +974,25 @@ router.get('/activities/recent', async (req, res) => {
 });
 
 // DELETE /api/interns/:id - Delete intern
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   const { id } = req.params;
-  
-  const query = 'DELETE FROM interns WHERE id = ?';
-  
-  db.run(query, [id], function(err) {
-    if (err) {
-      console.error('Error deleting intern:', err);
-      return res.status(500).json({ error: 'Failed to delete intern' });
-    }
-    
-    if (this.changes === 0) {
+  try {
+    const intern = await getAsync('SELECT name FROM interns WHERE id = ?', [id]);
+    if (!intern) {
       return res.status(404).json({ error: 'Intern not found' });
     }
-    
+
+    const result = await runAsync('DELETE FROM interns WHERE id = ?', [id]);
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Intern not found' });
+    }
+
+    await logRecentUpdateSafe('intern_deleted', `Intern ${intern.name} was deleted.`);
     res.json({ message: 'Intern deleted successfully' });
-  });
+  } catch (err) {
+    console.error('Error deleting intern:', err);
+    res.status(500).json({ error: 'Failed to delete intern' });
+  }
 });
 
 // GET /api/interns/:id/schedule - Get intern's rotation schedule
@@ -1060,6 +1063,7 @@ router.post('/:id/force-auto-advance', async (req, res) => {
   try {
     console.log(`[ForceAutoAdvance] Manually triggering auto-advance for intern ${id}`);
     const result = await autoAdvanceInternRotation(id);
+    await logRecentUpdateSafe('rotation_auto_advance', `Manual auto-advance triggered for intern ${id}.`);
     
     // Get updated schedule
     const query = `
@@ -1184,6 +1188,9 @@ async function ensureInternStatusIsCorrect(internId) {
         'UPDATE interns SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
         [correctStatus, internId]
       );
+      if (correctStatus === 'Completed') {
+        await logRecentUpdateSafe('intern_completed', `Intern ${intern.name} has completed all rotations.`);
+      }
     }
   } catch (err) {
     console.error(`[ensureInternStatus] Error correcting status for intern ${internId}:`, err);
@@ -1437,6 +1444,7 @@ async function autoAdvanceInternRotation(internId) {
           }
         );
       });
+      await logRecentUpdateSafe('intern_completed', `Intern ${intern.name} has completed all rotations.`);
     }
     
     return false; // Stop creating new rotations

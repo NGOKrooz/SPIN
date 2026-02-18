@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const db = require('../database/dbWrapper');
 const { addDays, format, parseISO, differenceInDays } = require('date-fns');
+const { logRecentUpdateSafe } = require('../services/recentUpdatesService');
 
 // Simple in-memory counter for round-robin (resets on server restart - acceptable)
 let roundRobinOffset = 0;
@@ -467,6 +468,8 @@ router.post('/', validateRotation, (req, res) => {
         console.error('Error creating rotation:', err);
         return res.status(500).json({ error: 'Failed to create rotation' });
       }
+
+      logRecentUpdateSafe('rotation_created', `Manual rotation was created for intern ${intern_id}.`);
       
       res.status(201).json({
         id: this.lastID,
@@ -484,6 +487,7 @@ router.post('/', validateRotation, (req, res) => {
 router.post('/auto-advance', async (req, res) => {
   try {
     const result = await autoAdvanceRotations();
+    await logRecentUpdateSafe('rotation_auto_advance', `Auto-advance ran. ${result.advanced} rotation(s) created.`);
     res.json({
       message: 'Auto-advance completed',
       ...result
@@ -545,6 +549,8 @@ router.post('/fix-end-dates', async (req, res) => {
       }
     }
 
+    await logRecentUpdateSafe('rotation_fix_end_dates', `Rotation end-date fix ran. ${fixed} rotation(s) updated.`);
+
     res.json({
       message: `Fixed ${fixed} rotation(s), ${skipped} already correct`,
       fixed,
@@ -587,7 +593,7 @@ router.post('/generate', async (req, res) => {
     });
     
     // Get all units - order by id for consistent round-robin sequence
-    const unitsQuery = 'SELECT * FROM units ORDER BY id ASC';
+    const unitsQuery = 'SELECT * FROM units ORDER BY COALESCE(position, 2147483647), id ASC';
     const units = await new Promise((resolve, reject) => {
       db.all(unitsQuery, [], (err, rows) => {
         if (err) reject(err);
@@ -654,6 +660,7 @@ router.post('/generate', async (req, res) => {
       count: generatedRotations.length,
       rotations: generatedRotations
     });
+    await logRecentUpdateSafe('rotation_generated', `Automatic rotations generated (${generatedRotations.length} records).`);
     
   } catch (error) {
     console.error('Error generating rotations:', error);
@@ -825,13 +832,12 @@ router.put('/:id', validateRotationUpdate, async (req, res) => {
         details: `Reassigned from ${oldUnit?.name || 'previous unit'} to ${newUnit?.name || 'new unit'}`
       });
       
-      // Also log to simple activity_logs table
-      if (unitChanged) {
-        await runAsync(
-          'INSERT INTO activity_logs (action, description) VALUES (?, ?)',
-          ['intern_moved', `${intern?.name || 'Intern'} moved from ${oldUnit?.name || 'previous unit'} to ${newUnit?.name || 'new unit'}`]
-        );
-      }
+      await logRecentUpdateSafe(
+        unitChanged ? 'intern_moved' : 'rotation_updated',
+        unitChanged
+          ? `Intern ${intern?.name || 'Unknown'} moved from ${oldUnit?.name || 'previous unit'} to ${newUnit?.name || 'new unit'}.`
+          : `Rotation ${id} was updated.`
+      );
     } catch (logErr) {
       console.error(`[ReassignRotation] Error logging activity:`, logErr);
     }
@@ -844,23 +850,26 @@ router.put('/:id', validateRotationUpdate, async (req, res) => {
 });
 
 // DELETE /api/rotations/:id - Delete rotation
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   const { id } = req.params;
-  
-  const query = 'DELETE FROM rotations WHERE id = ?';
-  
-  db.run(query, [id], function(err) {
-    if (err) {
-      console.error('Error deleting rotation:', err);
-      return res.status(500).json({ error: 'Failed to delete rotation' });
-    }
-    
-    if (this.changes === 0) {
+
+  try {
+    const rotation = await getAsync('SELECT intern_id FROM rotations WHERE id = ?', [id]);
+    if (!rotation) {
       return res.status(404).json({ error: 'Rotation not found' });
     }
-    
+
+    const result = await runAsync('DELETE FROM rotations WHERE id = ?', [id]);
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Rotation not found' });
+    }
+
+    await logRecentUpdateSafe('rotation_deleted', `Rotation ${id} was deleted.`);
     res.json({ message: 'Rotation deleted successfully' });
-  });
+  } catch (err) {
+    console.error('Error deleting rotation:', err);
+    res.status(500).json({ error: 'Failed to delete rotation' });
+  }
 });
 
 // Helper function to get the next unit for an intern using flexible, fair round-robin logic
@@ -978,7 +987,7 @@ async function autoAdvanceRotations() {
   
   // Get all units in order (rotation sequence)
   const units = await new Promise((resolve, reject) => {
-    db.all('SELECT * FROM units ORDER BY id', [], (err, rows) => {
+    db.all('SELECT * FROM units ORDER BY COALESCE(position, 2147483647), id ASC', [], (err, rows) => {
       if (err) reject(err);
       else resolve(rows || []);
     });
@@ -1223,6 +1232,7 @@ async function autoAdvanceRotations() {
             );
           });
             console.log(`[AutoAdvance] ✅ Intern ${intern.id} (${intern.name}) marked as Completed`);
+            await logRecentUpdateSafe('intern_completed', `Intern ${intern.name} has completed all rotations.`);
         } catch (err) {
           console.error(`[AutoAdvance] Error marking intern ${intern.id} as Completed:`, err);
           }

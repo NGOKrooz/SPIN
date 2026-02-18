@@ -1,6 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const db = require('../database/dbWrapper');
+const { logRecentUpdateSafe } = require('../services/recentUpdatesService');
 
 const router = express.Router();
 
@@ -114,6 +115,7 @@ const handleReorder = (req, res) => {
             console.error('Error committing reorder transaction:', commitErr);
             return res.status(500).json({ error: 'Failed to save unit order' });
           }
+          logRecentUpdateSafe('unit_reordered', 'Unit order was updated.');
           res.json({ message: 'Unit order updated' });
         });
       }
@@ -271,14 +273,7 @@ router.post('/', validateUnitPayload, async (req, res) => {
       });
     });
     
-    // Log activity
-    db.run(
-      'INSERT INTO activity_logs (action, description) VALUES (?, ?)',
-      ['unit_created', `Unit "${finalName}" was created`],
-      (logErr) => {
-        if (logErr) console.error('Error logging activity:', logErr);
-      }
-    );
+    logRecentUpdateSafe('unit_created', `Unit ${finalName} was created.`);
     
     res.status(201).json({
       id: insertResult.id,
@@ -342,6 +337,7 @@ router.put('/:id', validateUnitPayload, (req, res) => {
     if (this.changes === 0) {
       return res.status(404).json({ error: 'Unit not found' });
     }
+    logRecentUpdateSafe('unit_updated', `Unit ${finalName} was updated.`);
     
     res.json({ message: 'Unit updated successfully' });
   });
@@ -392,6 +388,7 @@ router.post('/:id/workload', [
           return res.status(500).json({ error: 'Failed to save workload history' });
         }
         
+        logRecentUpdateSafe('unit_workload_updated', `Unit workload was updated to ${workload}.`);
         res.json({ message: 'Workload updated successfully' });
       });
     });
@@ -454,6 +451,7 @@ router.post('/:id/patient-count', [
           return res.status(500).json({ error: 'Failed to save workload history' });
         }
         
+        logRecentUpdateSafe('unit_workload_updated', `Unit patient count changed to ${patient_count} and workload is ${workload}.`);
         res.json({ 
           message: 'Patient count and workload updated successfully',
           workload: workload,
@@ -590,32 +588,21 @@ router.delete('/:id', (req, res) => {
                 ? `Unit "${unitName}" deleted. ${assignedCount} interns were unassigned.`
                 : `Unit "${unitName}" was deleted.`;
 
-              db.run(
-                'INSERT INTO activity_logs (action, description) VALUES (?, ?)',
-                ['unit_deleted', activityMessage],
-                (logErr) => {
-                  if (logErr) {
-                    db.run('ROLLBACK');
-                    console.error('Error logging activity:', logErr);
-                    return res.status(500).json({ error: 'Failed to log activity' });
-                  }
-
-                  // Step 6: Commit transaction
-                  db.run('COMMIT', (commitErr) => {
-                    if (commitErr) {
-                      db.run('ROLLBACK');
-                      console.error('Error committing transaction:', commitErr);
-                      return res.status(500).json({ error: 'Failed to commit transaction' });
-                    }
-
-                    res.json({
-                      success: true,
-                      message: 'Unit deleted successfully',
-                      internsUnassigned: assignedCount,
-                    });
-                  });
+              // Step 6: Commit transaction
+              db.run('COMMIT', async (commitErr) => {
+                if (commitErr) {
+                  db.run('ROLLBACK');
+                  console.error('Error committing transaction:', commitErr);
+                  return res.status(500).json({ error: 'Failed to commit transaction' });
                 }
-              );
+
+                await logRecentUpdateSafe('unit_deleted', activityMessage);
+                res.json({
+                  success: true,
+                  message: 'Unit deleted successfully',
+                  internsUnassigned: assignedCount,
+                });
+              });
             });
           });
         });

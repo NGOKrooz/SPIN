@@ -17,6 +17,7 @@ export default function Interns() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterBatch, setFilterBatch] = useState('ALL');
   const [filterStatus, setFilterStatus] = useState('ALL');
+  const [sortByDate, setSortByDate] = useState(() => localStorage.getItem('internsSortByDate') || 'newest');
   const [showForm, setShowForm] = useState(false);
   const [editingIntern, setEditingIntern] = useState(null);
   const [viewingIntern, setViewingIntern] = useState(null);
@@ -25,12 +26,17 @@ export default function Interns() {
   const queryClient = useQueryClient();
 
   const { data: interns, isLoading, refetch } = useQuery({
-    queryKey: ['interns', { batch: filterBatch, status: filterStatus }],
+    queryKey: ['interns', { batch: filterBatch, status: filterStatus, sort: sortByDate }],
     queryFn: () => api.getInterns({
       batch: filterBatch === 'ALL' ? undefined : filterBatch,
       status: ['ALL', 'Inactive'].includes(filterStatus) ? undefined : filterStatus,
+      sort: sortByDate,
     }),
   });
+
+  React.useEffect(() => {
+    localStorage.setItem('internsSortByDate', sortByDate);
+  }, [sortByDate]);
 
   const deleteMutation = useMutation({
     mutationFn: api.deleteIntern,
@@ -135,7 +141,7 @@ export default function Interns() {
           <CardTitle>Filters</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-5">
             <div>
               <Label htmlFor="search">Search</Label>
               <Input
@@ -173,6 +179,18 @@ export default function Interns() {
                 </SelectContent>
               </Select>
             </div>
+            <div>
+              <Label htmlFor="sort-date">Sort by Date</Label>
+              <Select value={sortByDate} onValueChange={setSortByDate}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Newest first" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="newest">Newest</SelectItem>
+                  <SelectItem value="oldest">Oldest</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="flex items-end">
               <Button 
                 variant="outline" 
@@ -180,6 +198,7 @@ export default function Interns() {
                   setSearchTerm('');
                   setFilterBatch('ALL');
                   setFilterStatus('ALL');
+                  setSortByDate('newest');
                 }}
               >
                 Clear Filters

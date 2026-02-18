@@ -1,6 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const db = require('../database/dbWrapper');
+const { logRecentUpdateSafe } = require('../services/recentUpdatesService');
 
 const router = express.Router();
 
@@ -95,6 +96,19 @@ router.put(
 
       if (updates.length > 0) {
         await Promise.all(updates);
+      }
+
+      if (req.body.rotation_duration_weeks !== undefined) {
+        await logRecentUpdateSafe(
+          'settings_rotation_duration_changed',
+          `Rotation duration changed to ${req.body.rotation_duration_weeks} week(s).`
+        );
+      }
+      if (req.body.allow_reassignment !== undefined) {
+        await logRecentUpdateSafe(
+          'settings_reassignment_toggled',
+          `Reassignment was ${req.body.allow_reassignment ? 'enabled' : 'disabled'}.`
+        );
       }
 
       const [rotationDurationWeeks, allowReassignment, autoLogActivity] = await Promise.all([
