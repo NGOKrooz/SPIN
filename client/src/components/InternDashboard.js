@@ -233,14 +233,14 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   }, [intern.id, internState?.extension_days, invalidateInternLists, onInternUpdated, queryClient]);
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
       <div className="w-full max-w-6xl max-h-[90vh] overflow-y-auto">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+          <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:space-y-0 pb-4">
             <div>
               <CardTitle className="flex items-center space-x-2">
                 <User className="h-5 w-5" />
-                <span>{currentIntern?.name}'s Dashboard</span>
+                <span className="break-words">{currentIntern?.name}'s Dashboard</span>
               </CardTitle>
               <CardDescription>
                 Complete internship overview and rotation details
@@ -252,7 +252,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
           </CardHeader>
           <CardContent className="space-y-6">
             {/* Actions */}
-            <div className="flex items-center justify-end space-x-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <Button 
                 variant="outline" 
                 onClick={() => {
@@ -348,7 +348,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
               }}>Download PDF</Button>
             </div>
             {/* Intern Overview */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <Card>
                 <CardContent className="p-4">
                   <div className="flex items-center space-x-2">
@@ -413,7 +413,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                 <CardContent>
                   <div className="space-y-3">
                     {currentRotations.map((rotation) => (
-                      <div key={rotation.id} className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+                      <div key={rotation.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 bg-blue-50 rounded-lg">
                         <div>
                           <h4 className="font-medium">{rotation.unit_name}</h4>
                           <p className="text-sm text-gray-600">
@@ -480,7 +480,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                 {upcomingRotations.length > 0 ? (
                   <div className="space-y-2">
                     {upcomingRotations.map((rotation) => (
-                      <div key={rotation.id || `upcoming-${rotation.unit_id}`} className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
+                      <div key={rotation.id || `upcoming-${rotation.unit_id}`} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 bg-yellow-50 rounded-lg">
                         <div>
                           <h4 className="font-medium">{rotation.unit_name}</h4>
                           <p className="text-sm text-gray-600">
@@ -520,7 +520,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                 {completedRotations.length > 0 ? (
                   <div className="space-y-2">
                     {completedRotations.map((rotation) => (
-                      <div key={rotation.id} className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+                      <div key={rotation.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 bg-green-50 rounded-lg">
                         <div>
                           <h4 className="font-medium">{rotation.unit_name}</h4>
                           <p className="text-sm text-gray-600">
@@ -559,7 +559,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                 {remainingUnits.length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {remainingUnits.map((unit) => (
-                      <div key={unit.id} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div key={unit.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 border rounded-lg">
                         <div>
                           <h4 className="font-medium">{unit.name}</h4>
                           <p className="text-sm text-gray-600">{rotationDurationDays} days</p>

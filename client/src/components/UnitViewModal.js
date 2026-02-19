@@ -114,16 +114,16 @@ export default function UnitViewModal({ unit, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
       <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+        <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:space-y-0 pb-4">
           <CardTitle className="flex items-center space-x-2">
             <Users className="h-5 w-5" />
             <span>Unit Details</span>
           </CardTitle>
-          <div className="flex items-center space-x-2">
-            <Button variant="outline" size="sm" onClick={handleExportCsv}>Export CSV</Button>
-            <Button variant="outline" size="sm" onClick={handleDownloadPdf}>Download PDF</Button>
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={handleExportCsv}>Export CSV</Button>
+            <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={handleDownloadPdf}>Download PDF</Button>
             <Button variant="ghost" size="icon" onClick={onClose}>
               <X className="h-4 w-4" />
             </Button>
@@ -141,7 +141,7 @@ export default function UnitViewModal({ unit, onClose }) {
             </div>
           ) : (
             <>
-              <div className="text-xl font-semibold text-gray-900">{activeUnit.name}</div>
+              <div className="text-lg sm:text-xl font-semibold text-gray-900 break-words">{activeUnit.name}</div>
 
               <div className="space-y-2">
                 <div className="text-sm font-medium text-gray-700">Current Interns</div>
@@ -149,7 +149,7 @@ export default function UnitViewModal({ unit, onClose }) {
                   <div className="text-sm text-gray-500">No current interns</div>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
+                    <table className="w-full text-sm min-w-[560px]">
                       <thead>
                         <tr className="text-left text-gray-500 border-b">
                           <th className="py-2">Name</th>
@@ -183,7 +183,7 @@ export default function UnitViewModal({ unit, onClose }) {
                   <div className="text-sm text-gray-500">No past interns</div>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
+                    <table className="w-full text-sm min-w-[560px]">
                       <thead>
                         <tr className="text-left text-gray-500 border-b">
                           <th className="py-2">Name</th>

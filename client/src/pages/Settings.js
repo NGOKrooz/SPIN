@@ -79,8 +79,8 @@ export default function Settings() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
-        <p className="text-gray-600">Manage core system configuration</p>
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Settings</h1>
+        <p className="text-sm sm:text-base text-gray-600">Manage core system configuration</p>
       </div>
 
       <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
@@ -142,7 +142,7 @@ export default function Settings() {
             </label>
           </div>
 
-          <div className="flex items-center justify-end space-x-3 pt-4 border-t">
+          <div className="flex items-center justify-end gap-3 pt-4 border-t">
             <Button
               onClick={handleSave}
               disabled={updateMutation.isPending || !hasChanges}
@@ -163,8 +163,8 @@ export default function Settings() {
           </CardTitle>
           <CardDescription>Sign in or sign out of the admin session</CardDescription>
         </CardHeader>
-        <CardContent className="flex items-center justify-between">
-          <div className="space-x-2">
+        <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
             <Button
               variant="destructive"
               onClick={() => {
@@ -180,7 +180,7 @@ export default function Settings() {
               <LogOut className="h-4 w-4 mr-2" /> Sign Out
             </Button>
           </div>
-          <div className="text-xs text-gray-500">
+          <div className="text-xs text-gray-500 sm:text-right">
             {localStorage.getItem('role') === 'admin' ? 'Authenticated as admin' : 'Not signed in'}
           </div>
         </CardContent>

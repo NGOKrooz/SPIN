@@ -1,13 +1,31 @@
 import { clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
 
+function parseDateInput(date) {
+  if (!date) return null;
+  if (date instanceof Date && !Number.isNaN(date.getTime())) return new Date(date.getTime());
+
+  if (typeof date === 'string') {
+    const dateOnlyMatch = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dateOnlyMatch) {
+      const [, year, month, day] = dateOnlyMatch;
+      const parsed = new Date(Number(year), Number(month) - 1, Number(day));
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+  }
+
+  const parsed = new Date(date);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 export function cn(...inputs) {
   return twMerge(clsx(inputs))
 }
 
 export function formatDate(date) {
   if (!date) return '';
-  const d = new Date(date);
+  const d = parseDateInput(date);
+  if (!d) return '';
   if (isNaN(d.getTime())) return '';
   return d.toLocaleDateString('en-US', {
     year: 'numeric',
@@ -18,7 +36,8 @@ export function formatDate(date) {
 
 export function formatDateTime(date) {
   if (!date) return '';
-  const d = new Date(date);
+  const d = parseDateInput(date);
+  if (!d) return '';
   if (isNaN(d.getTime())) return '';
   return d.toLocaleString('en-US', {
     year: 'numeric',
@@ -67,9 +86,18 @@ export function calculateDaysBetween(startDate, endDate) {
   return Math.floor((e - s) / (1000 * 60 * 60 * 24)) + 1; // +1 for inclusive days
 }
 
+export function addWeeksAccurate(startDate, durationInWeeks) {
+  const base = parseDateInput(startDate);
+  if (!base) return null;
+  const weeks = Number(durationInWeeks) || 0;
+  const millisecondsPerDay = 24 * 60 * 60 * 1000;
+  return new Date(base.getTime() + (weeks * 7 * millisecondsPerDay));
+}
+
 // Helper function to normalize date to start of day for proper date-only comparisons
 export function normalizeDate(date) {
-  const d = new Date(date);
+  const d = parseDateInput(date);
+  if (!d) return new Date(NaN);
   d.setHours(0, 0, 0, 0);
   return d;
 }
@@ -85,28 +113,31 @@ export function compareDates(date1, date2) {
 // Uses string comparison to avoid timezone issues
 export function isBeforeToday(date) {
   if (!date) return false;
-  const dateStr = typeof date === 'string' ? date.split('T')[0] : new Date(date).toISOString().split('T')[0];
-  const todayStr = new Date().toISOString().split('T')[0];
-  return dateStr < todayStr;
+  const parsed = normalizeDate(date);
+  if (Number.isNaN(parsed.getTime())) return false;
+  const today = normalizeDate(new Date());
+  return parsed < today;
 }
 
 // Check if a date is after today (date-only comparison)
 // Uses string comparison to avoid timezone issues
 export function isAfterToday(date) {
   if (!date) return false;
-  const dateStr = typeof date === 'string' ? date.split('T')[0] : new Date(date).toISOString().split('T')[0];
-  const todayStr = new Date().toISOString().split('T')[0];
-  return dateStr > todayStr;
+  const parsed = normalizeDate(date);
+  if (Number.isNaN(parsed.getTime())) return false;
+  const today = normalizeDate(new Date());
+  return parsed > today;
 }
 
 // Check if a date range includes today
 // Uses string comparison to avoid timezone issues
 export function includesToday(startDate, endDate) {
   if (!startDate || !endDate) return false;
-  const startStr = typeof startDate === 'string' ? startDate.split('T')[0] : new Date(startDate).toISOString().split('T')[0];
-  const endStr = typeof endDate === 'string' ? endDate.split('T')[0] : new Date(endDate).toISOString().split('T')[0];
-  const todayStr = new Date().toISOString().split('T')[0];
-  return startStr <= todayStr && endStr >= todayStr;
+  const parsedStart = normalizeDate(startDate);
+  const parsedEnd = normalizeDate(endDate);
+  if (Number.isNaN(parsedStart.getTime()) || Number.isNaN(parsedEnd.getTime())) return false;
+  const today = normalizeDate(new Date());
+  return parsedStart <= today && parsedEnd >= today;
 }
 
 export function getStatusColor(status) {

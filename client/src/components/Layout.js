@@ -7,9 +7,12 @@ import {
   Building2, 
   UserPlus, 
   Settings,
-  Stethoscope
+  Stethoscope,
+  MessageCircle,
+  X
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { Button } from './ui/button';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -68,7 +71,7 @@ export default function Layout() {
   }
 
   return (
-    <div className="min-h-screen app-bg">
+    <div className="min-h-screen app-bg overflow-x-hidden">
       {/* Mobile top bar */}
       <div className="md:hidden sticky top-0 z-50 flex h-14 items-center justify-between bg-white/90 px-4 shadow-sm backdrop-blur-md">
         <button
@@ -106,6 +109,20 @@ export default function Layout() {
       >
         <div className="flex h-full flex-col">
           {/* Logo */}
+          <div className="flex h-16 items-center justify-between px-4 glass-header md:hidden">
+            <div className="flex items-center space-x-2">
+              <div className="hospital-gradient rounded-lg p-2">
+                <Stethoscope className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <h1 className="text-lg font-bold text-gray-900 leading-tight">SPIN</h1>
+                <p className="text-[11px] text-gray-500 leading-tight">Internship Scheduler</p>
+              </div>
+            </div>
+            <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
           <div className="hidden h-16 items-center justify-center glass-header md:flex">
             <div className="flex items-center space-x-2">
               <div className="hospital-gradient rounded-lg p-2">
@@ -114,6 +131,8 @@ export default function Layout() {
               <div>
                 <h1 className="text-xl font-bold text-gray-900">SPIN</h1>
                 <p className="text-xs text-gray-500">Internship Scheduler</p>
+                <p className="text-[10px] text-gray-400 leading-tight mt-0.5">UNTH Ituku Ozalla</p>
+                <p className="text-[10px] text-gray-400 leading-tight">Physiotherapy Department</p>
               </div>
             </div>
           </div>
@@ -148,14 +167,15 @@ export default function Layout() {
 
           {/* Footer */}
           <div className="border-t border-gray-200 p-4">
-            <div className="text-center">
-              <p className="text-xs text-gray-500">
-                UNTH Ituku Ozalla
-              </p>
-              <p className="text-xs text-gray-400">
-                Physiotherapy Department
-              </p>
-            </div>
+            <a
+              href="https://wa.me/2349068361100"
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center justify-center space-x-2 rounded-md px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-green-700 transition-colors"
+            >
+              <MessageCircle className="h-4 w-4" />
+              <span>Contact Team</span>
+            </a>
           </div>
         </div>
       </div>

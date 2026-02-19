@@ -249,12 +249,12 @@ export default function Units() {
       </div>
 
       {/* Units Grid */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-2 xl:grid-cols-3">
         {filteredUnits.map((unit) => (
           <Card key={unit.id} className="hover:shadow-lg transition-shadow">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">{unit.name}</CardTitle>
+                <CardTitle className="text-lg break-words pr-2">{unit.name}</CardTitle>
                 <div className="flex items-center space-x-2">
                   <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getWorkloadColor(unit.workload)}`}>
                     {unit.workload}
@@ -277,9 +277,9 @@ export default function Units() {
                     {unit.intern_names.map((name, index) => {
                       const batch = name.includes('(A)') ? 'A' : 'B';
                       return (
-                        <div key={index} className="flex items-center space-x-2 text-sm">
+                        <div key={index} className="flex items-center space-x-2 text-sm min-w-0">
                           <div className={`w-2 h-2 rounded-full ${getBatchColor(batch)}`}></div>
-                          <span>{name.replace(' (A)', '').replace(' (B)', '')}</span>
+                          <span className="break-words">{name.replace(' (A)', '').replace(' (B)', '')}</span>
                         </div>
                       );
                     })}
@@ -303,10 +303,11 @@ export default function Units() {
               </div>
 
               {/* Actions */}
-              <div className="flex items-center justify-between pt-2 border-t">
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t">
                 <Button
                   variant="outline"
                   size="sm"
+                  className="flex-1 min-w-[100px]"
                   onClick={() => handleEdit(unit)}
                 >
                   <Edit className="h-4 w-4 mr-1" />
@@ -315,8 +316,8 @@ export default function Units() {
                 <Button
                   variant="outline"
                   size="sm"
+                  className="flex-1 min-w-[100px] text-red-600 hover:text-red-700 hover:border-red-300"
                   onClick={() => handleDelete(unit)}
-                  className="text-red-600 hover:text-red-700 hover:border-red-300"
                 >
                   <Trash2 className="h-4 w-4 mr-1" />
                   Delete
@@ -324,6 +325,7 @@ export default function Units() {
                 <Button
                   variant="outline"
                   size="sm"
+                  className="flex-1 min-w-[100px]"
                   onClick={() => {
                     setSelectedUnit(unit);
                   }}

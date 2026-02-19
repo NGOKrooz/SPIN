@@ -157,7 +157,7 @@ export default function BatchScheduleSection({ onSave, onUnsaved }) {
     <div className="space-y-6">
       <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
         <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
+          <CardTitle className="flex items-center space-x-2 text-lg sm:text-xl">
             <Calendar className="h-5 w-5" />
             <span>Batch Schedule Configuration</span>
           </CardTitle>
@@ -274,9 +274,9 @@ export default function BatchScheduleSection({ onSave, onUnsaved }) {
           {/* Calendar Preview */}
           <div className="p-4 bg-blue-50 rounded-lg">
             <h4 className="font-medium text-blue-900 mb-2">Current Off-Day Pattern</h4>
-            <div className="text-sm text-blue-800 space-y-1">
-              <div><strong>Weeks 1-2:</strong> Batch A off on {localData.batch_a_off_day_week1}, Batch B off on {localData.batch_b_off_day_week1}</div>
-              <div><strong>Weeks 3-4:</strong> Batch A off on {localData.batch_a_off_day_week3}, Batch B off on {localData.batch_b_off_day_week3}</div>
+            <div className="text-sm text-blue-800 space-y-2">
+              <div className="break-words"><strong>Weeks 1-2:</strong> Batch A off on {localData.batch_a_off_day_week1}, Batch B off on {localData.batch_b_off_day_week1}</div>
+              <div className="break-words"><strong>Weeks 3-4:</strong> Batch A off on {localData.batch_a_off_day_week3}, Batch B off on {localData.batch_b_off_day_week3}</div>
             </div>
           </div>
 
@@ -300,9 +300,9 @@ export default function BatchScheduleSection({ onSave, onUnsaved }) {
           )}
 
           {/* Action Buttons */}
-          <div className="flex items-center justify-end space-x-3 pt-4 border-t">
+          <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-end gap-3 pt-4 border-t">
             {hasChanges && (
-              <Button variant="outline" onClick={handleReset}>
+              <Button variant="outline" onClick={handleReset} className="w-full sm:w-auto">
                 <RotateCcw className="h-4 w-4 mr-2" />
                 Reset
               </Button>
@@ -312,7 +312,7 @@ export default function BatchScheduleSection({ onSave, onUnsaved }) {
               disabled={updateMutation.isPending || !hasChanges || 
                 localData.batch_a_off_day_week1 === localData.batch_b_off_day_week1 ||
                 localData.batch_a_off_day_week3 === localData.batch_b_off_day_week3}
-              className="hospital-gradient"
+              className="hospital-gradient w-full sm:w-auto"
             >
               <Save className="h-4 w-4 mr-2" />
               {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
