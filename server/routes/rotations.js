@@ -3,9 +3,15 @@ const { body, validationResult } = require('express-validator');
 const db = require('../database/dbWrapper');
 const { addDays, format, parseISO, differenceInDays } = require('date-fns');
 const { logRecentUpdateSafe } = require('../services/recentUpdatesService');
+const { getState, setState } = require('../database/systemState');
 
-// Simple in-memory counter for round-robin (resets on server restart - acceptable)
+// DB key used to persist the global round-robin counter across server restarts
+const ROTATION_COUNTER_KEY = 'rotation_global_counter';
+
+// Session-level cache: avoids a DB round-trip on every intern creation within the same
+// server session, while still loading the authoritative value from DB on first access.
 let roundRobinOffset = 0;
+let counterLoaded = false;
 
 // Helper functions for async database operations
 const runAsync = (query, params = []) =>
@@ -955,12 +961,86 @@ async function getNextUnitForIntern(internId, units, interns, lastRotation) {
   return null;
 }
 
-async function getRoundRobinCounter() {
-  return roundRobinOffset;
+/**
+ * Derive the global rotation counter from existing rotation data.
+ * Used to bootstrap the counter when it has not yet been persisted (e.g. first
+ * deployment, or when upgrading from a version that only kept the counter in
+ * memory).  We count the number of distinct interns who already have at least
+ * one auto-generated rotation — that equals the number of times the counter
+ * was incremented historically.
+ */
+async function deriveCounterFromExistingData() {
+  try {
+    const row = await new Promise((resolve, reject) => {
+      db.get(
+        'SELECT COUNT(DISTINCT intern_id) AS cnt FROM rotations WHERE is_manual_assignment = FALSE',
+        [],
+        (err, r) => { if (err) reject(err); else resolve(r); }
+      );
+    });
+    const count = parseInt(row?.cnt ?? 0, 10) || 0;
+    console.log(`[RoundRobinCounter] Bootstrapped counter from existing rotation data: ${count}`);
+    // Persist so subsequent restarts skip the bootstrap step
+    await setState(
+      ROTATION_COUNTER_KEY,
+      String(count),
+      'Global rotation round-robin counter (bootstrapped from existing data)'
+    );
+    roundRobinOffset = count;
+    counterLoaded = true;
+    return count;
+  } catch (err) {
+    console.error('[RoundRobinCounter] Bootstrap failed, defaulting to 0:', err);
+    return 0;
+  }
 }
 
+/**
+ * Return the current global round-robin counter.
+ * On the first call per server session the authoritative value is loaded from
+ * the database so that a server restart never resets the distribution sequence.
+ */
+async function getRoundRobinCounter() {
+  if (counterLoaded) {
+    return roundRobinOffset;
+  }
+  try {
+    const stored = await getState(ROTATION_COUNTER_KEY);
+    if (stored !== null && stored !== undefined && stored !== '') {
+      const parsed = parseInt(stored, 10);
+      if (!isNaN(parsed)) {
+        roundRobinOffset = parsed;
+        counterLoaded = true;
+        console.log(`[RoundRobinCounter] Loaded counter from DB: ${roundRobinOffset}`);
+        return roundRobinOffset;
+      }
+    }
+    // Counter not in DB yet — derive it from existing rotation data
+    return await deriveCounterFromExistingData();
+  } catch (err) {
+    console.error('[RoundRobinCounter] Failed to read from DB, using in-memory fallback:', err);
+    return roundRobinOffset;
+  }
+}
+
+/**
+ * Persist the updated round-robin counter both in memory and in the database
+ * so it survives server restarts.
+ */
 async function setRoundRobinCounter(value) {
   roundRobinOffset = value;
+  counterLoaded = true;
+  try {
+    await setState(
+      ROTATION_COUNTER_KEY,
+      String(value),
+      'Global rotation round-robin counter'
+    );
+    console.log(`[RoundRobinCounter] Persisted counter to DB: ${value}`);
+  } catch (err) {
+    // Non-fatal: the in-memory value is still correct for this session
+    console.error('[RoundRobinCounter] Failed to persist counter to DB (in-memory updated):', err);
+  }
 }
 
 // Helper function to automatically advance interns to their next rotation

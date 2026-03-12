@@ -116,23 +116,19 @@ export default function Layout() {
               </div>
               <div>
                 <h1 className="text-lg font-bold text-gray-900 leading-tight">SPIN</h1>
-                <p className="text-[11px] text-gray-500 leading-tight">Internship Scheduler</p>
               </div>
             </div>
             <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
               <X className="h-4 w-4" />
             </Button>
           </div>
-          <div className="hidden h-16 items-center justify-center glass-header md:flex">
+          <div className="hidden h-16 items-center px-4 glass-header md:flex">
             <div className="flex items-center space-x-2">
               <div className="hospital-gradient rounded-lg p-2">
                 <Stethoscope className="h-6 w-6 text-white" />
               </div>
               <div>
                 <h1 className="text-xl font-bold text-gray-900">SPIN</h1>
-                <p className="text-xs text-gray-500">Internship Scheduler</p>
-                <p className="text-[10px] text-gray-400 leading-tight mt-0.5">UNTH Ituku Ozalla</p>
-                <p className="text-[10px] text-gray-400 leading-tight">Physiotherapy Department</p>
               </div>
             </div>
           </div>

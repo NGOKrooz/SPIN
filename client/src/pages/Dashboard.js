@@ -134,9 +134,19 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-sm sm:text-base text-gray-600">{todayLabel}</p>
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-gray-200 bg-white/70 p-5 shadow-sm backdrop-blur sm:p-6">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">Internship Scheduler</h1>
+            <h2 className="text-base font-semibold text-gray-700 sm:text-lg">UNTH Ituku Ozalla</h2>
+            <p className="text-sm text-gray-500 sm:text-base">Physiotherapy Department</p>
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-2xl font-bold text-gray-900 sm:text-3xl">Dashboard</h3>
+          <p className="text-sm text-gray-600 sm:text-base">{todayLabel}</p>
+        </div>
       </div>
 
       {/* Stats Grid */}
