@@ -215,12 +215,57 @@ const connectDB = require('./config/database');
 
 let databaseReady = false;
 
+async function seedDefaultData() {
+  try {
+    const Unit = require('./models/Unit');
+    const Intern = require('./models/Intern');
+
+    // Check if units collection is empty
+    const existingUnits = await Unit.find();
+    if (existingUnits.length === 0) {
+      console.log('🌱 Seeding default units...');
+      await Unit.create([
+        { name: 'General Medicine', durationDays: 7, capacity: 10, workload: 'Medium', patientCount: 5, description: 'General medical unit' },
+        { name: 'Cardiology', durationDays: 10, capacity: 8, workload: 'High', patientCount: 6, description: 'Heart and cardiovascular care' },
+        { name: 'Neurology', durationDays: 8, capacity: 6, workload: 'Medium', patientCount: 4, description: 'Brain and nervous system' },
+        { name: 'Orthopedics', durationDays: 6, capacity: 12, workload: 'Low', patientCount: 3, description: 'Bones and joints' }
+      ]);
+      console.log('✅ Default units created');
+    } else {
+      console.log(`📊 Found ${existingUnits.length} existing units`);
+    }
+
+    // Check if interns collection is empty
+    const existingInterns = await Intern.find();
+    if (existingInterns.length === 0) {
+      console.log('🌱 Seeding sample interns...');
+      const units = await Unit.find();
+      if (units.length > 0) {
+        await Intern.create([
+          { name: 'Alice Johnson', gender: 'Female', batch: 'A', startDate: new Date('2026-01-15'), phoneNumber: '123-456-7890', email: 'alice.johnson@example.com', status: 'Active' },
+          { name: 'Bob Smith', gender: 'Male', batch: 'B', startDate: new Date('2026-02-01'), phoneNumber: '987-654-3210', email: 'bob.smith@example.com', status: 'Active' }
+        ]);
+        console.log('✅ Sample interns created');
+      }
+    } else {
+      console.log(`📊 Found ${existingInterns.length} existing interns`);
+    }
+
+  } catch (error) {
+    console.error('❌ Seeding error:', error);
+    // Don't exit - continue with server startup
+  }
+}
+
 async function startServer() {
   try {
     // Connect to MongoDB first
     console.log('\n📦 Connecting to MongoDB...');
     await connectDB();
     databaseReady = true;
+
+    // Seed default data if collections are empty
+    await seedDefaultData();
 
     // Start server
     const server = app.listen(PORT, '0.0.0.0', () => {

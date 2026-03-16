@@ -17,6 +17,7 @@ const normalizeInternPayload = (req, res, next) => {
   if (req.body.phone_number !== undefined && req.body.phoneNumber === undefined) {
     req.body.phoneNumber = req.body.phone_number;
   }
+  // Email is already in correct case, but ensure it's present
   next();
 };
 
@@ -25,6 +26,7 @@ const validateIntern = [
   body('gender').isIn(['Male', 'Female']).withMessage('Gender must be Male or Female'),
   body('batch').optional().isIn(['A', 'B']).withMessage('Batch must be A or B'),
   body('startDate').isISO8601().withMessage('Start date must be a valid date'),
+  body('email').isEmail().normalizeEmail().withMessage('Must be a valid email'),
   body('phoneNumber').optional().isString().withMessage('Phone number must be a string'),
 ];
 
@@ -113,7 +115,7 @@ router.put('/:id', normalizeInternPayload, validateIntern, async (req, res) => {
     const intern = await Intern.findById(req.params.id).exec();
     if (!intern) return res.status(404).json({ error: 'Intern not found' });
 
-    const updates = ['name', 'gender', 'batch', 'startDate', 'phoneNumber', 'status', 'extensionDays'];
+    const updates = ['name', 'gender', 'batch', 'startDate', 'phoneNumber', 'email', 'status', 'extensionDays'];
     updates.forEach(field => {
       if (req.body[field] !== undefined) {
         intern[field] = req.body[field];

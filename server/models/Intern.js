@@ -6,6 +6,7 @@ const InternSchema = new mongoose.Schema({
   batch: { type: String, enum: ['A', 'B'], required: true },
   startDate: { type: Date, required: true },
   phoneNumber: { type: String, default: null },
+  email: { type: String, required: true, unique: true, trim: true, lowercase: true },
   status: { type: String, enum: ['Active', 'Extended', 'Completed'], default: 'Active' },
   extensionDays: { type: Number, default: 0 },
   currentUnit: { type: mongoose.Schema.Types.ObjectId, ref: 'Unit', default: null },
