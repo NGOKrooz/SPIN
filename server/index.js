@@ -7,7 +7,7 @@ require('dotenv').config();
 // ═══════════════════════════════════════════════════════════
 // Production Environment Validation (Critical)
 // ═══════════════════════════════════════════════════════════
-const requiredEnvVars = ['DATABASE_URL'];
+const requiredEnvVars = ['MONGO_URI'];
 const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
 
 if (missingEnvVars.length > 0) {
@@ -19,10 +19,9 @@ if (missingEnvVars.length > 0) {
   console.error('Missing variables:');
   missingEnvVars.forEach(varName => console.error(`  - ${varName}`));
   console.error('');
-  console.error('For Render deployment:');
-  console.error('  1. Go to Dashboard > Environment');
-  console.error('  2. Add DATABASE_URL with Supabase connection string');
-  console.error('  3. Ensure ADMIN_PASSWORD is set (optional but recommended)');
+  console.error('For deployment:');
+  console.error('  1. Ensure MONGO_URI is set with MongoDB Atlas connection string');
+  console.error('  2. Ensure ADMIN_PASSWORD is set (optional but recommended)');
   console.error('');
   console.error('═════════════════════════════════════════════════════════');
   console.error('');
@@ -35,7 +34,7 @@ console.log('🚀 SPIN Server Starting...');
 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 console.log(`📦 Environment: ${process.env.NODE_ENV || 'development'}`);
 console.log(`🔌 Port: ${process.env.PORT || 5000}`);
-console.log(`🗄️  Database: PostgreSQL (Supabase)`);
+console.log(`🗄️  Database: MongoDB Atlas`);
 console.log(`🔒 Admin Auth: ${process.env.ADMIN_PASSWORD ? 'Configured ✓' : 'Not Set ⚠️'}`);
 console.log(`🔄 Auto-Rotation: ${process.env.AUTO_ROTATION !== 'false' ? 'Enabled' : 'Disabled'}`);
 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -97,6 +96,31 @@ app.get('/api/health', (req, res) => {
     message: 'SPIN API is running',
     timestamp: new Date().toISOString()
   });
+});
+
+// Test DB endpoint
+app.get('/test-db', async (req, res) => {
+  try {
+    const mongoose = require('mongoose');
+    const db = mongoose.connection.db;
+
+    if (!db) {
+      return res.status(500).json({ error: 'Database not connected' });
+    }
+
+    const collections = await db.listCollections().toArray();
+    if (collections.length === 0) {
+      return res.json({ message: 'No collections found', collections: [] });
+    }
+
+    const collectionName = collections[0].name;
+    const collection = db.collection(collectionName);
+    const records = await collection.find({}).limit(10).toArray();
+    res.json({ collection: collectionName, records });
+  } catch (error) {
+    console.error('Test DB error:', error);
+    res.status(500).json({ error: 'Database test failed', details: error.message });
+  }
 });
 
 // Apply admin protection to all API write routes
@@ -187,16 +211,22 @@ app.use('/api/*', (req, res) => {
 });
 
 // Initialize database and start server
-const { initializeDatabase } = require('./database/init');
+const connectDB = require('./config/database');
 
 let databaseReady = false;
 
 async function startServer() {
   try {
-    // Start server first, then initialize database (non-blocking)
+    // Connect to MongoDB first
+    console.log('\n📦 Connecting to MongoDB...');
+    await connectDB();
+    databaseReady = true;
+
+    // Start server
     const server = app.listen(PORT, '0.0.0.0', () => {
       console.log(`🚀 SPIN Server running on port ${PORT}`);
       console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
+      console.log(`🧪 Test DB: http://localhost:${PORT}/test-db`);
     });
     
     // Handle server errors
@@ -212,47 +242,6 @@ async function startServer() {
     app.on('error', (err) => {
       console.error('Express error:', err);
     });
-    
-    // Initialize database (non-blocking - server already started)
-    // This runs in the background; API calls can proceed even if DB isn't ready yet
-    (async () => {
-      const maxDbRetries = 5;
-      let dbRetries = 0;
-      
-      while (dbRetries < maxDbRetries && !databaseReady) {
-        try {
-          console.log(`\n📦 Initializing database (attempt ${dbRetries + 1}/${maxDbRetries})...`);
-          await initializeDatabase();
-          databaseReady = true;
-          console.log('✅ Database initialized successfully');
-          break;
-        } catch (dbError) {
-          dbRetries++;
-          console.error(`❌ Database initialization attempt ${dbRetries} failed:`, dbError.message);
-          
-          if (dbError.message.includes('ENETUNREACH')) {
-            console.error('   💡 ENETUNREACH error detected - IPv6 connection issue');
-            console.error('   💡 Ensure family: 4 is set in connection config to force IPv4');
-          } else if (dbError.message.includes('ECONNREFUSED')) {
-            console.error('   💡 Connection refused - PostgreSQL server may not be responding');
-            console.error('   💡 Check DATABASE_URL is correct and server is running');
-          } else if (dbError.message.includes('password authentication failed')) {
-            console.error('   💡 Authentication failed - check DATABASE_URL credentials');
-            console.error('   💡 Ensure password is properly URL-encoded');
-          }
-          
-          if (dbRetries < maxDbRetries) {
-            const waitTime = Math.min(5000 * dbRetries, 30000); // Max 30 seconds
-            console.log(`⏳ Waiting ${waitTime / 1000} seconds before retry...`);
-            await new Promise(resolve => setTimeout(resolve, waitTime));
-          } else {
-            console.error('❌ Database initialization failed after maximum retries');
-            console.error('⚠️  Server is running but database operations will fail');
-            console.error('⚠️  Check logs above for connection issues');
-          }
-        }
-      }
-    })();
   } catch (error) {
     console.error('❌ Failed to start server:', error);
     console.error('Error stack:', error.stack);

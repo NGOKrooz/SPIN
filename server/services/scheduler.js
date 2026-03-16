@@ -1,6 +1,5 @@
 const path = require('path');
 const fs = require('fs');
-const { getDatabase } = require('../database/init');
 
 // Conditional import for cron
 let cron;
@@ -11,56 +10,45 @@ try {
 }
 
 const cloudBackup = require('./cloudBackup');
-const { setState } = require('../database/systemState');
-const db = getDatabase();
+const { setState } = require('./systemStateService');
 
-// Create local backup
+const Intern = require('../models/Intern');
+const Rotation = require('../models/Rotation');
+const Setting = require('../models/Setting');
+
+// Create local backup (using MongoDB via Mongoose models)
 async function createLocalBackup() {
-  return new Promise((resolve, reject) => {
-    const backupData = {};
-    const tables = ['interns', 'rotations', 'settings'];
-    
-    let completed = 0;
-    let hasError = false;
-    
-    tables.forEach((table) => {
-      db.all(`SELECT * FROM ${table}`, [], (err, rows) => {
-        if (err && !hasError) {
-          hasError = true;
-          return reject(err);
-        }
-        
-        if (!hasError) {
-          backupData[table] = rows;
-        }
-        
-        completed++;
-        if (completed === tables.length && !hasError) {
-          backupData.metadata = {
-            type: 'critical',
-            created_at: new Date().toISOString(),
-            version: '1.0.0',
-          };
-          
-          // Create backup directory if it doesn't exist
-          const backupDir = path.join(__dirname, '../../backups');
-          if (!fs.existsSync(backupDir)) {
-            fs.mkdirSync(backupDir, { recursive: true });
-          }
-          
-          // Save to file
-          const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0] + 
-            '-' + new Date().toTimeString().split(' ')[0].replace(/:/g, '');
-          const fileName = `spin-backup-${timestamp}.json`;
-          const filePath = path.join(backupDir, fileName);
-          
-          fs.writeFileSync(filePath, JSON.stringify(backupData, null, 2));
-          
-          resolve({ filePath, fileName, backupData });
-        }
-      });
-    });
-  });
+  const backupData = {};
+
+  const interns = await Intern.find({}).lean().exec();
+  const rotations = await Rotation.find({}).lean().exec();
+  const settings = await Setting.find({}).lean().exec();
+
+  backupData.interns = interns;
+  backupData.rotations = rotations;
+  backupData.settings = settings;
+
+  backupData.metadata = {
+    type: 'critical',
+    created_at: new Date().toISOString(),
+    version: '1.0.0',
+  };
+
+  // Create backup directory if it doesn't exist
+  const backupDir = path.join(__dirname, '../../backups');
+  if (!fs.existsSync(backupDir)) {
+    fs.mkdirSync(backupDir, { recursive: true });
+  }
+
+  // Save to file
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0] +
+    '-' + new Date().toTimeString().split(' ')[0].replace(/:/g, '');
+  const fileName = `spin-backup-${timestamp}.json`;
+  const filePath = path.join(backupDir, fileName);
+
+  fs.writeFileSync(filePath, JSON.stringify(backupData, null, 2));
+
+  return { filePath, fileName, backupData };
 }
 
 // Perform scheduled backup

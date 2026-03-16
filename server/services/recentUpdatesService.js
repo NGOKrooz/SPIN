@@ -1,16 +1,12 @@
-const db = require('../database/dbWrapper');
+const ActivityLog = require('../models/ActivityLog');
 
-function logRecentUpdate(action, description) {
-  return new Promise((resolve, reject) => {
-    db.run(
-      'INSERT INTO activity_logs (action, description) VALUES (?, ?)',
-      [action, description],
-      function(err) {
-        if (err) return reject(err);
-        resolve({ id: this.lastID || null, changes: this.changes || 0 });
-      }
-    );
+async function logRecentUpdate(action, description) {
+  const log = await ActivityLog.create({
+    activityType: action,
+    details: description,
   });
+
+  return log;
 }
 
 async function logRecentUpdateSafe(action, description) {

@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { getState, setState } = require('../database/systemState');
+const { getState, setState } = require('./systemStateService');
 
 // Conditional imports for cloud services
 let Client, ConfidentialClientApplication, google;

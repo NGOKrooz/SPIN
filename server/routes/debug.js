@@ -1,16 +1,12 @@
 // Debug endpoints for troubleshooting
 const express = require('express');
-const db = require('../database/dbWrapper');
-const router = express.Router();
 
-// Import auto-advance function
-let autoAdvanceInternRotation;
-try {
-  const internsRoute = require('./interns');
-  autoAdvanceInternRotation = internsRoute.autoAdvanceInternRotation;
-} catch (err) {
-  console.error('[Debug] Could not import autoAdvanceInternRotation:', err);
-}
+const Intern = require('../models/Intern');
+const Unit = require('../models/Unit');
+const Rotation = require('../models/Rotation');
+const { autoAdvanceRotation } = require('../services/rotationService');
+
+const router = express.Router();
 
 // GET /api/debug/env - Check environment variables
 router.get('/env', (req, res) => {
@@ -19,111 +15,86 @@ router.get('/env', (req, res) => {
     NODE_ENV: process.env.NODE_ENV,
     PORT: process.env.PORT,
     hasAdminPassword: !!process.env.ADMIN_PASSWORD,
-    hasDatabaseUrl: !!process.env.DATABASE_URL
+    hasMongoUri: !!process.env.MONGO_URI,
   });
 });
 
 // GET /api/debug/interns - Check interns in database
-router.get('/interns', (req, res) => {
-  db.all('SELECT id, name, status, start_date, batch FROM interns', [], (err, rows) => {
-    if (err) {
-      return res.status(500).json({ error: err.message });
-    }
-    res.json({
-      count: rows.length,
-      interns: rows
-    });
-  });
+router.get('/interns', async (req, res) => {
+  try {
+    const interns = await Intern.find({}).exec();
+    res.json({ count: interns.length, interns });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /api/debug/units - Check units in database
-router.get('/units', (req, res) => {
-  db.all('SELECT id, name, duration_days FROM units', [], (err, rows) => {
-    if (err) {
-      return res.status(500).json({ error: err.message });
-    }
-    res.json({
-      count: rows.length,
-      units: rows
-    });
-  });
+router.get('/units', async (req, res) => {
+  try {
+    const units = await Unit.find({}).exec();
+    res.json({ count: units.length, units });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /api/debug/rotations - Check rotations in database
-router.get('/rotations', (req, res) => {
-  db.all(`
-    SELECT 
-      r.id, 
-      r.intern_id, 
-      r.unit_id, 
-      r.start_date, 
-      r.end_date, 
-      r.is_manual_assignment,
-      i.name as intern_name,
-      u.name as unit_name
-    FROM rotations r
-    LEFT JOIN interns i ON r.intern_id = i.id
-    LEFT JOIN units u ON r.unit_id = u.id
-    ORDER BY r.start_date DESC
-    LIMIT 50
-  `, [], (err, rows) => {
-    if (err) {
-      return res.status(500).json({ error: err.message });
-    }
-    res.json({
-      count: rows.length,
-      rotations: rows
-    });
-  });
+router.get('/rotations', async (req, res) => {
+  try {
+    const rotations = await Rotation.find({})
+      .populate('internId')
+      .populate('unitId')
+      .sort({ startDate: -1 })
+      .limit(50)
+      .exec();
+
+    res.json({ count: rotations.length, rotations });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /api/debug/rotations/:internId - Check specific intern's rotations
 router.get('/rotations/:internId', async (req, res) => {
   const { internId } = req.params;
-  
-  // Trigger auto-advance if enabled
+
   const autoRotationEnabled = process.env.AUTO_ROTATION === 'true';
-  if (autoRotationEnabled && autoAdvanceInternRotation) {
+  if (autoRotationEnabled) {
     try {
       console.log(`[Debug] Triggering auto-advance for intern ${internId}...`);
-      const result = await autoAdvanceInternRotation(internId);
-      console.log(`[Debug] Auto-advance result for intern ${internId}:`, result);
+      await autoAdvanceRotation(internId);
     } catch (err) {
       console.error(`[Debug] Error triggering auto-advance for intern ${internId}:`, err);
-      console.error(`[Debug] Error stack:`, err.stack);
     }
-  } else if (autoRotationEnabled && !autoAdvanceInternRotation) {
-    console.warn(`[Debug] Auto-rotation enabled but function not available`);
   }
-  
-  db.all(`
-    SELECT 
-      r.*,
-      u.name as unit_name,
-      u.duration_days
-    FROM rotations r
-    LEFT JOIN units u ON r.unit_id = u.id
-    WHERE r.intern_id = ?
-    ORDER BY r.start_date ASC
-  `, [internId], (err, rows) => {
-    if (err) {
-      return res.status(500).json({ error: err.message });
-    }
-    
+
+  try {
+    const rotations = await Rotation.find({ internId })
+      .populate('unitId')
+      .sort({ startDate: 1 })
+      .exec();
+
     const today = new Date().toISOString().split('T')[0];
+
     res.json({
       internId,
       today,
-      count: rows.length,
-      rotations: rows,
-      upcoming: rows.filter(r => r.start_date > today),
-      current: rows.filter(r => r.start_date <= today && r.end_date >= today),
-      past: rows.filter(r => r.end_date < today),
-      autoRotationEnabled: autoRotationEnabled,
-      note: autoRotationEnabled ? 'Auto-advance was triggered before querying' : 'Auto-rotation is disabled'
+      count: rotations.length,
+      rotations,
+      upcoming: rotations.filter(r => r.startDate.toISOString().split('T')[0] > today),
+      current: rotations.filter(r => {
+        const start = r.startDate.toISOString().split('T')[0];
+        const end = r.endDate.toISOString().split('T')[0];
+        return start <= today && end >= today;
+      }),
+      past: rotations.filter(r => r.endDate.toISOString().split('T')[0] < today),
+      autoRotationEnabled,
+      note: autoRotationEnabled ? 'Auto-advance was triggered before querying' : 'Auto-rotation is disabled',
     });
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
-

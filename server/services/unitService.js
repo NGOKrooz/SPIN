@@ -1,21 +1,17 @@
-const prisma = require('../database/prisma');
+const Unit = require('../models/Unit');
 
 /**
  * Get all units
  */
 async function getAllUnits() {
-  return await prisma.unit.findMany({
-    orderBy: { name: 'asc' },
-  });
+  return await Unit.find({}).sort({ name: 1 }).exec();
 }
 
 /**
  * Get unit by ID
  */
 async function getUnitById(id) {
-  return await prisma.unit.findUnique({
-    where: { id },
-  });
+  return await Unit.findById(id).exec();
 }
 
 /**
@@ -24,7 +20,6 @@ async function getUnitById(id) {
 async function createUnit(data) {
   const { name, durationDays, workload, patientCount, description } = data;
 
-  // Calculate workload from patient_count if not provided
   let finalWorkload = workload;
   if (!finalWorkload && patientCount !== undefined) {
     if (patientCount <= 4) finalWorkload = 'Low';
@@ -32,15 +27,15 @@ async function createUnit(data) {
     else finalWorkload = 'High';
   }
 
-  return await prisma.unit.create({
-    data: {
-      name,
-      durationDays,
-      workload: finalWorkload || 'Medium',
-      patientCount: patientCount || 0,
-      description: description || null,
-    },
+  const unit = new Unit({
+    name,
+    durationDays,
+    workload: finalWorkload || 'Medium',
+    patientCount: patientCount || 0,
+    description: description || null,
   });
+
+  return await unit.save();
 }
 
 /**
@@ -49,7 +44,6 @@ async function createUnit(data) {
 async function updateUnit(id, data) {
   const { name, durationDays, workload, patientCount, description } = data;
 
-  // Calculate workload from patient_count if not provided
   let finalWorkload = workload;
   if (!finalWorkload && patientCount !== undefined) {
     if (patientCount <= 4) finalWorkload = 'Low';
@@ -57,25 +51,21 @@ async function updateUnit(id, data) {
     else finalWorkload = 'High';
   }
 
-  return await prisma.unit.update({
-    where: { id },
-    data: {
-      ...(name && { name }),
-      ...(durationDays !== undefined && { durationDays }),
-      ...(finalWorkload && { workload: finalWorkload }),
-      ...(patientCount !== undefined && { patientCount }),
-      ...(description !== undefined && { description }),
-    },
-  });
+  const updateData = {};
+  if (name !== undefined) updateData.name = name;
+  if (durationDays !== undefined) updateData.durationDays = durationDays;
+  if (finalWorkload) updateData.workload = finalWorkload;
+  if (patientCount !== undefined) updateData.patientCount = patientCount;
+  if (description !== undefined) updateData.description = description;
+
+  return await Unit.findByIdAndUpdate(id, updateData, { new: true }).exec();
 }
 
 /**
  * Delete a unit
  */
 async function deleteUnit(id) {
-  return await prisma.unit.delete({
-    where: { id },
-  });
+  return await Unit.findByIdAndDelete(id).exec();
 }
 
 module.exports = {

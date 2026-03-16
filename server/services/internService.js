@@ -1,5 +1,7 @@
-const prisma = require('../database/prisma');
-const { addDays, format, parseISO, isAfter, isBefore, startOfDay } = require('date-fns');
+const { addDays, startOfDay, isAfter } = require('date-fns');
+const Intern = require('../models/Intern');
+const Rotation = require('../models/Rotation');
+const Unit = require('../models/Unit');
 
 /**
  * Create a new intern with optional automatic rotation generation
@@ -8,55 +10,43 @@ async function createIntern(data, options = {}) {
   const { name, gender, batch, startDate, phoneNumber, initialUnitId } = data;
   const { autoGenerateRotations = false } = options;
 
-  // Auto-assign batch if not provided
   let finalBatch = batch;
   if (!finalBatch || !['A', 'B'].includes(finalBatch)) {
-    const internCount = await prisma.intern.count();
+    const internCount = await Intern.countDocuments();
     finalBatch = internCount % 2 === 0 ? 'A' : 'B';
   }
 
-  // Parse start date
-  const parsedStartDate = typeof startDate === 'string' ? parseISO(startDate) : startDate;
+  const parsedStartDate = typeof startDate === 'string' ? new Date(startDate) : startDate;
 
-  // Create intern
-  const intern = await prisma.intern.create({
-    data: {
-      name,
-      gender,
-      batch: finalBatch,
-      startDate: parsedStartDate,
-      phoneNumber: phoneNumber || null,
-      status: 'Active',
-      extensionDays: 0,
-    },
+  const intern = await Intern.create({
+    name,
+    gender,
+    batch: finalBatch,
+    startDate: parsedStartDate,
+    phoneNumber: phoneNumber || null,
+    status: 'Active',
+    extensionDays: 0,
   });
 
-  // If initial unit is provided, create rotation
   if (initialUnitId) {
-    const unit = await prisma.unit.findUnique({
-      where: { id: initialUnitId },
-    });
-
+    const unit = await Unit.findById(initialUnitId).exec();
     if (!unit) {
       throw new Error('Invalid unit selected');
     }
 
     const endDate = addDays(parsedStartDate, unit.durationDays - 1);
 
-    await prisma.rotation.create({
-      data: {
-        internId: intern.id,
-        unitId: initialUnitId,
-        startDate: parsedStartDate,
-        endDate: endDate,
-        isManualAssignment: true,
-      },
+    await Rotation.create({
+      internId: intern._id,
+      unitId: unit._id,
+      startDate: parsedStartDate,
+      endDate,
+      isManualAssignment: true,
     });
   }
 
-  // Auto-generate rotations if enabled
   if (autoGenerateRotations) {
-    await generateRotationsForIntern(intern.id, finalBatch, parsedStartDate);
+    await generateRotationsForIntern(intern._id, finalBatch, parsedStartDate);
   }
 
   return intern;
@@ -66,46 +56,32 @@ async function createIntern(data, options = {}) {
  * Generate rotations for an intern
  */
 async function generateRotationsForIntern(internId, batch, startDate) {
-  // Get all active interns for round-robin indexing
-  const allInterns = await prisma.intern.findMany({
-    where: {
-      status: { in: ['Active', 'Extended'] },
-    },
-    orderBy: { id: 'asc' },
-  });
+  const allInterns = await Intern.find({
+    status: { $in: ['Active', 'Extended'] },
+  })
+    .sort({ _id: 1 })
+    .exec();
 
-  const internIndex = allInterns.findIndex(i => i.id === internId);
+  const internIndex = allInterns.findIndex(i => i._id.equals(internId));
   if (internIndex === -1) {
     throw new Error(`Intern ${internId} not found in active interns list`);
   }
 
-  // Get all units ordered by ID
-  const units = await prisma.unit.findMany({
-    orderBy: { id: 'asc' },
-  });
-
+  const units = await Unit.find({}).sort({ _id: 1 }).exec();
   if (units.length === 0) {
     console.warn('[GenerateRotations] No units available, skipping rotation creation');
     return;
   }
 
-  // Get intern data
-  const intern = await prisma.intern.findUnique({
-    where: { id: internId },
-  });
-
+  const intern = await Intern.findById(internId).exec();
   if (!intern) {
     throw new Error(`Intern ${internId} not found`);
   }
 
-  // Generate rotations
   const rotations = generateInternRotations(intern, units, startDate, internIndex);
 
-  // Insert rotations
   if (rotations.length > 0) {
-    await prisma.rotation.createMany({
-      data: rotations,
-    });
+    await Rotation.insertMany(rotations);
   }
 }
 
@@ -114,24 +90,22 @@ async function generateRotationsForIntern(internId, batch, startDate) {
  */
 function generateInternRotations(intern, units, startDate, internIndex = 0) {
   const rotations = [];
-  const currentDate = typeof startDate === 'string' ? parseISO(startDate) : startDate;
+  const currentDate = typeof startDate === 'string' ? new Date(startDate) : startDate;
   let currentDateCopy = new Date(currentDate);
 
-  // Round-robin: start at different offset for each intern
   const startUnitIndex = internIndex % units.length;
   const orderedUnits = [
     ...units.slice(startUnitIndex),
-    ...units.slice(0, startUnitIndex)
+    ...units.slice(0, startUnitIndex),
   ];
 
-  // Base cycle: rotate through every unit exactly once
   for (const unit of orderedUnits) {
     const rotationStart = new Date(currentDateCopy);
     const rotationEnd = addDays(rotationStart, unit.durationDays - 1);
 
     rotations.push({
-      internId: intern.id,
-      unitId: unit.id,
+      internId: intern._id,
+      unitId: unit._id,
       startDate: rotationStart,
       endDate: rotationEnd,
       isManualAssignment: false,
@@ -140,7 +114,6 @@ function generateInternRotations(intern, units, startDate, internIndex = 0) {
     currentDateCopy = addDays(rotationEnd, 1);
   }
 
-  // Extension handling – distribute extra days across additional rotations
   let remainingExtension = 0;
   if (intern.status === 'Extended') {
     const ext = parseInt(intern.extensionDays, 10);
@@ -158,8 +131,8 @@ function generateInternRotations(intern, units, startDate, internIndex = 0) {
       const rotationEnd = addDays(rotationStart, durationDays - 1);
 
       rotations.push({
-        internId: intern.id,
-        unitId: unit.id,
+        internId: intern._id,
+        unitId: unit._id,
         startDate: rotationStart,
         endDate: rotationEnd,
         isManualAssignment: false,
@@ -179,17 +152,14 @@ function generateInternRotations(intern, units, startDate, internIndex = 0) {
 async function getCurrentRotation(internId) {
   const today = startOfDay(new Date());
 
-  return await prisma.rotation.findFirst({
-    where: {
-      internId,
-      startDate: { lte: today },
-      endDate: { gte: today },
-    },
-    include: {
-      unit: true,
-      intern: true,
-    },
-  });
+  return await Rotation.findOne({
+    internId,
+    startDate: { $lte: today },
+    endDate: { $gte: today },
+  })
+    .populate('internId')
+    .populate('unitId')
+    .exec();
 }
 
 /**
@@ -198,46 +168,31 @@ async function getCurrentRotation(internId) {
 async function getUpcomingRotations(internId, limit = 10) {
   const today = startOfDay(new Date());
 
-  return await prisma.rotation.findMany({
-    where: {
-      internId,
-      startDate: { gt: today },
-    },
-    include: {
-      unit: true,
-    },
-    orderBy: {
-      startDate: 'asc',
-    },
-    take: limit,
-  });
+  return await Rotation.find({
+    internId,
+    startDate: { $gt: today },
+  })
+    .populate('unitId')
+    .sort({ startDate: 1 })
+    .limit(limit)
+    .exec();
 }
 
 /**
  * Get all rotations for an intern
  */
 async function getInternRotations(internId) {
-  return await prisma.rotation.findMany({
-    where: {
-      internId,
-    },
-    include: {
-      unit: true,
-    },
-    orderBy: {
-      startDate: 'asc',
-    },
-  });
+  return await Rotation.find({ internId })
+    .populate('unitId')
+    .sort({ startDate: 1 })
+    .exec();
 }
 
 /**
  * Extend internship and adjust rotations
  */
 async function extendInternship(internId, extensionDays, reason, notes, unitId) {
-  const intern = await prisma.intern.findUnique({
-    where: { id: internId },
-  });
-
+  const intern = await Intern.findById(internId).exec();
   if (!intern) {
     throw new Error('Intern not found');
   }
@@ -248,52 +203,26 @@ async function extendInternship(internId, extensionDays, reason, notes, unitId) 
 
   const finalStatus = newExtensionDays > 0 ? 'Extended' : 'Active';
 
-  // Update intern
-  const updatedIntern = await prisma.intern.update({
-    where: { id: internId },
-    data: {
-      status: finalStatus,
-      extensionDays: newExtensionDays,
-    },
-  });
+  intern.status = finalStatus;
+  intern.extensionDays = newExtensionDays;
+  await intern.save();
 
-  // Record extension reason
-  await prisma.extensionReason.create({
-    data: {
-      internId,
-      extensionDays: newExtensionDays,
-      reason,
-      notes: notes || null,
-    },
-  });
+  // TODO: Store extension reason somewhere (e.g., separate collection)
 
-  // If unit_id is provided and days changed, extend the last rotation for that unit
   if (unitId && daysDifference !== 0) {
-    const lastRotation = await prisma.rotation.findFirst({
-      where: {
-        internId,
-        unitId,
-      },
-      orderBy: {
-        endDate: 'desc',
-      },
-    });
+    const lastRotation = await Rotation.findOne({ internId, unitId })
+      .sort({ endDate: -1 })
+      .exec();
 
     if (lastRotation) {
-      const newEndDate = addDays(lastRotation.endDate, daysDifference);
-      await prisma.rotation.update({
-        where: { id: lastRotation.id },
-        data: {
-          endDate: newEndDate,
-        },
-      });
+      lastRotation.endDate = addDays(lastRotation.endDate, daysDifference);
+      await lastRotation.save();
     }
   }
 
-  // Ensure intern status is correct
   await ensureInternStatusIsCorrect(internId);
 
-  return updatedIntern;
+  return intern;
 }
 
 /**
@@ -302,31 +231,23 @@ async function extendInternship(internId, extensionDays, reason, notes, unitId) 
 async function ensureInternStatusIsCorrect(internId) {
   const today = startOfDay(new Date());
 
-  const activeRotations = await prisma.rotation.findFirst({
-    where: {
-      internId,
-      startDate: { lte: today },
-      endDate: { gte: today },
-    },
-  });
+  const activeRotation = await Rotation.findOne({
+    internId,
+    startDate: { $lte: today },
+    endDate: { $gte: today },
+  }).exec();
 
-  const upcomingRotations = await prisma.rotation.findFirst({
-    where: {
-      internId,
-      startDate: { gt: today },
-    },
-  });
+  const upcomingRotation = await Rotation.findOne({
+    internId,
+    startDate: { $gt: today },
+  }).exec();
 
-  const intern = await prisma.intern.findUnique({
-    where: { id: internId },
-  });
-
+  const intern = await Intern.findById(internId).exec();
   if (!intern) return;
 
   let newStatus = intern.status;
 
-  // If no active or upcoming rotations, mark as Completed
-  if (!activeRotations && !upcomingRotations) {
+  if (!activeRotation && !upcomingRotation) {
     newStatus = 'Completed';
   } else if (intern.extensionDays > 0 && intern.status !== 'Completed') {
     newStatus = 'Extended';
@@ -335,10 +256,8 @@ async function ensureInternStatusIsCorrect(internId) {
   }
 
   if (newStatus !== intern.status) {
-    await prisma.intern.update({
-      where: { id: internId },
-      data: { status: newStatus },
-    });
+    intern.status = newStatus;
+    await intern.save();
   }
 }
 

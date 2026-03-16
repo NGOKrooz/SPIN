@@ -1,5 +1,7 @@
-const prisma = require('../database/prisma');
-const { startOfDay, isAfter, isBefore } = require('date-fns');
+const { startOfDay, addDays, isAfter } = require('date-fns');
+const Rotation = require('../models/Rotation');
+const Unit = require('../models/Unit');
+const Intern = require('../models/Intern');
 
 /**
  * Get current rotations (active today)
@@ -7,19 +9,14 @@ const { startOfDay, isAfter, isBefore } = require('date-fns');
 async function getCurrentRotations() {
   const today = startOfDay(new Date());
 
-  return await prisma.rotation.findMany({
-    where: {
-      startDate: { lte: today },
-      endDate: { gte: today },
-    },
-    include: {
-      intern: true,
-      unit: true,
-    },
-    orderBy: {
-      startDate: 'asc',
-    },
-  });
+  return await Rotation.find({
+    startDate: { $lte: today },
+    endDate: { $gte: today },
+  })
+    .populate('internId')
+    .populate('unitId')
+    .sort({ startDate: 1 })
+    .exec();
 }
 
 /**
@@ -27,24 +24,15 @@ async function getCurrentRotations() {
  */
 async function getUpcomingRotations(daysAhead = 30) {
   const today = startOfDay(new Date());
-  const futureDate = new Date(today);
-  futureDate.setDate(futureDate.getDate() + daysAhead);
+  const futureDate = addDays(today, daysAhead);
 
-  return await prisma.rotation.findMany({
-    where: {
-      startDate: {
-        gt: today,
-        lte: futureDate,
-      },
-    },
-    include: {
-      intern: true,
-      unit: true,
-    },
-    orderBy: {
-      startDate: 'asc',
-    },
-  });
+  return await Rotation.find({
+    startDate: { $gt: today, $lte: futureDate },
+  })
+    .populate('internId')
+    .populate('unitId')
+    .sort({ startDate: 1 })
+    .exec();
 }
 
 /**
@@ -53,60 +41,35 @@ async function getUpcomingRotations(daysAhead = 30) {
 async function autoAdvanceRotation(internId) {
   const today = startOfDay(new Date());
 
-  // Get the last rotation for this intern
-  const lastRotation = await prisma.rotation.findFirst({
-    where: {
-      internId,
-    },
-    orderBy: {
-      endDate: 'desc',
-    },
-    include: {
-      unit: true,
-      intern: true,
-    },
-  });
+  const lastRotation = await Rotation.findOne({ internId })
+    .sort({ endDate: -1 })
+    .populate('internId')
+    .populate('unitId')
+    .exec();
 
-  if (!lastRotation) {
-    return false;
-  }
+  if (!lastRotation) return false;
 
-  // Check if last rotation has ended
   if (isAfter(today, lastRotation.endDate)) {
-    // Check if intern is still active
-    if (lastRotation.intern.status === 'Completed') {
+    if (lastRotation.internId?.status === 'Completed') {
       return false;
     }
 
-    // Get next unit (round-robin logic)
-    const allUnits = await prisma.unit.findMany({
-      orderBy: { id: 'asc' },
-    });
+    const allUnits = await Unit.find({}).sort({ name: 1 }).exec();
+    if (allUnits.length === 0) return false;
 
-    if (allUnits.length === 0) {
-      return false;
-    }
-
-    // Find current unit index
-    const currentUnitIndex = allUnits.findIndex(u => u.id === lastRotation.unitId);
+    const currentUnitIndex = allUnits.findIndex(u => u._id.equals(lastRotation.unitId._id));
     const nextUnitIndex = (currentUnitIndex + 1) % allUnits.length;
     const nextUnit = allUnits[nextUnitIndex];
 
-    // Calculate next rotation dates
-    const nextStartDate = new Date(lastRotation.endDate);
-    nextStartDate.setDate(nextStartDate.getDate() + 1);
-    const nextEndDate = new Date(nextStartDate);
-    nextEndDate.setDate(nextEndDate.getDate() + nextUnit.durationDays - 1);
+    const nextStartDate = addDays(lastRotation.endDate, 1);
+    const nextEndDate = addDays(nextStartDate, nextUnit.durationDays - 1);
 
-    // Create new rotation
-    await prisma.rotation.create({
-      data: {
-        internId,
-        unitId: nextUnit.id,
-        startDate: nextStartDate,
-        endDate: nextEndDate,
-        isManualAssignment: false,
-      },
+    await Rotation.create({
+      internId,
+      unitId: nextUnit._id,
+      startDate: nextStartDate,
+      endDate: nextEndDate,
+      isManualAssignment: false,
     });
 
     return true;
@@ -121,18 +84,12 @@ async function autoAdvanceRotation(internId) {
 async function createManualRotation(data) {
   const { internId, unitId, startDate, endDate } = data;
 
-  return await prisma.rotation.create({
-    data: {
-      internId,
-      unitId,
-      startDate,
-      endDate,
-      isManualAssignment: true,
-    },
-    include: {
-      intern: true,
-      unit: true,
-    },
+  return await Rotation.create({
+    internId,
+    unitId,
+    startDate,
+    endDate,
+    isManualAssignment: true,
   });
 }
 
@@ -140,29 +97,22 @@ async function createManualRotation(data) {
  * Update a rotation
  */
 async function updateRotation(rotationId, data) {
-  const { startDate, endDate, unitId } = data;
+  const updateData = {};
+  if (data.startDate !== undefined) updateData.startDate = data.startDate;
+  if (data.endDate !== undefined) updateData.endDate = data.endDate;
+  if (data.unitId !== undefined) updateData.unitId = data.unitId;
 
-  return await prisma.rotation.update({
-    where: { id: rotationId },
-    data: {
-      ...(startDate && { startDate }),
-      ...(endDate && { endDate }),
-      ...(unitId && { unitId }),
-    },
-    include: {
-      intern: true,
-      unit: true,
-    },
-  });
+  return await Rotation.findByIdAndUpdate(rotationId, updateData, { new: true })
+    .populate('internId')
+    .populate('unitId')
+    .exec();
 }
 
 /**
  * Delete a rotation
  */
 async function deleteRotation(rotationId) {
-  return await prisma.rotation.delete({
-    where: { id: rotationId },
-  });
+  return await Rotation.findByIdAndDelete(rotationId).exec();
 }
 
 module.exports = {

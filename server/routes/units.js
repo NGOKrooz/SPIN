@@ -1,210 +1,66 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const db = require('../database/dbWrapper');
+
+const Unit = require('../models/Unit');
+const Rotation = require('../models/Rotation');
+const { createUnit, updateUnit, deleteUnit } = require('../services/unitService');
 const { logRecentUpdateSafe } = require('../services/recentUpdatesService');
 
 const router = express.Router();
 
-// Validation middleware
 const validateUnitPayload = [
-  body('unit_name').optional().trim().isLength({ min: 2, max: 100 }).withMessage('Unit name must be 2-100 characters'),
   body('name').optional().trim().isLength({ min: 2, max: 100 }).withMessage('Unit name must be 2-100 characters'),
-  body('duration_days').isInt({ min: 1, max: 365 }).withMessage('Duration must be 1-365 days'),
+  body('durationDays').optional().isInt({ min: 1, max: 365 }).withMessage('Duration must be 1-365 days'),
   body('workload').optional().isIn(['Low', 'Medium', 'High']).withMessage('Workload must be Low, Medium, or High'),
-  body('patient_count').optional().isInt({ min: 0 }).withMessage('Patient count must be a non-negative integer')
+  body('patientCount').optional().isInt({ min: 0 }).withMessage('Patient count must be a non-negative integer'),
 ];
 
 // GET /api/units - Get all units
-router.get('/', (req, res) => {
-  const query = `
-    SELECT 
-      u.*,
-      COUNT(r.id) as current_interns,
-      GROUP_CONCAT(
-        CASE 
-          WHEN r.start_date <= date('now') AND r.end_date >= date('now') 
-          THEN i.name || ' (' || i.batch || ')'
-          ELSE NULL 
-        END, ', '
-      ) as intern_names
-    FROM units u
-    LEFT JOIN rotations r ON u.id = r.unit_id 
-      AND r.start_date <= date('now') 
-      AND r.end_date >= date('now')
-    LEFT JOIN interns i ON r.intern_id = i.id
-    GROUP BY u.id
-    ORDER BY COALESCE(u.position, u.order_index, 9999), u.name
-  `;
-  
-  db.all(query, [], (err, rows) => {
-    if (err) {
-      console.error('Error fetching units:', err);
-      return res.status(500).json({ error: 'Failed to fetch units' });
-    }
-    
-    const units = rows.map(row => {
-      // Auto-calculate workload based on patient count if available
-      let workload = row.workload;
-      if (row.patient_count && row.patient_count > 0) {
-        if (row.patient_count <= 4) {
-          workload = 'Low';
-        } else if (row.patient_count <= 8) {
-          workload = 'Medium';
-        } else {
-          workload = 'High';
-        }
-      } else {
-        // Default to Low if no patient count is set
-        workload = 'Low';
-      }
-      
-      return {
-        ...row,
-        unit_name: row.name,
-        workload: workload,
-        current_interns: parseInt(row.current_interns) || 0,
-        intern_names: row.intern_names ? row.intern_names.split(', ') : [],
-        coverage_status: getCoverageStatus(row.current_interns, workload)
-      };
-    });
-    
-    res.json(units);
-  });
+router.get('/', async (req, res) => {
+  try {
+    const units = await Unit.find({}).sort({ position: 1, name: 1 }).exec();
+
+    // Count current active interns per unit (today)
+    const today = new Date();
+    const activeRotations = await Rotation.find({
+      startDate: { $lte: today },
+      endDate: { $gte: today },
+    }).exec();
+
+    const counts = activeRotations.reduce((acc, rotation) => {
+      const key = String(rotation.unitId);
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+
+    const result = units.map(unit => ({
+      ...unit.toObject(),
+      currentInterns: counts[String(unit._id)] || 0,
+    }));
+
+    res.json(result);
+  } catch (err) {
+    console.error('Error fetching units:', err);
+    res.status(500).json({ error: 'Failed to fetch units' });
+  }
 });
 
-const normalizeReorderPayload = (body) => {
-  if (!Array.isArray(body)) {
-    return null;
-  }
-
-  if (body.length === 0) {
-    return [];
-  }
-
-  if (typeof body[0] === 'number') {
-    return body.map((id, index) => ({ id, position: index + 1 }));
-  }
-
-  if (typeof body[0] === 'object' && body[0] !== null) {
-    return body
-      .filter(item => item && item.id !== undefined && item.position !== undefined)
-      .map(item => ({ id: item.id, position: item.position }));
-  }
-
-  return null;
-};
-
-const handleReorder = (req, res) => {
-  const items = normalizeReorderPayload(req.body);
-
-  if (!items) {
-    return res.status(400).json({ error: 'Payload must be an array of { id, position } objects' });
-  }
-
-  db.run('BEGIN TRANSACTION', (err) => {
-    if (err) {
-      console.error('Error starting reorder transaction:', err);
-      return res.status(500).json({ error: 'Failed to start transaction' });
-    }
-
-    const updateNext = (index) => {
-      if (index >= items.length) {
-        return db.run('COMMIT', (commitErr) => {
-          if (commitErr) {
-            db.run('ROLLBACK');
-            console.error('Error committing reorder transaction:', commitErr);
-            return res.status(500).json({ error: 'Failed to save unit order' });
-          }
-          logRecentUpdateSafe('unit_reordered', 'Unit order was updated.');
-          res.json({ message: 'Unit order updated' });
-        });
-      }
-
-      const { id, position } = items[index];
-      db.run('UPDATE units SET position = ? WHERE id = ?', [position, id], function(updateErr) {
-        if (updateErr) {
-          db.run('ROLLBACK');
-          console.error('Error updating unit position:', updateErr);
-          return res.status(500).json({ error: 'Failed to save unit order' });
-        }
-
-        if (this.changes === 0) {
-          db.run('ROLLBACK');
-          return res.status(404).json({ error: `Unit not found: ${id}` });
-        }
-
-        updateNext(index + 1);
-      });
-    };
-
-    updateNext(0);
-  });
-};
-
-// PUT /api/units/reorder - Update ordering for units
-router.put('/reorder', handleReorder);
-
-// PUT /api/units/order - Backward-compatible ordering endpoint
-router.put('/order', handleReorder);
-
 // GET /api/units/:id - Get specific unit
-router.get('/:id', (req, res) => {
-  const { id } = req.params;
-  
-  const query = `
-    SELECT 
-      u.*,
-      r.id as rotation_id,
-      r.start_date,
-      r.end_date,
-      r.is_manual_assignment,
-      i.name as intern_name,
-      i.batch as intern_batch,
-      i.id as intern_id
-    FROM units u
-    LEFT JOIN rotations r ON u.id = r.unit_id
-    LEFT JOIN interns i ON r.intern_id = i.id
-    WHERE u.id = ?
-    ORDER BY r.start_date DESC
-  `;
-  
-  db.all(query, [id], (err, rows) => {
-    if (err) {
-      console.error('Error fetching unit:', err);
-      return res.status(500).json({ error: 'Failed to fetch unit' });
-    }
-    
-    if (rows.length === 0) {
-      return res.status(404).json({ error: 'Unit not found' });
-    }
-    
-    const unit = {
-      ...rows[0],
-      unit_name: rows[0].name,
-      current_rotations: rows
-        .filter(row => row.rotation_id)
-        .map(row => ({
-          id: row.rotation_id,
-          intern_id: row.intern_id,
-          intern_name: row.intern_name,
-          intern_batch: row.intern_batch,
-          start_date: row.start_date,
-          end_date: row.end_date,
-          is_manual_assignment: row.is_manual_assignment
-        }))
-    };
-    
-    // Remove rotation fields from main unit object
-    delete unit.rotation_id;
-    delete unit.start_date;
-    delete unit.end_date;
-    delete unit.is_manual_assignment;
-    delete unit.intern_name;
-    delete unit.intern_batch;
-    delete unit.intern_id;
-    
-    res.json(unit);
-  });
+router.get('/:id', async (req, res) => {
+  try {
+    const unit = await Unit.findById(req.params.id).exec();
+    if (!unit) return res.status(404).json({ error: 'Unit not found' });
+
+    const rotations = await Rotation.find({ unitId: unit._id })
+      .populate('internId')
+      .sort({ startDate: 1 })
+      .exec();
+
+    res.json({ ...unit.toObject(), rotations });
+  } catch (err) {
+    console.error('Error fetching unit:', err);
+    res.status(500).json({ error: 'Failed to fetch unit' });
+  }
 });
 
 // POST /api/units - Create new unit
@@ -214,77 +70,10 @@ router.post('/', validateUnitPayload, async (req, res) => {
     return res.status(400).json({ errors: errors.array() });
   }
 
-  const { unit_name, name, duration_days, workload, description, patient_count } = req.body;
-  const finalName = (unit_name || name || '').trim();
-  const parsedDuration = parseInt(duration_days, 10);
-
-  // Validate required fields
-  if (!finalName) {
-    return res.status(400).json({ error: 'Unit name is required' });
-  }
-  if (!Number.isInteger(parsedDuration) || parsedDuration < 1) {
-    return res.status(400).json({ error: 'Duration days must be a positive integer' });
-  }
-
   try {
-    // Check for duplicate name
-    const duplicateQuery = 'SELECT id FROM units WHERE LOWER(name) = LOWER(?)';
-    
-    const duplicateResult = await new Promise((resolve, reject) => {
-      db.get(duplicateQuery, [finalName], (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
-    });
-
-    if (duplicateResult) {
-      return res.status(400).json({ error: 'Unit name already exists' });
-    }
-
-    // Derive workload from patient_count if not provided
-    let finalWorkload = workload;
-    const count = typeof patient_count === 'number' ? patient_count : parseInt(patient_count || '0');
-    if (!finalWorkload) {
-      if (count <= 4) finalWorkload = 'Low';
-      else if (count <= 8) finalWorkload = 'Medium';
-      else finalWorkload = 'High';
-    }
-    
-    const positionQuery = 'SELECT COALESCE(MAX(position), MAX(order_index), 0) as max_position FROM units';
-    const positionResult = await new Promise((resolve, reject) => {
-      db.get(positionQuery, [], (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
-    });
-    const nextPosition = (positionResult?.max_position || 0) + 1;
-
-    const insertQuery = `
-      INSERT INTO units (name, duration_days, workload, description, patient_count, position)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `;
-    
-    const params = [finalName, parsedDuration, finalWorkload, description || '', count || 0, nextPosition];
-    
-    const insertResult = await new Promise((resolve, reject) => {
-      db.run(insertQuery, params, function(err) {
-        if (err) return reject(err);
-        resolve({ id: this.lastID });
-      });
-    });
-    
-    logRecentUpdateSafe('unit_created', `Unit ${finalName} was created.`);
-    
-    res.status(201).json({
-      id: insertResult.id,
-      name: finalName,
-      unit_name: finalName,
-      duration_days: parsedDuration,
-      workload: finalWorkload,
-      description: description || '',
-      patient_count: count || 0,
-      position: nextPosition
-    });
+    const unit = await createUnit(req.body);
+    await logRecentUpdateSafe('unit_created', `Created unit: ${unit.name}`);
+    res.status(201).json(unit);
   } catch (err) {
     console.error('Error creating unit:', err);
     res.status(500).json({ error: 'Failed to create unit' });
@@ -292,344 +81,59 @@ router.post('/', validateUnitPayload, async (req, res) => {
 });
 
 // PUT /api/units/:id - Update unit
-router.put('/:id', validateUnitPayload, (req, res) => {
+router.put('/:id', validateUnitPayload, async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
-  
-  const { id } = req.params;
-  const { unit_name, name, duration_days, workload, description, patient_count } = req.body;
-  const finalName = (unit_name || name || '').trim();
-  const parsedDuration = parseInt(duration_days, 10);
 
-  if (!finalName) {
-    return res.status(400).json({ error: 'Unit name is required' });
-  }
-  if (!Number.isInteger(parsedDuration) || parsedDuration < 1) {
-    return res.status(400).json({ error: 'Duration days must be a positive integer' });
-  }
+  try {
+    const unit = await updateUnit(req.params.id, req.body);
+    if (!unit) return res.status(404).json({ error: 'Unit not found' });
 
-  // Derive workload from patient_count if not provided
-  let finalWorkload = workload;
-  const count = typeof patient_count === 'number' ? patient_count : parseInt(patient_count || '0');
-  if (!finalWorkload) {
-    if (count <= 4) finalWorkload = 'Low';
-    else if (count <= 8) finalWorkload = 'Medium';
-    else finalWorkload = 'High';
+    await logRecentUpdateSafe('unit_updated', `Updated unit: ${unit.name}`);
+    res.json(unit);
+  } catch (err) {
+    console.error('Error updating unit:', err);
+    res.status(500).json({ error: 'Failed to update unit' });
   }
-  
-  const query = `
-    UPDATE units 
-    SET name = ?, duration_days = ?, workload = ?, description = ?, patient_count = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `;
-  
-  db.run(query, [finalName, parsedDuration, finalWorkload, description, count || 0, id], function(err) {
-    if (err) {
-      console.error('Error updating unit:', err);
-      if (err.code === '23505') {
-        return res.status(400).json({ error: 'Unit name already exists' });
-      }
-      return res.status(500).json({ error: 'Failed to update unit' });
-    }
-    
-    if (this.changes === 0) {
-      return res.status(404).json({ error: 'Unit not found' });
-    }
-    logRecentUpdateSafe('unit_updated', `Unit ${finalName} was updated.`);
-    
-    res.json({ message: 'Unit updated successfully' });
-  });
 });
 
-// POST /api/units/:id/workload - Update unit workload
-router.post('/:id/workload', [
-  body('workload').isIn(['Low', 'Medium', 'High']).withMessage('Workload must be Low, Medium, or High'),
-  body('week_start_date').isISO8601().withMessage('Week start date must be valid'),
-  body('notes').optional().isString()
-], (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+// DELETE /api/units/:id - Delete unit and related rotations
+router.delete('/:id', async (req, res) => {
+  try {
+    const unit = await deleteUnit(req.params.id);
+    if (!unit) return res.status(404).json({ error: 'Unit not found' });
+
+    await Rotation.deleteMany({ unitId: unit._id }).exec();
+    await logRecentUpdateSafe('unit_deleted', `Deleted unit: ${unit.name}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error deleting unit:', err);
+    res.status(500).json({ error: 'Failed to delete unit' });
   }
-  
-  const { id } = req.params;
-  const { workload, week_start_date, notes } = req.body;
-  
-  // Update current workload
-  const updateQuery = `
-    UPDATE units 
-    SET workload = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `;
-  
-  // Insert workload history
-  const historyQuery = `
-    INSERT INTO workload_history (unit_id, workload, week_start_date, notes)
-    VALUES (?, ?, ?, ?)
-  `;
-  
-  db.serialize(() => {
-    db.run(updateQuery, [workload, id], function(err) {
-      if (err) {
-        console.error('Error updating workload:', err);
-        return res.status(500).json({ error: 'Failed to update workload' });
-      }
-      
-      if (this.changes === 0) {
-        return res.status(404).json({ error: 'Unit not found' });
-      }
-      
-      // Insert into history
-      db.run(historyQuery, [id, workload, week_start_date, notes], function(err) {
-        if (err) {
-          console.error('Error saving workload history:', err);
-          return res.status(500).json({ error: 'Failed to save workload history' });
-        }
-        
-        logRecentUpdateSafe('unit_workload_updated', `Unit workload was updated to ${workload}.`);
-        res.json({ message: 'Workload updated successfully' });
-      });
-    });
-  });
 });
 
-// POST /api/units/:id/patient-count - Update patient count and auto-calculate workload
-router.post('/:id/patient-count', [
-  body('patient_count').isInt({ min: 0 }).withMessage('Patient count must be a non-negative integer')
-], (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+// PUT /api/units/reorder - Update unit order
+router.put('/reorder', async (req, res) => {
+  const items = req.body;
+  if (!Array.isArray(items)) {
+    return res.status(400).json({ error: 'Payload must be an array of { id, position } objects' });
   }
-  
-  const { id } = req.params;
-  const { patient_count } = req.body;
-  
-  // Auto-calculate workload based on patient count
-  let workload;
-  if (patient_count <= 4) {
-    workload = 'Low';
-  } else if (patient_count <= 8) {
-    workload = 'Medium';
-  } else {
-    workload = 'High';
+
+  try {
+    const updates = items.map(item => {
+      if (!item || !item.id) return null;
+      return Unit.findByIdAndUpdate(item.id, { position: item.position || 0 }).exec();
+    }).filter(Boolean);
+
+    await Promise.all(updates);
+    await logRecentUpdateSafe('units_reordered', 'Updated unit ordering');
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error reordering units:', err);
+    res.status(500).json({ error: 'Failed to reorder units' });
   }
-  
-  // Update patient count and workload
-  const updateQuery = `
-    UPDATE units 
-    SET patient_count = ?, workload = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `;
-  
-  // Insert workload history
-  const historyQuery = `
-    INSERT INTO workload_history (unit_id, workload, week_start_date, notes)
-    VALUES (?, ?, ?, ?)
-  `;
-  
-  const weekStartDate = new Date().toISOString().split('T')[0];
-  const notes = `Auto-calculated from ${patient_count} patients`;
-  
-  db.serialize(() => {
-    db.run(updateQuery, [patient_count, workload, id], function(err) {
-      if (err) {
-        console.error('Error updating patient count:', err);
-        return res.status(500).json({ error: 'Failed to update patient count' });
-      }
-      
-      if (this.changes === 0) {
-        return res.status(404).json({ error: 'Unit not found' });
-      }
-      
-      // Insert into history
-      db.run(historyQuery, [id, workload, weekStartDate, notes], function(err) {
-        if (err) {
-          console.error('Error saving workload history:', err);
-          return res.status(500).json({ error: 'Failed to save workload history' });
-        }
-        
-        logRecentUpdateSafe('unit_workload_updated', `Unit patient count changed to ${patient_count} and workload is ${workload}.`);
-        res.json({ 
-          message: 'Patient count and workload updated successfully',
-          workload: workload,
-          patient_count: patient_count
-        });
-      });
-    });
-  });
 });
-
-// GET /api/units/:id/workload-history - Get workload history
-router.get('/:id/workload-history', (req, res) => {
-  const { id } = req.params;
-  const { limit = 12 } = req.query;
-  
-  const query = `
-    SELECT * FROM workload_history
-    WHERE unit_id = ?
-    ORDER BY week_start_date DESC
-    LIMIT ?
-  `;
-  
-  db.all(query, [id, limit], (err, rows) => {
-    if (err) {
-      console.error('Error fetching workload history:', err);
-      return res.status(500).json({ error: 'Failed to fetch workload history' });
-    }
-    
-    res.json(rows);
-  });
-});
-
-// GET /api/units/:id/completed-interns - Get completed interns for a unit
-router.get('/:id/completed-interns', (req, res) => {
-  const { id } = req.params;
-  
-  // dbWrapper automatically converts date('now') to CURRENT_DATE for PostgreSQL
-  const query = `
-    SELECT 
-      r.id as rotation_id,
-      r.start_date,
-      r.end_date,
-      i.id as intern_id,
-      i.name as intern_name,
-      i.batch as intern_batch,
-      i.status as intern_status
-    FROM rotations r
-    JOIN interns i ON r.intern_id = i.id
-    WHERE r.unit_id = ?
-      AND r.end_date < date('now')
-    ORDER BY r.end_date DESC
-  `;
-  
-  db.all(query, [id], (err, rows) => {
-    if (err) {
-      console.error('Error fetching completed interns:', err);
-      return res.status(500).json({ error: 'Failed to fetch completed interns' });
-    }
-    
-    res.json(rows || []);
-  });
-});
-
-// DELETE /api/units/:id - Delete unit and unassign interns
-router.delete('/:id', (req, res) => {
-  const { id } = req.params;
-
-  // Use a transaction to ensure data consistency
-  db.serialize(() => {
-    db.run('BEGIN TRANSACTION', (err) => {
-      if (err) {
-        console.error('Error starting transaction:', err);
-        return res.status(500).json({ error: 'Failed to start transaction' });
-      }
-
-      // Step 1: Get unit name before deletion
-      db.get('SELECT name FROM units WHERE id = ?', [id], (err, unit) => {
-        if (err) {
-          db.run('ROLLBACK');
-          console.error('Error fetching unit:', err);
-          return res.status(500).json({ error: 'Failed to fetch unit' });
-        }
-
-        if (!unit) {
-          db.run('ROLLBACK');
-          return res.status(404).json({ error: 'Unit not found' });
-        }
-
-        const unitName = unit.name || 'Unknown Unit';
-
-        // Step 2: Count interns currently assigned to this unit (active rotations)
-        const countQuery = `
-          SELECT COUNT(DISTINCT intern_id) as count
-          FROM rotations
-          WHERE unit_id = ? AND end_date >= date('now')
-        `;
-
-        db.get(countQuery, [id], (err, countRow) => {
-          if (err) {
-            db.run('ROLLBACK');
-            console.error('Error counting assigned interns:', err);
-            return res.status(500).json({ error: 'Failed to count interns' });
-          }
-
-          const assignedCount = countRow?.count || 0;
-
-          // Step 3: Delete all rotations for this unit (unassign interns)
-          const deleteRotationsQuery = `
-            DELETE FROM rotations WHERE unit_id = ?
-          `;
-
-          db.run(deleteRotationsQuery, [id], function(err) {
-            if (err) {
-              db.run('ROLLBACK');
-              console.error('Error deleting rotations:', err);
-              return res.status(500).json({ error: 'Failed to unassign interns' });
-            }
-
-            // Step 4: Delete the unit
-            db.run('DELETE FROM units WHERE id = ?', [id], function(err) {
-              if (err) {
-                db.run('ROLLBACK');
-                console.error('Error deleting unit:', err);
-                return res.status(500).json({ error: 'Failed to delete unit' });
-              }
-
-              if (this.changes === 0) {
-                db.run('ROLLBACK');
-                return res.status(404).json({ error: 'Unit not found' });
-              }
-
-              // Step 5: Log activity
-              const activityMessage = assignedCount > 0
-                ? `Unit "${unitName}" deleted. ${assignedCount} interns were unassigned.`
-                : `Unit "${unitName}" was deleted.`;
-
-              // Step 6: Commit transaction
-              db.run('COMMIT', async (commitErr) => {
-                if (commitErr) {
-                  db.run('ROLLBACK');
-                  console.error('Error committing transaction:', commitErr);
-                  return res.status(500).json({ error: 'Failed to commit transaction' });
-                }
-
-                await logRecentUpdateSafe('unit_deleted', activityMessage);
-                res.json({
-                  success: true,
-                  message: 'Unit deleted successfully',
-                  internsUnassigned: assignedCount,
-                });
-              });
-            });
-          });
-        });
-      });
-    });
-  });
-});
-
-// Helper function to determine coverage status
-function getCoverageStatus(currentInterns, workload) {
-  const internCount = parseInt(currentInterns) || 0;
-  
-  // Units with 0 interns require immediate attention - should be critical
-  if (internCount === 0) {
-    return 'critical';
-  }
-  
-  // Updated coverage requirements based on workload
-  if (workload === 'High' && internCount < 2) {
-    return 'critical';
-  } else if (workload === 'Medium' && internCount < 2) {
-    return 'critical';
-  } else if (workload === 'Low' && internCount < 1) {
-    return 'warning';
-  } else {
-    return 'good';
-  }
-}
 
 module.exports = router;

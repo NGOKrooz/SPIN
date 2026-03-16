@@ -1,6 +1,6 @@
 const dbWrapper = require('../database/dbWrapper');
 const cloudBackup = require('./cloudBackup');
-const { setState } = require('../database/systemState');
+const { setState } = require('./systemStateService');
 
 // Check if this is a fresh deployment (empty or minimal database)
 async function checkIfFreshDeployment() {

@@ -1,36 +1,27 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const db = require('../database/dbWrapper');
+
+const Setting = require('../models/Setting');
 const { logRecentUpdateSafe } = require('../services/recentUpdatesService');
 
 const router = express.Router();
 
-const getSetting = (key, defaultValue = '') => new Promise((resolve, reject) => {
-  db.get('SELECT value FROM settings WHERE key = ?', [key], (err, row) => {
-    if (err) return reject(err);
-    if (!row || row.value === undefined || row.value === null) {
-      return resolve(defaultValue);
-    }
-    resolve(row.value);
-  });
-});
+async function getSetting(key, defaultValue = '') {
+  const setting = await Setting.findOne({ key }).exec();
+  return setting ? setting.value : defaultValue;
+}
 
-const setSetting = (key, value, description = '') => new Promise((resolve, reject) => {
+async function setSetting(key, value, description = '') {
   const valueStr = value === undefined || value === null ? '' : String(value);
-  const query = `
-    INSERT INTO settings (key, value, description, updated_at)
-    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT (key)
-    DO UPDATE SET value = EXCLUDED.value, description = EXCLUDED.description, updated_at = CURRENT_TIMESTAMP
-  `;
+  const updated = await Setting.findOneAndUpdate(
+    { key },
+    { value: valueStr, description, updatedAt: new Date() },
+    { upsert: true, new: true }
+  ).exec();
+  return updated;
+}
 
-  db.run(query, [key, valueStr, description], (err) => {
-    if (err) return reject(err);
-    resolve();
-  });
-});
-
-const normalizeSystemSettings = (raw) => {
+function normalizeSystemSettings(raw) {
   const rotationDurationWeeksRaw = raw.rotation_duration_weeks;
   const rotationDurationWeeks = rotationDurationWeeksRaw === '' || rotationDurationWeeksRaw === null || rotationDurationWeeksRaw === undefined
     ? 4
@@ -41,7 +32,7 @@ const normalizeSystemSettings = (raw) => {
     allow_reassignment: String(raw.allow_reassignment ?? 'true').toLowerCase() === 'true',
     auto_log_activity: String(raw.auto_log_activity ?? 'true').toLowerCase() === 'true',
   };
-};
+}
 
 // GET /api/settings/system - Get system settings
 router.get('/system', async (req, res) => {
