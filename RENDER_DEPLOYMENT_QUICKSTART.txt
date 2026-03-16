@@ -13,8 +13,8 @@ Add these variables:
 ┌─────────────────────┬──────────────────────────────────────────────────────┐
 │ Variable            │ Value                                                │
 ├─────────────────────┼──────────────────────────────────────────────────────┤
-│ DATABASE_URL        │ postgresql://user:pass@host:port/db                  │
-│                     │ (Get from Supabase → Connection Pooling)             │
+│ DATABASE_URL        │ mongodb+srv://user:pass@cluster.mongodb.net/db       │
+│                     │ (Get from MongoDB Atlas → Connect → Connect App)     │
 ├─────────────────────┼──────────────────────────────────────────────────────┤
 │ NODE_ENV            │ production                                           │
 ├─────────────────────┼──────────────────────────────────────────────────────┤
@@ -22,10 +22,10 @@ Add these variables:
 │                     │ (Use password generator - min 16 chars)              │
 └─────────────────────┴──────────────────────────────────────────────────────┘
 
-⚠️  CRITICAL: Use Supabase "Connection Pooling" string, NOT direct connection!
+⚠️  CRITICAL: Use MongoDB Atlas connection string with proper authentication!
 
 Example DATABASE_URL format:
-postgresql://postgres.xxxx:[PASSWORD]@aws-0-region.pooler.supabase.com:6543/postgres
+mongodb+srv://spinuser:password123@cluster0.xxxxx.mongodb.net/spin_db?retryWrites=true&w=majority
 
 If password contains special characters, URL-encode them:
   @ → %40

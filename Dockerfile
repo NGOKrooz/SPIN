@@ -1,5 +1,5 @@
-# Use Debian-based image for PostgreSQL and Prisma compatibility
-# Node.js 20+ required for Prisma
+# Use Debian-based image for MongoDB and Mongoose compatibility
+# Node.js 20+ required for the application
 FROM node:20-bullseye-slim
 
 # Environment optimizations and skip heavy Chromium download for puppeteer
@@ -28,9 +28,6 @@ COPY . .
 
 # Ensure CI does not fail on warnings during build
 ENV CI=false
-
-# Generate Prisma Client (required for Prisma to work)
-RUN cd server && npx prisma generate
 
 # Build the client
 RUN cd client && npm run build

@@ -52,7 +52,7 @@ Files Changed: 4
 
 Required variables (set in Render Dashboard → Environment):
 
-  MONGO_URI        mongodb+srv://user:pass@cluster.mongodb.net/db
+  DATABASE_URL     mongodb+srv://user:pass@cluster.mongodb.net/db
                    ↳ Get from MongoDB Atlas (connection string)
   
   ADMIN_PASSWORD   [your-secure-password]
@@ -74,7 +74,6 @@ Watch for these messages in Render logs:
 
 BUILD PHASE:
   ✓ Installing dependencies...
-  ✓ Generating Prisma client...
   ✓ Building client...
   ✓ Build completed
 
