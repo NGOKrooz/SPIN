@@ -12,9 +12,8 @@ const UnitSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
-UnitSchema.pre('save', function (next) {
+UnitSchema.pre('save', function () {
   this.updatedAt = new Date();
-  next();
 });
 
 module.exports = mongoose.model('Unit', UnitSchema);

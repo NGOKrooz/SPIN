@@ -8,8 +8,19 @@ const { logRecentUpdateSafe } = require('../services/recentUpdatesService');
 
 const router = express.Router();
 
+const normalizeUnitPayload = (req, res, next) => {
+  // Support both camelCase and snake_case payloads (frontend may send snake_case)
+  if (req.body.duration_days !== undefined && req.body.durationDays === undefined) {
+    req.body.durationDays = req.body.duration_days;
+  }
+  if (req.body.patient_count !== undefined && req.body.patientCount === undefined) {
+    req.body.patientCount = req.body.patient_count;
+  }
+  next();
+};
+
 const validateUnitPayload = [
-  body('name').optional().trim().isLength({ min: 2, max: 100 }).withMessage('Unit name must be 2-100 characters'),
+  body('name').trim().isLength({ min: 2, max: 100 }).withMessage('Unit name must be 2-100 characters'),
   body('durationDays').optional().isInt({ min: 1, max: 365 }).withMessage('Duration must be 1-365 days'),
   body('workload').optional().isIn(['Low', 'Medium', 'High']).withMessage('Workload must be Low, Medium, or High'),
   body('patientCount').optional().isInt({ min: 0 }).withMessage('Patient count must be a non-negative integer'),
@@ -64,7 +75,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST /api/units - Create new unit
-router.post('/', validateUnitPayload, async (req, res) => {
+router.post('/', normalizeUnitPayload, validateUnitPayload, async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
@@ -76,12 +87,18 @@ router.post('/', validateUnitPayload, async (req, res) => {
     res.status(201).json(unit);
   } catch (err) {
     console.error('Error creating unit:', err);
-    res.status(500).json({ error: 'Failed to create unit' });
+
+    // Return validation errors for unique/required constraints
+    if (err.name === 'ValidationError') {
+      return res.status(400).json({ error: 'Validation failed', details: err.message });
+    }
+
+    res.status(500).json({ error: 'Failed to create unit', details: err.message });
   }
 });
 
 // PUT /api/units/:id - Update unit
-router.put('/:id', validateUnitPayload, async (req, res) => {
+router.put('/:id', normalizeUnitPayload, validateUnitPayload, async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });

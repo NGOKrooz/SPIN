@@ -9,6 +9,17 @@ const { logRecentUpdateSafe } = require('../services/recentUpdatesService');
 
 const router = express.Router();
 
+const normalizeInternPayload = (req, res, next) => {
+  // Support both camelCase and snake_case payloads (frontend may send snake_case)
+  if (req.body.start_date !== undefined && req.body.startDate === undefined) {
+    req.body.startDate = req.body.start_date;
+  }
+  if (req.body.phone_number !== undefined && req.body.phoneNumber === undefined) {
+    req.body.phoneNumber = req.body.phone_number;
+  }
+  next();
+};
+
 const validateIntern = [
   body('name').trim().isLength({ min: 2, max: 100 }).withMessage('Name must be 2-100 characters'),
   body('gender').isIn(['Male', 'Female']).withMessage('Gender must be Male or Female'),
@@ -70,7 +81,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST /api/interns - Create a new intern
-router.post('/', validateIntern, async (req, res) => {
+router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
@@ -82,12 +93,17 @@ router.post('/', validateIntern, async (req, res) => {
     res.status(201).json(intern);
   } catch (err) {
     console.error('Error creating intern:', err);
-    res.status(500).json({ error: 'Failed to create intern' });
+
+    if (err.name === 'ValidationError') {
+      return res.status(400).json({ error: 'Validation failed', details: err.message });
+    }
+
+    res.status(500).json({ error: 'Failed to create intern', details: err.message });
   }
 });
 
 // PUT /api/interns/:id - Update existing intern
-router.put('/:id', validateIntern, async (req, res) => {
+router.put('/:id', normalizeInternPayload, validateIntern, async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });

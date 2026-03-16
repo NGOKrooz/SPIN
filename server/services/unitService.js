@@ -20,6 +20,10 @@ async function getUnitById(id) {
 async function createUnit(data) {
   const { name, durationDays, workload, patientCount, description } = data;
 
+  // If frontend sends snake_case fields, they should already be normalized
+  // by the route layer. We still defend against undefined values here.
+  const finalDurationDays = typeof durationDays === 'number' ? durationDays : 7;
+
   let finalWorkload = workload;
   if (!finalWorkload && patientCount !== undefined) {
     if (patientCount <= 4) finalWorkload = 'Low';
@@ -29,9 +33,9 @@ async function createUnit(data) {
 
   const unit = new Unit({
     name,
-    durationDays,
+    durationDays: finalDurationDays,
     workload: finalWorkload || 'Medium',
-    patientCount: patientCount || 0,
+    patientCount: typeof patientCount === 'number' ? patientCount : 0,
     description: description || null,
   });
 

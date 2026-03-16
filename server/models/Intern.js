@@ -13,9 +13,8 @@ const InternSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
-InternSchema.pre('save', function (next) {
+InternSchema.pre('save', function () {
   this.updatedAt = new Date();
-  next();
 });
 
 module.exports = mongoose.model('Intern', InternSchema);
