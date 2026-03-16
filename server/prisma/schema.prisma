@@ -1,0 +1,88 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model Intern {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  email       String   @unique
+  unitId      String?  @db.ObjectId
+  rotationId  String?  @db.ObjectId
+  startDate   DateTime
+  endDate     DateTime
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  unit      Unit?     @relation(fields: [unitId], references: [id])
+  rotations Rotation[]
+
+  @@map("interns")
+}
+
+model Unit {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String   @unique
+  description String?
+  capacity    Int      @default(1)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  interns   Intern[]   @relation
+  rotations Rotation[] @relation
+
+  @@map("units")
+}
+
+model Rotation {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  internId      String   @db.ObjectId
+  unitId        String   @db.ObjectId
+  startDate     DateTime
+  endDate       DateTime
+  status        String   @default("active")
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  intern Intern @relation(fields: [internId], references: [id])
+  unit   Unit   @relation(fields: [unitId], references: [id])
+
+  @@map("rotations")
+}
+
+model Setting {
+  id    String @id @default(auto()) @map("_id") @db.ObjectId
+  key   String @unique
+  value String
+  type  String @default("string")
+
+  @@map("settings")
+}
+
+model ActivityLog {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  action    String
+  details   String?
+  userId    String?
+  timestamp DateTime @default(now())
+
+  @@map("activity_logs")
+}
+
+model SystemState {
+  id    String @id @default(auto()) @map("_id") @db.ObjectId
+  key   String @unique
+  value String
+
+  @@map("system_states")
+}

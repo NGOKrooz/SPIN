@@ -6,11 +6,13 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "test": "jest"
+    "test": "jest",
+    "prisma:generate": "prisma generate"
   },
   "dependencies": {
     "@azure/msal-node": "^2.15.0",
     "@microsoft/microsoft-graph-client": "^3.0.7",
+    "@prisma/client": "^5.7.1",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "date-fns": "^2.30.0",
@@ -29,6 +31,7 @@
   "devDependencies": {
     "jest": "^29.7.0",
     "nodemon": "^3.0.1",
+    "prisma": "^5.7.1",
     "supertest": "^6.3.3"
   },
   "keywords": [

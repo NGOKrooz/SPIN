@@ -7,7 +7,7 @@ require('dotenv').config();
 // ═══════════════════════════════════════════════════════════
 // Production Environment Validation (Critical)
 // ═══════════════════════════════════════════════════════════
-const requiredEnvVars = ['MONGO_URI'];
+const requiredEnvVars = ['DATABASE_URL'];
 const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
 
 if (missingEnvVars.length > 0) {

@@ -30,7 +30,7 @@ COPY . .
 ENV CI=false
 
 # Generate Prisma Client (required for Prisma to work)
-RUN cd server && npm run prisma:generate
+RUN cd server && npx prisma generate
 
 # Build the client
 RUN cd client && npm run build
