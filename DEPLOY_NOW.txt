@@ -52,8 +52,8 @@ Files Changed: 4
 
 Required variables (set in Render Dashboard → Environment):
 
-  DATABASE_URL     postgresql://user:pass@host:port/db
-                   ↳ Get from Supabase (Connection Pooling string)
+  MONGO_URI        mongodb+srv://user:pass@cluster.mongodb.net/db
+                   ↳ Get from MongoDB Atlas (connection string)
   
   ADMIN_PASSWORD   [your-secure-password]
                    ↳ Currently: "space3key" (change for production)
@@ -62,7 +62,7 @@ Required variables (set in Render Dashboard → Environment):
   
   PORT             (Auto-set by Render - DO NOT manually set)
 
-⚠️  IMPORTANT: Use Supabase POOLING connection string, not direct!
+⚠️  IMPORTANT: Use MongoDB Atlas connection string!
 
 ┌──────────────────────────────────────────────────────────────────────┐
 │ STEP 2: Monitor Render Deployment                                   │
@@ -80,16 +80,16 @@ BUILD PHASE:
 
 RUNTIME PHASE:
   ✓ 🚀 SPIN Server Starting...
-  ✓ 🗄️  Database: PostgreSQL (Supabase)
+  ✓ 🗄️  Database: MongoDB Atlas
   ✓ ✅ Connected on attempt 1
   ✓ ✅ Database tables initialized successfully
   ✓ ✅ All routes loaded successfully
   ✓ 🚀 SPIN Server running on port XXXXX
 
 ⚠️  If you see errors, check:
-  - DATABASE_URL is set correctly
+  - MONGO_URI is set correctly
   - Password is URL-encoded (@ → %40, # → %23, etc.)
-  - Using pooling connection string
+  - Using Atlas connection string
 
 ┌──────────────────────────────────────────────────────────────────────┐
 │ STEP 3: Verify Deployment                                           │

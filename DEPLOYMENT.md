@@ -4,7 +4,7 @@
 
 ### Prerequisites
 - Node.js 18+ installed
-- PostgreSQL database (for production)
+- MongoDB Atlas account (for production database)
 - PM2 process manager (recommended)
 - Nginx web server (optional)
 
@@ -16,8 +16,9 @@ Create `server/.env` with production values:
 PORT=5000
 NODE_ENV=production
 JWT_SECRET=your_secure_jwt_secret_here
-DATABASE_URL=postgresql://user:password@host:port/database?sslmode=require
+MONGO_URI=mongodb+srv://user:password@cluster.mongodb.net/spinDB?retryWrites=true&w=majority
 CORS_ORIGIN=https://yourdomain.com
+ADMIN_PASSWORD=your_secure_admin_password
 ```
 
 #### Client Environment Variables
@@ -26,16 +27,12 @@ Create `client/.env` with production values:
 REACT_APP_API_URL=https://yourdomain.com/api
 ```
 
-### 2. Database Setup (PostgreSQL)
-1. Install PostgreSQL
-2. Create database:
-```sql
-CREATE DATABASE spin_production;
-CREATE USER spin_user WITH PASSWORD 'secure_password';
-GRANT ALL PRIVILEGES ON DATABASE spin_production TO spin_user;
-```
-
-3. Set `DATABASE_URL` in `server/.env`
+### 2. Database Setup (MongoDB Atlas)
+1. Create MongoDB Atlas account
+2. Create a cluster and database
+3. Create database user with read/write access
+4. Get connection string from Atlas dashboard
+5. Set `MONGO_URI` in `server/.env` with your Atlas connection string
 
 ### 3. Build and Deploy
 

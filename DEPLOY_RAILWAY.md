@@ -25,12 +25,14 @@
    ```env
    PORT=5000
    NODE_ENV=production
+   MONGO_URI=your-mongodb-atlas-connection-string
    ADMIN_PASSWORD=YourSecurePasswordHere123!
    JWT_SECRET=your-random-secret-key-min-32-chars
    CORS_ORIGIN=*
    ```
 
    **Important**: 
+   - Replace `MONGO_URI` with your MongoDB Atlas connection string
    - Replace `ADMIN_PASSWORD` with a strong password
    - Generate a random `JWT_SECRET` (at least 32 characters)
 
@@ -56,9 +58,9 @@ Once deployed:
 ### Step 6: Add Database (Required)
 
 1. In your Railway project, click "New"
-2. Select "Database" → "PostgreSQL"
-3. Railway will automatically add `DATABASE_URL` to your service
-4. Redeploy your app (it will use PostgreSQL automatically)
+2. Select "Database" → "MongoDB"
+3. Railway will automatically add `MONGO_URI` to your service
+4. Redeploy your app (it will use MongoDB automatically)
 
 ---
 

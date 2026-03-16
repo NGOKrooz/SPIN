@@ -157,7 +157,7 @@ router.post('/', validateIntern, async (req, res) => {
 **File:** [server/env.example](server/env.example)
 
 **Improvements:**
-- Added comprehensive DATABASE_URL documentation
+- Added comprehensive MONGO_URI documentation
 - Included examples of special character URL encoding
 - Added setup instructions for Supabase and Railway
 - Clarified which variables are required vs optional
@@ -169,7 +169,7 @@ router.post('/', validateIntern, async (req, res) => {
 ### Diagnostic Tools
 1. **[server/debug-db-connection.js](server/debug-db-connection.js)** - Database connection diagnostic
    - Test DNS resolution (IPv4/IPv6)
-   - Verify DATABASE_URL format
+   - Verify MONGO_URI format
    - Attempt connection and run test query
    - Usage: `node server/debug-db-connection.js`
 
@@ -225,7 +225,7 @@ router.post('/', validateIntern, async (req, res) => {
 
 1. **Set Environment Variables**
    ```
-   DATABASE_URL = postgresql://postgres:PASSWORD@db.supabase.co:5432/postgres
+   MONGO_URI = mongodb+srv://user:password@cluster.mongodb.net/spinDB?retryWrites=true&w=majority
    ADMIN_PASSWORD = your_secure_password
    NODE_ENV = production
    PORT = 5000
@@ -249,7 +249,7 @@ router.post('/', validateIntern, async (req, res) => {
 
 1. **Set Environment Variables**
    ```
-   DATABASE_URL = ${{ Postgres.DATABASE_URL }}
+   MONGO_URI = ${{ MongoDB.MONGO_URI }}
    ADMIN_PASSWORD = your_secure_password
    NODE_ENV = production
    PORT = ${{ PORT }}
@@ -269,7 +269,7 @@ router.post('/', validateIntern, async (req, res) => {
 
 1. **Create `.env` file**
    ```
-   DATABASE_URL = postgresql://postgres:password@localhost:5432/postgres
+   MONGO_URI = mongodb+srv://user:password@cluster.mongodb.net/spinDB?retryWrites=true&w=majority
    NODE_ENV = development
    ADMIN_PASSWORD = dev_password
    PORT = 5000
@@ -297,7 +297,7 @@ router.post('/', validateIntern, async (req, res) => {
 🚀 SPIN Server running on port 5000
 📊 Health check: http://localhost:5000/api/health
 🔌 Attempting to connect to PostgreSQL...
-🔧 Parsing DATABASE_URL for PostgreSQL connection...
+🔧 Parsing MONGO_URI for MongoDB Atlas connection...
 📡 Database host: db.supabase.co:5432
 👤 User: postgres
 🔒 SSL: Auto-detected as required for cloud provider
@@ -358,7 +358,7 @@ HTTP 200 OK
 | Server crashes | Fixed! DB init retries 5 times |
 | Intern creation fails | Fixed! DB connection verified first |
 | SSL errors | Fixed! Auto-enabled for Supabase |
-| Connection refused | Check hostname in DATABASE_URL |
+| Connection refused | Check hostname in MONGO_URI |
 | Auth failed | Check password is URL-encoded |
 | 503 on POST | Database still initializing, wait 30s |
 
@@ -390,7 +390,7 @@ HTTP 200 OK
 1. **Review the changes** - Read through [PRODUCTION_FIX_SUMMARY.md](PRODUCTION_FIX_SUMMARY.md)
 2. **Test locally** - `npm start` and `curl http://localhost:5000/api/health`
 3. **Run diagnostics** - `node server/debug-db-connection.js`
-4. **Set environment variables** - DATABASE_URL, ADMIN_PASSWORD
+4. **Set environment variables** - MONGO_URI, ADMIN_PASSWORD
 5. **Deploy to Render/Railway** - Follow deployment steps above
 6. **Monitor logs** - Look for `✅ PostgreSQL connected successfully`
 7. **Test endpoints** - Health check, create intern, etc.

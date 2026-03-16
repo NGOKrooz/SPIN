@@ -1,25 +1,27 @@
-# PostgreSQL Connection Troubleshooting Guide
+# MongoDB Atlas Connection Troubleshooting Guide
 
-## Problem: `ENETUNREACH` Error with IPv6
+## Problem: `Could not connect to any servers` Error
 
 ### Root Cause
-The error `connect ENETUNREACH 2a05:d018:135e:163d:2a25:4fc5:d579:8c06:5432` indicates:
-- The database hostname is resolving to an **IPv6 address**
-- IPv6 is not available in your deployment environment (Render/Railway)
-- The connection fails without falling back to IPv4
+The error indicates:
+- MongoDB Atlas is blocking connections from your IP address
+- The IP whitelist in Atlas doesn't include your deployment environment's IP
+- Atlas requires explicit IP whitelisting for security
 
 ### Symptoms
-- Deployment fails with "ENETUNREACH"
-- Backend crashes on startup
-- Error shows an IPv6 address (contains colons, looks like: `2a05:...`)
-- App cannot create interns ("failed to create intern" error)
+- Deployment fails with "Could not connect to any servers"
+- Backend crashes on startup with MongoDB connection error
+- Error shows "IP that isn't whitelisted"
+- App cannot connect to database
 
 ### Solution ✅
-**The code has been fixed!** All PostgreSQL connections now:
-1. **Force IPv4** with `family: 4` in the Pool config
-2. **Auto-detect SSL requirement** for cloud providers (Supabase, AWS, Azure)
-3. **Parse DATABASE_URL correctly** with proper credential handling
-4. **Add connection timeouts** and retries
+**Configure MongoDB Atlas Network Access:**
+1. Go to MongoDB Atlas Dashboard → Network Access
+2. Click "Add IP Address"
+3. For development: Add your current IP
+4. For production (Render/Railway): Add `0.0.0.0/0` to allow all IPs
+5. Wait 1-2 minutes for changes to propagate
+6. Redeploy your application
 
 ## Problem: Database Initialization Fails
 
@@ -40,13 +42,13 @@ Previous code called `process.exit(-1)` when DB init failed, killing the entire 
 4. **Serves health endpoint** to confirm the app is responsive
 5. **Logs detailed diagnostic info** about what went wrong
 
-## Problem: Intern Creation Fails
+## Problem: Data Operations Fail
 
 ### Root Cause
-If database connection isn't ready, POST `/api/interns` fails silently.
+If MongoDB connection isn't ready, API operations fail silently.
 
 ### Symptoms
-- "failed to create intern" error when creating new interns
+- "failed to create intern" error when creating new records
 - Works sometimes, fails other times
 - POST request hangs or returns 500 error
 
@@ -56,39 +58,26 @@ If database connection isn't ready, POST `/api/interns` fails silently.
 2. **Returns 503** if database is unavailable
 3. **Logs connection errors** with diagnostic info
 
-## Database URL Configuration
+## MongoDB Atlas Configuration
 
 ### Format
 ```
-postgresql://username:password@host:port/database
+mongodb+srv://username:password@cluster.mongodb.net/database
 ```
 
-### For Supabase
-1. Go to **Project Settings > Database**
-2. Copy the **Connection string** (not Connection pooler)
-3. Paste into `DATABASE_URL` in environment variables
-4. Ensure special characters in password are **URL-encoded**
+### For MongoDB Atlas
+1. Go to **Clusters > Connect**
+2. Choose **Connect your application**
+3. Copy the **connection string**
+4. Replace `<password>` with your database user password
+5. Replace `<database>` with your database name (e.g., `spinDB`)
+6. Paste into `MONGO_URI` in environment variables
 
-### Encoding Special Characters in Password
-If your password is: `my#pass@word123`
-
-URL-encode it to: `my%23pass%40word123`
-
-Common encodings:
-- `#` → `%23`
-- `@` → `%40`
-- `:` → `%3A`
-- `/` → `%2F`
-- `%` → `%25`
-- `?` → `%3F`
-- `&` → `%26`
-- `=` → `%3D`
-
-### For Render Railway
-1. Go to PostgreSQL service
-2. Copy the **Internal Database URL** (for private networking)
-3. Paste into `DATABASE_URL`
-4. Or use **External Database URL** if internal networking not available
+### For Render/Railway Deployment
+1. In MongoDB Atlas, go to **Network Access**
+2. Add IP address: `0.0.0.0/0` (allows all IPs)
+3. Wait 1-2 minutes for changes to apply
+4. Use the full connection string in your deployment environment variables
 
 ## Diagnostic Commands
 
@@ -98,8 +87,8 @@ node server/debug-db-connection.js
 ```
 
 This will:
-- Parse your DATABASE_URL
-- Test DNS resolution (IPv4 and IPv6)
+- Parse your MONGO_URI
+- Test DNS resolution
 - Attempt database connection
 - Run a test query
 - Report any errors with solutions
@@ -134,18 +123,16 @@ Dashboard > Logs
 ```
 
 Look for:
-- `✅ PostgreSQL connected successfully` (good)
-- `❌ ENETUNREACH` (IPv6 issue - now fixed)
+- `✅ MongoDB Connected` (good)
+- `❌ Could not connect to any servers` (IP whitelist issue)
 - `📡 Database host:` (shows what hostname is being used)
-- `🔒 SSL: Enabled` (should be enabled for Supabase)
 
 ## Environment Variables Checklist
 
 Verify these are set correctly:
 
-- `DATABASE_URL` - Full PostgreSQL connection string
-  - Format: `postgresql://user:password@host:port/database`
-  - Special characters URL-encoded
+- `MONGO_URI` - Full MongoDB Atlas connection string
+  - Format: `mongodb+srv://user:password@cluster.mongodb.net/database`
   
 - `NODE_ENV` - Set to `production` for cloud deployments
   - Affects SSL settings and error logging
