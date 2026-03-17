@@ -7,7 +7,7 @@ require('dotenv').config();
 // ═══════════════════════════════════════════════════════════
 // Production Environment Validation (Critical)
 // ═══════════════════════════════════════════════════════════
-const requiredEnvVars = ['DATABASE_URL'];
+const requiredEnvVars = ['MONGO_URI'];
 const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
 
 if (missingEnvVars.length > 0) {
@@ -20,8 +20,9 @@ if (missingEnvVars.length > 0) {
   missingEnvVars.forEach(varName => console.error(`  - ${varName}`));
   console.error('');
   console.error('For deployment:');
-  console.error('  1. Ensure DATABASE_URL is set with MongoDB Atlas connection string');
-  console.error('  2. Ensure ADMIN_PASSWORD is set (optional but recommended)');
+  console.error('  1. Ensure MONGO_URI is set with MongoDB Atlas connection string');
+  console.error('  2. Format: mongodb+srv://<username>:<password>@cluster.mongodb.net/spin?retryWrites=true&w=majority');
+  console.error('  3. ADMIN_PASSWORD is optional (recommended for production)');
   console.error('');
   console.error('═════════════════════════════════════════════════════════');
   console.error('');
