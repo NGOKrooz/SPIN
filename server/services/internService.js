@@ -8,7 +8,7 @@ const Unit = require('../models/Unit');
  */
 async function createIntern(data, options = {}) {
   console.log('createIntern received data:', data); // Debug log
-  const { name, gender, batch, startDate, phoneNumber, email, initialUnitId } = data;
+  const { name, gender, batch, startDate, phoneNumber, initialUnitId } = data;
   const { autoGenerateRotations = false } = options;
 
   let finalBatch = batch;
@@ -25,7 +25,6 @@ async function createIntern(data, options = {}) {
     batch: finalBatch,
     startDate: parsedStartDate,
     phoneNumber: phoneNumber || null,
-    email,
     status: 'Active',
     extensionDays: 0,
   });
@@ -48,7 +47,7 @@ async function createIntern(data, options = {}) {
   }
 
   if (autoGenerateRotations) {
-    await generateRotationsForIntern(intern._id, finalBatch, parsedStartDate);
+    await generateRotationsForIntern(intern._id, parsedStartDate);
   }
 
   return intern;
@@ -57,19 +56,8 @@ async function createIntern(data, options = {}) {
 /**
  * Generate rotations for an intern
  */
-async function generateRotationsForIntern(internId, batch, startDate) {
-  const allInterns = await Intern.find({
-    status: { $in: ['Active', 'Extended'] },
-  })
-    .sort({ _id: 1 })
-    .exec();
-
-  const internIndex = allInterns.findIndex(i => i._id.equals(internId));
-  if (internIndex === -1) {
-    throw new Error(`Intern ${internId} not found in active interns list`);
-  }
-
-  const units = await Unit.find({}).sort({ _id: 1 }).exec();
+async function generateRotationsForIntern(internId, startDate) {
+  const units = await Unit.find({}).sort({ position: 1, name: 1 }).exec();
   if (units.length === 0) {
     console.warn('[GenerateRotations] No units available, skipping rotation creation');
     return;
@@ -80,7 +68,7 @@ async function generateRotationsForIntern(internId, batch, startDate) {
     throw new Error(`Intern ${internId} not found`);
   }
 
-  const rotations = generateInternRotations(intern, units, startDate, internIndex);
+  const rotations = generateInternRotations(intern, units, startDate);
 
   if (rotations.length > 0) {
     await Rotation.insertMany(rotations);
@@ -90,16 +78,13 @@ async function generateRotationsForIntern(internId, batch, startDate) {
 /**
  * Generate rotation schedule for a single intern
  */
-function generateInternRotations(intern, units, startDate, internIndex = 0) {
+function generateInternRotations(intern, units, startDate) {
   const rotations = [];
   const currentDate = typeof startDate === 'string' ? new Date(startDate) : startDate;
   let currentDateCopy = new Date(currentDate);
 
-  const startUnitIndex = internIndex % units.length;
-  const orderedUnits = [
-    ...units.slice(startUnitIndex),
-    ...units.slice(0, startUnitIndex),
-  ];
+  // Use the unit ordering as defined in the units collection (position / name)
+  const orderedUnits = units;
 
   for (const unit of orderedUnits) {
     const rotationStart = new Date(currentDateCopy);

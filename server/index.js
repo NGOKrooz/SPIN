@@ -147,6 +147,7 @@ try {
   app.use('/api/activity', require('./routes/activity'));
   app.use('/api/settings', require('./routes/settings').router);
   app.use('/api/config', require('./routes/config'));
+  app.use('/api/dashboard', require('./routes/dashboard'));
   app.use('/api/debug', require('./routes/debug'));
   console.log('✅ All routes loaded successfully');
 } catch (routeError) {
@@ -243,8 +244,8 @@ async function seedDefaultData() {
       const units = await Unit.find();
       if (units.length > 0) {
         await Intern.create([
-          { name: 'Alice Johnson', gender: 'Female', batch: 'A', startDate: new Date('2026-01-15'), phoneNumber: '123-456-7890', email: 'alice.johnson@example.com', status: 'Active' },
-          { name: 'Bob Smith', gender: 'Male', batch: 'B', startDate: new Date('2026-02-01'), phoneNumber: '987-654-3210', email: 'bob.smith@example.com', status: 'Active' }
+          { name: 'Alice Johnson', gender: 'Female', batch: 'A', startDate: new Date('2026-01-15'), phoneNumber: '123-456-7890', status: 'Active' },
+          { name: 'Bob Smith', gender: 'Male', batch: 'B', startDate: new Date('2026-02-01'), phoneNumber: '987-654-3210', status: 'Active' }
         ]);
         console.log('✅ Sample interns created');
       }
