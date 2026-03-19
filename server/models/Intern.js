@@ -2,8 +2,9 @@ const mongoose = require('mongoose');
 
 const InternSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
-  gender: { type: String, enum: ['Male', 'Female'], required: true },
-  batch: { type: String, enum: ['A', 'B'], required: true },
+  email: { type: String, default: null },
+  gender: { type: String, enum: ['Male', 'Female'], default: null },
+  batch: { type: String, enum: ['A', 'B'], default: null },
   startDate: { type: Date, required: true },
   phoneNumber: { type: String, default: null },
   status: { type: String, enum: ['Active', 'Extended', 'Completed'], default: 'Active' },

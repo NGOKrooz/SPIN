@@ -3,8 +3,10 @@ const { body, validationResult } = require('express-validator');
 
 const Unit = require('../models/Unit');
 const Rotation = require('../models/Rotation');
-const { createUnit, updateUnit, deleteUnit } = require('../services/unitService');
+const { createUnit, updateUnit, deleteUnit, calculateWorkload, isCritical } = require('../services/unitService');
 const { logRecentUpdateSafe } = require('../services/recentUpdatesService');
+const { buildInternViews } = require('../services/internViewService');
+const { updateBatchStats } = require('./dashboard');
 
 const router = express.Router();
 
@@ -46,7 +48,11 @@ router.get('/', async (req, res) => {
 
     const result = units.map(unit => ({
       ...unit.toObject(),
+      duration_days: unit.durationDays || unit.duration || null,
+      duration: unit.duration || unit.durationDays || null,
       currentInterns: counts[String(unit._id)] || 0,
+      workload: calculateWorkload(unit),
+      isCritical: isCritical(unit),
     }));
 
     res.json(result);
@@ -62,12 +68,25 @@ router.get('/:id', async (req, res) => {
     const unit = await Unit.findById(req.params.id).exec();
     if (!unit) return res.status(404).json({ error: 'Unit not found' });
 
-    const rotations = await Rotation.find({ unitId: unit._id })
-      .populate('internId')
-      .sort({ startDate: 1 })
-      .exec();
+    // Get current interns in this unit
+    const today = new Date();
+    const currentRotations = await Rotation.find({
+      unitId: unit._id,
+      startDate: { $lte: today },
+      endDate: { $gte: today }
+    }).exec();
 
-    res.json({ ...unit.toObject(), rotations });
+    const internIds = currentRotations.map(r => r.internId);
+    const interns = await buildInternViews(internIds);
+
+    res.json({
+      ...unit.toObject(),
+      duration_days: unit.durationDays || unit.duration || null,
+      duration: unit.duration || unit.durationDays || null,
+      interns,
+      workload: calculateWorkload(unit),
+      isCritical: isCritical(unit),
+    });
   } catch (err) {
     console.error('Error fetching unit:', err);
     res.status(500).json({ error: 'Failed to fetch unit' });
@@ -84,7 +103,8 @@ router.post('/', normalizeUnitPayload, validateUnitPayload, async (req, res) => 
   try {
     const unit = await createUnit(req.body);
     await logRecentUpdateSafe('unit_created', `Created unit: ${unit.name}`);
-    res.status(201).json(unit);
+    await updateBatchStats().catch(() => {});
+    res.status(201).json({ success: true, unit });
   } catch (err) {
     console.error('Error creating unit:', err);
 
@@ -109,7 +129,8 @@ router.put('/:id', normalizeUnitPayload, validateUnitPayload, async (req, res) =
     if (!unit) return res.status(404).json({ error: 'Unit not found' });
 
     await logRecentUpdateSafe('unit_updated', `Updated unit: ${unit.name}`);
-    res.json(unit);
+    await updateBatchStats().catch(() => {});
+    res.json({ success: true, unit });
   } catch (err) {
     console.error('Error updating unit:', err);
     res.status(500).json({ error: 'Failed to update unit' });
@@ -124,10 +145,11 @@ router.delete('/:id', async (req, res) => {
 
     await Rotation.deleteMany({ unitId: unit._id }).exec();
     await logRecentUpdateSafe('unit_deleted', `Deleted unit: ${unit.name}`);
+    await updateBatchStats().catch(() => {});
     res.json({ success: true });
   } catch (err) {
     console.error('Error deleting unit:', err);
-    res.status(500).json({ error: 'Failed to delete unit' });
+    res.status(500).json({ success: false, error: 'Failed to delete unit' });
   }
 });
 
@@ -146,10 +168,11 @@ router.put('/reorder', async (req, res) => {
 
     await Promise.all(updates);
     await logRecentUpdateSafe('units_reordered', 'Updated unit ordering');
+    await updateBatchStats().catch(() => {});
     res.json({ success: true });
   } catch (err) {
     console.error('Error reordering units:', err);
-    res.status(500).json({ error: 'Failed to reorder units' });
+    res.status(500).json({ success: false, error: 'Failed to reorder units' });
   }
 });
 

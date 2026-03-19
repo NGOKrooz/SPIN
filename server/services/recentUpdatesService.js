@@ -1,19 +1,19 @@
-const ActivityLog = require('../models/ActivityLog');
+const Activity = require('../models/Activity');
 
-async function logRecentUpdate(action, description) {
-  const log = await ActivityLog.create({
-    activityType: action,
-    details: description,
+async function logRecentUpdate(type, message) {
+  const activity = await Activity.create({
+    type,
+    message,
   });
 
-  return log;
+  return activity;
 }
 
-async function logRecentUpdateSafe(action, description) {
+async function logRecentUpdateSafe(type, message) {
   try {
-    await logRecentUpdate(action, description);
+    await logRecentUpdate(type, message);
   } catch (err) {
-    console.error(`[RecentUpdates] Failed to log action ${action}:`, err);
+    console.error(`[RecentUpdates] Failed to log activity ${type}:`, err);
   }
 }
 

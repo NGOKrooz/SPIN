@@ -1,31 +1,31 @@
 const express = require('express');
 
-const ActivityLog = require('../models/ActivityLog');
+const Activity = require('../models/Activity');
 
 const router = express.Router();
 
-// GET /api/activity/recent - Get recent activity logs
+// GET /api/activity/recent - Get recent activities
 router.get('/recent', async (req, res) => {
   try {
-    const logs = await ActivityLog.find({})
+    const activities = await Activity.find({})
       .sort({ createdAt: -1 })
       .limit(10)
       .exec();
-    res.json(logs);
+    res.json(activities);
   } catch (err) {
-    console.error('Error fetching recent activity:', err);
-    res.status(500).json({ error: 'Failed to fetch activity logs' });
+    console.error('Error fetching recent activities:', err);
+    res.status(500).json({ error: 'Failed to fetch activities' });
   }
 });
 
-// DELETE /api/activity/clear - Clear all activity logs
+// DELETE /api/activity/clear - Clear all activities
 router.delete('/clear', async (req, res) => {
   try {
-    await ActivityLog.deleteMany({}).exec();
-    res.json({ success: true, message: 'Activity logs cleared' });
+    await Activity.deleteMany({}).exec();
+    res.json({ success: true, message: 'Activities cleared' });
   } catch (err) {
-    console.error('Error clearing activity logs:', err);
-    res.status(500).json({ error: 'Failed to clear activity logs' });
+    console.error('Error clearing activities:', err);
+    res.status(500).json({ error: 'Failed to clear activities' });
   }
 });
 

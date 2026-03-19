@@ -6,88 +6,10 @@ const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
 const { createIntern, ensureInternStatusIsCorrect } = require('../services/internService');
 const { logRecentUpdateSafe } = require('../services/recentUpdatesService');
+const { buildInternView, buildInternViews } = require('../services/internViewService');
+const { updateBatchStats } = require('./dashboard');
 
 const router = express.Router();
-
-// Helpers
-const toIsoString = (date) => {
-  if (!date) return null;
-  try {
-    return new Date(date).toISOString();
-  } catch (_) {
-    return null;
-  }
-};
-
-const getRotationStatus = (rotation, today = new Date()) => {
-  const start = rotation.startDate ? new Date(rotation.startDate) : new Date(rotation.start_date);
-  const end = rotation.endDate ? new Date(rotation.endDate) : new Date(rotation.end_date);
-  if (!start || !end) return 'upcoming';
-
-  if (start <= today && end >= today) return 'active';
-  if (start > today) return 'upcoming';
-  return 'completed';
-};
-
-const formatRotation = (rotation) => {
-  const status = getRotationStatus(rotation);
-
-  const unit = rotation.unitId || rotation.unit || rotation.unit_id || null;
-  const unitId = unit?._id?.toString() || unit?.id || null;
-  const unitName = unit?.name || (rotation.unit_name || null);
-
-  return {
-    id: rotation._id?.toString(),
-    startDate: toIsoString(rotation.startDate || rotation.start_date),
-    endDate: toIsoString(rotation.endDate || rotation.end_date),
-    start_date: toIsoString(rotation.startDate || rotation.start_date),
-    end_date: toIsoString(rotation.endDate || rotation.end_date),
-    status,
-    unitId,
-    unit_id: unitId,
-    unitName,
-    unit_name: unitName,
-    isManualAssignment: Boolean(rotation.isManualAssignment || rotation.is_manual_assignment),
-    is_manual_assignment: Boolean(rotation.isManualAssignment || rotation.is_manual_assignment),
-    unit: unit ? {
-      id: unitId,
-      name: unitName,
-      durationDays: unit.durationDays || unit.duration_days || null,
-      position: unit.position || unit.order || null,
-    } : null,
-  };
-};
-
-const formatIntern = (intern, rotations = []) => {
-  const today = new Date();
-  const formattedRotations = (rotations || []).map(formatRotation);
-
-  const currentRotation = formattedRotations.find(r => r.status === 'active');
-  const upcomingRotations = formattedRotations.filter(r => r.status === 'upcoming');
-  const completedRotations = formattedRotations.filter(r => r.status === 'completed');
-
-  const startDate = intern.startDate || intern.start_date;
-
-  return {
-    id: intern._id?.toString(),
-    name: intern.name || '',
-      startDate: toIsoString(startDate),
-    start_date: toIsoString(startDate),
-    gender: intern.gender || null,
-    batch: intern.batch || null,
-    status: intern.status || null,
-    extensionDays: intern.extensionDays || intern.extension_days || 0,
-    extension_days: intern.extensionDays || intern.extension_days || 0,
-    phoneNumber: intern.phoneNumber || intern.phone_number || '',
-    phone_number: intern.phoneNumber || intern.phone_number || '',
-    currentUnit: currentRotation?.unit || null,
-    rotations: formattedRotations,
-    upcomingUnits: upcomingRotations,
-    completedUnits: completedRotations,
-    createdAt: toIsoString(intern.createdAt),
-    updatedAt: toIsoString(intern.updatedAt),
-  };
-};
 
 const normalizeInternPayload = (req, res, next) => {
   // Support both camelCase and snake_case payloads (frontend may send snake_case)
@@ -106,9 +28,10 @@ const normalizeInternPayload = (req, res, next) => {
 
 const validateIntern = [
   body('name').trim().isLength({ min: 2, max: 100 }).withMessage('Name must be 2-100 characters'),
-  body('gender').isIn(['Male', 'Female']).withMessage('Gender must be Male or Female'),
+  body('gender').optional().isIn(['Male', 'Female']).withMessage('Gender must be Male or Female'),
   body('batch').optional().isIn(['A', 'B']).withMessage('Batch must be A or B'),
-  body('startDate').isISO8601().withMessage('Start date must be a valid date'),
+  body('startDate').optional().isISO8601().withMessage('Start date must be a valid date'),
+  body('email').optional().isEmail().withMessage('Email must be valid'),
   body('phoneNumber').optional().isString().withMessage('Phone number must be a string'),
 ];
 
@@ -139,7 +62,7 @@ router.get('/', async (req, res) => {
 
     const enriched = await Promise.all(interns.map(async (intern) => {
       await ensureInternStatusIsCorrect(intern._id);
-      return formatIntern(intern, rotationsByIntern[intern._id.toString()] || []);
+      return buildInternView(intern._id);
     }));
 
     res.json(enriched);
@@ -152,20 +75,12 @@ router.get('/', async (req, res) => {
 // GET /api/interns/:id/schedule - Get intern schedule (rotations)
 router.get('/:id/schedule', async (req, res) => {
   try {
-    const intern = await Intern.findById(req.params.id).exec();
-    if (!intern) return res.status(404).json({ error: 'Intern not found' });
+    const internView = await buildInternView(req.params.id);
+    const current = internView.rotations.find(r => r.status === 'active') || null;
+    const upcoming = internView.rotations.filter(r => r.status === 'upcoming');
+    const completed = internView.rotations.filter(r => r.status === 'completed');
 
-    const rotations = await Rotation.find({ internId: intern._id })
-      .populate('unitId')
-      .sort({ startDate: 1 })
-      .exec();
-
-    const formatted = rotations.map(formatRotation);
-    const current = formatted.find(r => r.status === 'active') || null;
-    const upcoming = formatted.filter(r => r.status === 'upcoming');
-    const completed = formatted.filter(r => r.status === 'completed');
-
-    res.json({ rotations: formatted, current, upcoming, completed });
+    res.json({ rotations: internView.rotations, current, upcoming, completed });
   } catch (err) {
     console.error('Error fetching intern schedule:', err);
     res.status(500).json({ error: 'Failed to fetch intern schedule' });
@@ -175,17 +90,8 @@ router.get('/:id/schedule', async (req, res) => {
 // GET /api/interns/:id - Get a single intern
 router.get('/:id', async (req, res) => {
   try {
-    const intern = await Intern.findById(req.params.id).exec();
-    if (!intern) return res.status(404).json({ error: 'Intern not found' });
-
-    await ensureInternStatusIsCorrect(intern._id);
-
-    const rotations = await Rotation.find({ internId: intern._id })
-      .populate('unitId')
-      .sort({ startDate: 1 })
-      .exec();
-
-    res.json(formatIntern(intern, rotations));
+    const internView = await buildInternView(req.params.id);
+    res.json(internView);
   } catch (err) {
     console.error('Error fetching intern:', err);
     res.status(500).json({ error: 'Failed to fetch intern' });
@@ -203,12 +109,10 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
     const intern = await createIntern(req.body, { autoGenerateRotations: true });
     await logRecentUpdateSafe('new_intern', `Created intern: ${intern.name}`);
 
-    const rotations = await Rotation.find({ internId: intern._id })
-      .populate('unitId')
-      .sort({ startDate: 1 })
-      .exec();
+    await updateBatchStats().catch(() => {});
 
-    res.status(201).json(formatIntern(intern, rotations));
+    const internView = await buildInternView(intern._id);
+    res.status(201).json({ success: true, intern: internView });
   } catch (err) {
     console.error('Error creating intern:', err);
 
@@ -241,12 +145,10 @@ router.put('/:id', normalizeInternPayload, validateIntern, async (req, res) => {
     await intern.save();
     await ensureInternStatusIsCorrect(intern._id);
 
-    const rotations = await Rotation.find({ internId: intern._id })
-      .populate('unitId')
-      .sort({ startDate: 1 })
-      .exec();
+    await updateBatchStats().catch(() => {});
 
-    res.json(formatIntern(intern, rotations));
+    const internView = await buildInternView(intern._id);
+    res.json({ success: true, intern: internView });
   } catch (err) {
     console.error('Error updating intern:', err);
     res.status(500).json({ error: 'Failed to update intern' });
@@ -263,10 +165,150 @@ router.delete('/:id', async (req, res) => {
     await intern.deleteOne();
     await logRecentUpdateSafe('intern_deleted', `Deleted intern: ${intern.name}`);
 
+    await updateBatchStats().catch(() => {});
+
     res.json({ success: true });
   } catch (err) {
     console.error('Error deleting intern:', err);
-    res.status(500).json({ error: 'Failed to delete intern' });
+    res.status(500).json({ success: false, error: 'Failed to delete intern' });
+  }
+});
+
+// POST /api/interns/:id/manual-assign - Manually assign an intern to a unit
+router.post('/:id/manual-assign', async (req, res) => {
+  try {
+    const { unitId, startDate } = req.body;
+    if (!unitId || !startDate) {
+      return res.status(400).json({ success: false, error: 'unitId and startDate are required' });
+    }
+
+    const intern = await Intern.findById(req.params.id).exec();
+    if (!intern) return res.status(404).json({ success: false, error: 'Intern not found' });
+
+    const unit = await Unit.findById(unitId).exec();
+    if (!unit) return res.status(404).json({ success: false, error: 'Unit not found' });
+
+    const duration = unit.durationDays || unit.duration || 0;
+    const rotationStart = new Date(startDate);
+    const rotationEnd = new Date(rotationStart);
+    rotationEnd.setDate(rotationEnd.getDate() + duration - 1);
+
+    const rotation = await Rotation.create({
+      internId: intern._id,
+      unitId,
+      startDate: rotationStart,
+      endDate: rotationEnd,
+      status: 'upcoming',
+      isManualAssignment: true,
+    });
+
+    await logRecentUpdateSafe('intern_manual_assigned', `Manually assigned ${intern.name} to ${unit.name}`);
+    await updateBatchStats().catch(() => {});
+
+    res.json({ success: true, rotation });
+  } catch (err) {
+    console.error('Error in manual assignment:', err);
+    res.status(500).json({ success: false, error: 'Failed to manually assign intern' });
+  }
+});
+
+// POST /api/interns/:id/reassign - Reassign intern to a different unit
+router.post('/:id/reassign', async (req, res) => {
+  try {
+    const { unitId, startDate } = req.body;
+    if (!unitId) return res.status(400).json({ error: 'unitId is required' });
+
+    const intern = await Intern.findById(req.params.id).exec();
+    if (!intern) return res.status(404).json({ error: 'Intern not found' });
+
+    const unit = await Unit.findById(unitId).exec();
+    if (!unit) return res.status(404).json({ error: 'Unit not found' });
+
+    // Find current active rotation
+    const today = new Date();
+    const currentRotation = await Rotation.findOne({
+      internId: intern._id,
+      startDate: { $lte: today },
+      endDate: { $gte: today }
+    }).exec();
+
+    if (!currentRotation) {
+      return res.status(400).json({ error: 'No active rotation found for this intern' });
+    }
+
+    // Update the current rotation to end today
+    currentRotation.endDate = today;
+    await currentRotation.save();
+
+    // Create new rotation starting from specified date or tomorrow
+    const newStartDate = startDate ? new Date(startDate) : new Date(today);
+    newStartDate.setDate(newStartDate.getDate() + 1); // Start tomorrow if no date specified
+
+    const duration = unit.durationDays || unit.duration || 0;
+
+    const newEndDate = new Date(newStartDate);
+    newEndDate.setDate(newEndDate.getDate() + duration - 1);
+
+    const newRotation = new Rotation({
+      internId: intern._id,
+      unitId: unit._id,
+      startDate: newStartDate,
+      endDate: newEndDate,
+      isManualAssignment: true
+    });
+
+    await newRotation.save();
+    await logRecentUpdateSafe('intern_reassigned', `Reassigned ${intern.name} to ${unit.name}`);
+
+    await updateBatchStats().catch(() => {});
+
+    const internView = await buildInternView(intern._id);
+    res.json({ success: true, intern: internView });
+  } catch (err) {
+    console.error('Error reassigning intern:', err);
+    res.status(500).json({ success: false, error: 'Failed to reassign intern' });
+  }
+});
+
+// POST /api/interns/:id/extend - Extend intern's current rotation
+router.post('/:id/extend', async (req, res) => {
+  try {
+    const { days } = req.body;
+    if (!days || days <= 0) return res.status(400).json({ error: 'Valid number of days is required' });
+
+    const intern = await Intern.findById(req.params.id).exec();
+    if (!intern) return res.status(404).json({ error: 'Intern not found' });
+
+    // Find current active rotation
+    const today = new Date();
+    const currentRotation = await Rotation.findOne({
+      internId: intern._id,
+      startDate: { $lte: today },
+      endDate: { $gte: today }
+    }).exec();
+
+    if (!currentRotation) {
+      return res.status(400).json({ error: 'No active rotation found for this intern' });
+    }
+
+    // Extend the rotation
+    currentRotation.endDate = new Date(currentRotation.endDate);
+    currentRotation.endDate.setDate(currentRotation.endDate.getDate() + days);
+    await currentRotation.save();
+
+    // Update intern's extension days
+    intern.extensionDays = (intern.extensionDays || 0) + days;
+    await intern.save();
+
+    await logRecentUpdateSafe('intern_extended', `Extended ${intern.name}'s rotation by ${days} days`);
+
+    await updateBatchStats().catch(() => {});
+
+    const internView = await buildInternView(intern._id);
+    res.json({ success: true, intern: internView });
+  } catch (err) {
+    console.error('Error extending intern rotation:', err);
+    res.status(500).json({ success: false, error: 'Failed to extend intern rotation' });
   }
 });
 

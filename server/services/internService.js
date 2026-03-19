@@ -7,8 +7,7 @@ const Unit = require('../models/Unit');
  * Create a new intern with optional automatic rotation generation
  */
 async function createIntern(data, options = {}) {
-  console.log('createIntern received data:', data); // Debug log
-  const { name, gender, batch, startDate, phoneNumber, initialUnitId } = data;
+  const { name, email, gender, batch, startDate, phoneNumber, initialUnitId } = data;
   const { autoGenerateRotations = false } = options;
 
   let finalBatch = batch;
@@ -17,11 +16,12 @@ async function createIntern(data, options = {}) {
     finalBatch = internCount % 2 === 0 ? 'A' : 'B';
   }
 
-  const parsedStartDate = typeof startDate === 'string' ? new Date(startDate) : startDate;
+  const parsedStartDate = startDate ? (typeof startDate === 'string' ? new Date(startDate) : startDate) : new Date();
 
   const intern = await Intern.create({
     name,
-    gender,
+    email: email || null,
+    gender: ['Male', 'Female'].includes(gender) ? gender : null,
     batch: finalBatch,
     startDate: parsedStartDate,
     phoneNumber: phoneNumber || null,

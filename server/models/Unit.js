@@ -12,6 +12,19 @@ const UnitSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
+// Provide a consistent field name for duration (API may use duration)
+UnitSchema.virtual('duration').get(function () {
+  return this.durationDays;
+});
+UnitSchema.virtual('duration').set(function (value) {
+  if (typeof value === 'number') {
+    this.durationDays = value;
+  }
+});
+
+UnitSchema.set('toJSON', { virtuals: true });
+UnitSchema.set('toObject', { virtuals: true });
+
 UnitSchema.pre('save', function () {
   this.updatedAt = new Date();
 });

@@ -1,5 +1,22 @@
 const Unit = require('../models/Unit');
 
+function calculateWorkload(unit) {
+  const patientCount = Number(unit.patientCount || 0);
+  const capacity = Number(unit.capacity || 0);
+  if (!patientCount || !capacity) return 'Low';
+
+  const ratio = patientCount / capacity;
+  if (ratio >= 0.8) return 'High';
+  if (ratio >= 0.4) return 'Medium';
+  return 'Low';
+}
+
+function isCritical(unit) {
+  const patientCount = Number(unit.patientCount || 0);
+  const capacity = Number(unit.capacity || 0);
+  return capacity > 0 && patientCount >= capacity;
+}
+
 /**
  * Get all units
  */
@@ -18,24 +35,20 @@ async function getUnitById(id) {
  * Create a new unit
  */
 async function createUnit(data) {
-  const { name, durationDays, workload, patientCount, description } = data;
+  const { name, durationDays, duration, workload, patientCount, capacity, description } = data;
 
-  // If frontend sends snake_case fields, they should already be normalized
-  // by the route layer. We still defend against undefined values here.
-  const finalDurationDays = typeof durationDays === 'number' ? durationDays : 7;
+  // Normalize duration (support `duration` or `durationDays`)
+  const finalDurationDays = typeof durationDays === 'number' ? durationDays : (typeof duration === 'number' ? duration : 7);
 
-  let finalWorkload = workload;
-  if (!finalWorkload && patientCount !== undefined) {
-    if (patientCount <= 4) finalWorkload = 'Low';
-    else if (patientCount <= 8) finalWorkload = 'Medium';
-    else finalWorkload = 'High';
-  }
+  const finalPatientCount = typeof patientCount === 'number' ? patientCount : 0;
+  const finalCapacity = typeof capacity === 'number' ? capacity : 0;
 
   const unit = new Unit({
     name,
     durationDays: finalDurationDays,
-    workload: finalWorkload || 'Medium',
-    patientCount: typeof patientCount === 'number' ? patientCount : 0,
+    capacity: finalCapacity,
+    patientCount: finalPatientCount,
+    workload: calculateWorkload({ patientCount: finalPatientCount, capacity: finalCapacity }),
     description: description || null,
   });
 
@@ -46,23 +59,27 @@ async function createUnit(data) {
  * Update a unit
  */
 async function updateUnit(id, data) {
-  const { name, durationDays, workload, patientCount, description } = data;
-
-  let finalWorkload = workload;
-  if (!finalWorkload && patientCount !== undefined) {
-    if (patientCount <= 4) finalWorkload = 'Low';
-    else if (patientCount <= 8) finalWorkload = 'Medium';
-    else finalWorkload = 'High';
-  }
+  const { name, durationDays, duration, workload, patientCount, capacity, description } = data;
 
   const updateData = {};
   if (name !== undefined) updateData.name = name;
   if (durationDays !== undefined) updateData.durationDays = durationDays;
-  if (finalWorkload) updateData.workload = finalWorkload;
+  if (duration !== undefined) updateData.durationDays = duration;
+  if (capacity !== undefined) updateData.capacity = capacity;
   if (patientCount !== undefined) updateData.patientCount = patientCount;
   if (description !== undefined) updateData.description = description;
 
-  return await Unit.findByIdAndUpdate(id, updateData, { new: true }).exec();
+  const updatedUnit = await Unit.findByIdAndUpdate(id, updateData, { new: true }).exec();
+
+  if (updatedUnit) {
+    const computedWorkload = calculateWorkload(updatedUnit);
+    if (computedWorkload !== updatedUnit.workload) {
+      updatedUnit.workload = computedWorkload;
+      await updatedUnit.save();
+    }
+  }
+
+  return updatedUnit;
 }
 
 /**
@@ -78,6 +95,8 @@ module.exports = {
   createUnit,
   updateUnit,
   deleteUnit,
+  calculateWorkload,
+  isCritical,
 };
 
 
