@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const { body, validationResult } = require('express-validator');
 
 const Intern = require('../models/Intern');
@@ -44,7 +45,7 @@ router.get('/', async (req, res) => {
     if (status) filter.status = status;
 
     const sortDirection = String(sort || 'newest').toLowerCase() === 'oldest' ? 1 : -1;
-    const interns = await Intern.find(filter).sort({ createdAt: sortDirection }).exec();
+    const interns = await Intern.find(filter).populate('currentUnit').sort({ createdAt: sortDirection }).exec();
 
     const internIds = interns.map(i => i._id);
     const rotations = await Rotation.find({ internId: { $in: internIds } })
@@ -174,42 +175,9 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// POST /api/interns/:id/manual-assign - Manually assign an intern to a unit
+// Legacy manual assignment endpoint disabled. Manual assignment is removed per new requirements.
 router.post('/:id/manual-assign', async (req, res) => {
-  try {
-    const { unitId, startDate } = req.body;
-    if (!unitId || !startDate) {
-      return res.status(400).json({ success: false, error: 'unitId and startDate are required' });
-    }
-
-    const intern = await Intern.findById(req.params.id).exec();
-    if (!intern) return res.status(404).json({ success: false, error: 'Intern not found' });
-
-    const unit = await Unit.findById(unitId).exec();
-    if (!unit) return res.status(404).json({ success: false, error: 'Unit not found' });
-
-    const duration = unit.durationDays || unit.duration || 0;
-    const rotationStart = new Date(startDate);
-    const rotationEnd = new Date(rotationStart);
-    rotationEnd.setDate(rotationEnd.getDate() + duration - 1);
-
-    const rotation = await Rotation.create({
-      internId: intern._id,
-      unitId,
-      startDate: rotationStart,
-      endDate: rotationEnd,
-      status: 'upcoming',
-      isManualAssignment: true,
-    });
-
-    await logRecentUpdateSafe('intern_manual_assigned', `Manually assigned ${intern.name} to ${unit.name}`);
-    await updateBatchStats().catch(() => {});
-
-    res.json({ success: true, rotation });
-  } catch (err) {
-    console.error('Error in manual assignment:', err);
-    res.status(500).json({ success: false, error: 'Failed to manually assign intern' });
-  }
+  return res.status(410).json({ error: 'Manual assignment endpoint removed' });
 });
 
 // POST /api/interns/:id/reassign - Reassign intern to a different unit
@@ -217,6 +185,7 @@ router.post('/:id/reassign', async (req, res) => {
   try {
     const { unitId, startDate } = req.body;
     if (!unitId) return res.status(400).json({ error: 'unitId is required' });
+    if (!mongoose.Types.ObjectId.isValid(unitId)) return res.status(400).json({ error: 'Invalid unitId format' });
 
     const intern = await Intern.findById(req.params.id).exec();
     if (!intern) return res.status(404).json({ error: 'Intern not found' });
@@ -258,6 +227,9 @@ router.post('/:id/reassign', async (req, res) => {
     });
 
     await newRotation.save();
+    intern.currentUnit = unit._id;
+    await intern.save();
+
     await logRecentUpdateSafe('intern_reassigned', `Reassigned ${intern.name} to ${unit.name}`);
 
     await updateBatchStats().catch(() => {});
@@ -273,8 +245,8 @@ router.post('/:id/reassign', async (req, res) => {
 // POST /api/interns/:id/extend - Extend intern's current rotation
 router.post('/:id/extend', async (req, res) => {
   try {
-    const { days } = req.body;
-    if (!days || days <= 0) return res.status(400).json({ error: 'Valid number of days is required' });
+    const days = Number(req.body.days);
+    if (!Number.isFinite(days) || days <= 0) return res.status(400).json({ error: 'Valid number of days is required' });
 
     const intern = await Intern.findById(req.params.id).exec();
     if (!intern) return res.status(404).json({ error: 'Intern not found' });

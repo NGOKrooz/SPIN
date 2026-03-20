@@ -1,4 +1,5 @@
 const { addDays, startOfDay, isAfter } = require('date-fns');
+const mongoose = require('mongoose');
 const Intern = require('../models/Intern');
 const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
@@ -30,6 +31,10 @@ async function createIntern(data, options = {}) {
   });
 
   if (initialUnitId) {
+    if (!mongoose.Types.ObjectId.isValid(initialUnitId)) {
+      throw new Error('Invalid unitId format');
+    }
+
     const unit = await Unit.findById(initialUnitId).exec();
     if (!unit) {
       throw new Error('Invalid unit selected');
@@ -44,10 +49,25 @@ async function createIntern(data, options = {}) {
       endDate,
       isManualAssignment: true,
     });
+
+    intern.currentUnit = unit._id;
+    await intern.save();
   }
 
   if (autoGenerateRotations) {
     await generateRotationsForIntern(intern._id, parsedStartDate);
+
+    const today = startOfDay(new Date());
+    const activeRotation = await Rotation.findOne({
+      internId: intern._id,
+      startDate: { $lte: today },
+      endDate: { $gte: today },
+    }).exec();
+
+    if (activeRotation && activeRotation.unitId) {
+      intern.currentUnit = activeRotation.unitId;
+      await intern.save();
+    }
   }
 
   return intern;
@@ -185,9 +205,12 @@ async function extendInternship(internId, extensionDays, reason, notes, unitId) 
   }
 
   const oldExtensionDays = intern.extensionDays || 0;
-  const newExtensionDays = parseInt(extensionDays, 10);
-  const daysDifference = newExtensionDays - oldExtensionDays;
+  const newExtensionDays = Number(extensionDays);
+  if (!Number.isFinite(newExtensionDays) || newExtensionDays < 0) {
+    throw new Error('Invalid extensionDays value');
+  }
 
+  const daysDifference = newExtensionDays - oldExtensionDays;
   const finalStatus = newExtensionDays > 0 ? 'Extended' : 'Active';
 
   intern.status = finalStatus;
@@ -242,7 +265,13 @@ async function ensureInternStatusIsCorrect(internId) {
     newStatus = 'Active';
   }
 
-  if (newStatus !== intern.status) {
+  if (activeRotation && activeRotation.unitId) {
+    intern.currentUnit = activeRotation.unitId;
+  } else {
+    intern.currentUnit = null;
+  }
+
+  if (newStatus !== intern.status || intern.isModified('currentUnit')) {
     intern.status = newStatus;
     await intern.save();
   }

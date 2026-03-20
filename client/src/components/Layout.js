@@ -18,7 +18,6 @@ const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Interns', href: '/interns', icon: Users },
   { name: 'Units', href: '/units', icon: Building2 },
-  { name: 'Manual Assignment', href: '/manual-assignment', icon: UserPlus },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 

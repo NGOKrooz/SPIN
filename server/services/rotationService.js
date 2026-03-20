@@ -72,6 +72,7 @@ async function autoAdvanceRotation(internId) {
       isManualAssignment: false,
     });
 
+    await Intern.findByIdAndUpdate(internId, { currentUnit: nextUnit._id }).exec();
     return true;
   }
 

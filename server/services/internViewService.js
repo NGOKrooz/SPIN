@@ -64,6 +64,11 @@ const formatIntern = (intern, rotations = []) => {
 
   const startDate = intern.startDate || intern.start_date;
 
+  const currentUnit = currentRotation?.unit || (intern.currentUnit ? {
+    id: intern.currentUnit._id?.toString?.() || intern.currentUnit.toString(),
+    name: intern.currentUnit.name || null,
+  } : null);
+
   return {
     id: intern._id?.toString(),
     name: intern.name || '',
@@ -77,7 +82,7 @@ const formatIntern = (intern, rotations = []) => {
     extension_days: intern.extensionDays || intern.extension_days || 0,
     phoneNumber: intern.phoneNumber || intern.phone_number || '',
     phone_number: intern.phoneNumber || intern.phone_number || '',
-    currentUnit: currentRotation?.unit || null,
+    currentUnit,
     rotations: formattedRotations,
     upcomingUnits: upcomingRotations,
     completedUnits: completedRotations,
@@ -94,7 +99,7 @@ const formatIntern = (intern, rotations = []) => {
  */
 const buildInternView = async (internId) => {
   try {
-    const intern = await Intern.findById(internId).exec();
+    const intern = await Intern.findById(internId).populate('currentUnit').exec();
     if (!intern) {
       throw new Error('Intern not found');
     }
@@ -118,7 +123,7 @@ const buildInternView = async (internId) => {
  */
 const buildInternViews = async (internIds) => {
   try {
-    const interns = await Intern.find({ _id: { $in: internIds } }).exec();
+    const interns = await Intern.find({ _id: { $in: internIds } }).populate('currentUnit').exec();
     const rotations = await Rotation.find({ internId: { $in: internIds } })
       .populate('unitId')
       .sort({ startDate: 1 })

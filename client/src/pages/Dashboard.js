@@ -121,14 +121,7 @@ export default function Dashboard() {
       icon: UserCheck,
       color: 'hospital',
     },
-    // Removed Generate Rotations quick action per requirements
-    {
-      title: 'Manual Assignment',
-      description: 'Manually assign intern to unit',
-      href: '/manual-assignment',
-      icon: UserPlus,
-      color: 'batchB',
-    },
+    // Manual assignment removed - feature is deprecated
   ];
 
   return (

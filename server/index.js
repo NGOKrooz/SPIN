@@ -237,6 +237,16 @@ async function seedDefaultData() {
       console.log(`📊 Found ${existingUnits.length} existing units`);
     }
 
+    // Ensure email index does not force unique null values
+    try {
+      await Intern.collection.dropIndex('email_1');
+      console.log('✅ Dropped legacy email unique index');
+    } catch (dropErr) {
+      if (!dropErr.message.includes('index not found')) {
+        console.warn('⚠️ Could not drop email index (may not exist):', dropErr.message);
+      }
+    }
+
     // Check if interns collection is empty
     const existingInterns = await Intern.find();
     if (existingInterns.length === 0) {

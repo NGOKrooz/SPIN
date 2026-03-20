@@ -5,7 +5,6 @@ import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Interns from './pages/Interns';
 import Units from './pages/Units';
-import ManualAssignment from './pages/ManualAssignment';
 import Settings from './pages/Settings';
 
 function App() {
@@ -16,8 +15,7 @@ function App() {
           <Route index element={<Dashboard />} />
           <Route path="interns" element={<Interns />} />
           <Route path="units" element={<Units />} />
-          {/* Rotations route removed */}
-          <Route path="manual-assignment" element={<ManualAssignment />} />
+          {/* Manual assignment route removed */}
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>
