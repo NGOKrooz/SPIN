@@ -99,13 +99,13 @@ const formatIntern = (intern, rotations = []) => {
  */
 const buildInternView = async (internId) => {
   try {
-    const intern = await Intern.findById(internId).populate('currentUnit').exec();
+    const intern = await Intern.findById(internId).populate('currentUnit').populate('rotations').exec();
     if (!intern) {
       throw new Error('Intern not found');
     }
 
-    const rotations = await Rotation.find({ internId: intern._id })
-      .populate('unitId')
+    const rotations = await Rotation.find({ intern: intern._id })
+      .populate('unit')
       .sort({ startDate: 1 })
       .exec();
 
@@ -123,14 +123,14 @@ const buildInternView = async (internId) => {
  */
 const buildInternViews = async (internIds) => {
   try {
-    const interns = await Intern.find({ _id: { $in: internIds } }).populate('currentUnit').exec();
-    const rotations = await Rotation.find({ internId: { $in: internIds } })
-      .populate('unitId')
+    const interns = await Intern.find({ _id: { $in: internIds } }).populate('currentUnit').populate('rotations').exec();
+    const rotations = await Rotation.find({ intern: { $in: internIds } })
+      .populate('unit')
       .sort({ startDate: 1 })
       .exec();
 
     const rotationsByIntern = rotations.reduce((acc, rotation) => {
-      const key = rotation.internId?.toString();
+      const key = rotation.intern?.toString();
       if (!key) return acc;
       acc[key] = acc[key] || [];
       acc[key].push(rotation);

@@ -1,9 +1,9 @@
-const Activity = require('../models/Activity');
+const ActivityLog = require('../models/ActivityLog');
 
 async function logRecentUpdate(type, message) {
-  const activity = await Activity.create({
-    type,
-    message,
+  const activity = await ActivityLog.create({
+    action: type,
+    metadata: { message },
   });
 
   return activity;

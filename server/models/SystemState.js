@@ -2,8 +2,7 @@ const mongoose = require('mongoose');
 
 const SystemStateSchema = new mongoose.Schema({
   key: { type: String, required: true, unique: true },
-  value: { type: String, default: '' },
-  description: { type: String, default: '' },
+  value: { type: mongoose.Schema.Types.Mixed, default: null },
   updatedAt: { type: Date, default: Date.now }
 });
 

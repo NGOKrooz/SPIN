@@ -4,7 +4,7 @@ const { startOfDay } = require('date-fns');
 const Intern = require('../models/Intern');
 const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
-const Activity = require('../models/Activity');
+const ActivityLog = require('../models/ActivityLog');
 
 const router = express.Router();
 
@@ -24,7 +24,8 @@ async function updateBatchStats() {
 router.get('/', async (req, res) => {
   try {
     const stats = await updateBatchStats();
-    const recentActivities = await Activity.find({})
+    const recentActivities = await ActivityLog.find({})
+      .populate('intern')
       .sort({ createdAt: -1 })
       .limit(5)
       .exec();
@@ -39,7 +40,8 @@ router.get('/', async (req, res) => {
 // GET /api/dashboard/recent - Recent activity feed
 router.get('/recent', async (req, res) => {
   try {
-    const updates = await Activity.find()
+    const updates = await ActivityLog.find()
+      .populate('intern')
       .sort({ createdAt: -1 })
       .limit(10)
       .exec();

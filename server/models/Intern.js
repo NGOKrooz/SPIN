@@ -1,33 +1,19 @@
 const mongoose = require('mongoose');
 
 const InternSchema = new mongoose.Schema({
-  name: { type: String, required: true, trim: true },
-  email: { type: String, default: null },
-  gender: { type: String, enum: ['Male', 'Female'], default: null },
-  batch: { type: String, enum: ['A', 'B'], default: null },
-  startDate: { type: Date, required: true, default: Date.now },
-  phoneNumber: { type: String, default: null },
-  status: { type: String, enum: ['Active', 'Extended', 'Completed'], default: 'Active' },
+  name: { type: String, required: true },
+  email: { type: String },
+  startDate: { type: Date, default: Date.now },
+  currentUnit: { type: mongoose.Schema.Types.ObjectId, ref: 'Unit' },
+  rotations: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Rotation' }],
   extensionDays: { type: Number, default: 0 },
-  currentUnit: { type: mongoose.Schema.Types.ObjectId, ref: 'Unit', default: null },
+  status: { type: String, enum: ['active', 'completed'], default: 'active' },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
 
 // Optional email index: avoid duplicate null constraints and preserve no strict uniqueness by default
 InternSchema.index({ email: 1 }, { unique: false, sparse: true });
-
-InternSchema.virtual('rotations', {
-  ref: 'Rotation',
-  localField: '_id',
-  foreignField: 'internId',
-});
-
-InternSchema.virtual('activityLogs', {
-  ref: 'Activity',
-  localField: '_id',
-  foreignField: 'internId',
-});
 
 InternSchema.set('toJSON', { virtuals: true });
 InternSchema.set('toObject', { virtuals: true });

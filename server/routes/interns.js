@@ -107,7 +107,7 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
   }
 
   try {
-    const intern = await createIntern(req.body, { autoGenerateRotations: true });
+    const intern = await createIntern(req.body);
     await logRecentUpdateSafe('new_intern', `Created intern: ${intern.name}`);
 
     await updateBatchStats().catch(() => {});
@@ -183,6 +183,7 @@ router.post('/:id/manual-assign', async (req, res) => {
 // POST /api/interns/:id/reassign - Reassign intern to a different unit
 router.post('/:id/reassign', async (req, res) => {
   try {
+    console.log(`Reassigning intern ${req.params.id} to unit ${req.body.unitId}`);
     const { unitId, startDate } = req.body;
     if (!unitId) return res.status(400).json({ error: 'unitId is required' });
     if (!mongoose.Types.ObjectId.isValid(unitId)) return res.status(400).json({ error: 'Invalid unitId format' });
@@ -196,7 +197,7 @@ router.post('/:id/reassign', async (req, res) => {
     // Find current active rotation
     const today = new Date();
     const currentRotation = await Rotation.findOne({
-      internId: intern._id,
+      intern: intern._id,
       startDate: { $lte: today },
       endDate: { $gte: today }
     }).exec();
@@ -207,29 +208,30 @@ router.post('/:id/reassign', async (req, res) => {
 
     // Update the current rotation to end today
     currentRotation.endDate = today;
+    currentRotation.status = 'completed';
     await currentRotation.save();
 
     // Create new rotation starting from specified date or tomorrow
     const newStartDate = startDate ? new Date(startDate) : new Date(today);
     newStartDate.setDate(newStartDate.getDate() + 1); // Start tomorrow if no date specified
 
-    const duration = unit.durationDays || unit.duration || 0;
-
     const newEndDate = new Date(newStartDate);
-    newEndDate.setDate(newEndDate.getDate() + duration - 1);
+    newEndDate.setDate(newEndDate.getDate() + 6); // 7 days default
 
     const newRotation = new Rotation({
-      internId: intern._id,
-      unitId: unit._id,
+      intern: intern._id,
+      unit: unit._id,
       startDate: newStartDate,
       endDate: newEndDate,
-      isManualAssignment: true
+      status: 'active'
     });
 
     await newRotation.save();
     intern.currentUnit = unit._id;
+    intern.rotations.push(newRotation._id);
     await intern.save();
 
+    console.log(`Successfully reassigned ${intern.name} to ${unit.name}`);
     await logRecentUpdateSafe('intern_reassigned', `Reassigned ${intern.name} to ${unit.name}`);
 
     await updateBatchStats().catch(() => {});
@@ -245,6 +247,7 @@ router.post('/:id/reassign', async (req, res) => {
 // POST /api/interns/:id/extend - Extend intern's current rotation
 router.post('/:id/extend', async (req, res) => {
   try {
+    console.log(`Extending intern ${req.params.id} by ${req.body.days} days`);
     const days = Number(req.body.days);
     if (!Number.isFinite(days) || days <= 0) return res.status(400).json({ error: 'Valid number of days is required' });
 
@@ -254,7 +257,7 @@ router.post('/:id/extend', async (req, res) => {
     // Find current active rotation
     const today = new Date();
     const currentRotation = await Rotation.findOne({
-      internId: intern._id,
+      intern: intern._id,
       startDate: { $lte: today },
       endDate: { $gte: today }
     }).exec();
@@ -272,6 +275,16 @@ router.post('/:id/extend', async (req, res) => {
     intern.extensionDays = (intern.extensionDays || 0) + days;
     await intern.save();
 
+    // Log extension
+    const ExtensionLog = require('../models/ExtensionReason');
+    await ExtensionLog.create({
+      intern: intern._id,
+      rotation: currentRotation._id,
+      reason: req.body.reason || 'Extension requested',
+      days
+    });
+
+    console.log(`Successfully extended ${intern.name}'s rotation by ${days} days`);
     await logRecentUpdateSafe('intern_extended', `Extended ${intern.name}'s rotation by ${days} days`);
 
     await updateBatchStats().catch(() => {});

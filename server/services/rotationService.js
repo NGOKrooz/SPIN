@@ -13,8 +13,8 @@ async function getCurrentRotations() {
     startDate: { $lte: today },
     endDate: { $gte: today },
   })
-    .populate('internId')
-    .populate('unitId')
+    .populate('intern')
+    .populate('unit')
     .sort({ startDate: 1 })
     .exec();
 }
@@ -29,8 +29,8 @@ async function getUpcomingRotations(daysAhead = 30) {
   return await Rotation.find({
     startDate: { $gt: today, $lte: futureDate },
   })
-    .populate('internId')
-    .populate('unitId')
+    .populate('intern')
+    .populate('unit')
     .sort({ startDate: 1 })
     .exec();
 }
@@ -41,35 +41,35 @@ async function getUpcomingRotations(daysAhead = 30) {
 async function autoAdvanceRotation(internId) {
   const today = startOfDay(new Date());
 
-  const lastRotation = await Rotation.findOne({ internId })
+  const lastRotation = await Rotation.findOne({ intern: internId })
     .sort({ endDate: -1 })
-    .populate('internId')
-    .populate('unitId')
+    .populate('intern')
+    .populate('unit')
     .exec();
 
   if (!lastRotation) return false;
 
   if (isAfter(today, lastRotation.endDate)) {
-    if (lastRotation.internId?.status === 'Completed') {
+    if (lastRotation.intern?.status === 'completed') {
       return false;
     }
 
-    const allUnits = await Unit.find({}).sort({ name: 1 }).exec();
+    const allUnits = await Unit.find({}).sort({ order: 1 }).exec();
     if (allUnits.length === 0) return false;
 
-    const currentUnitIndex = allUnits.findIndex(u => u._id.equals(lastRotation.unitId._id));
+    const currentUnitIndex = allUnits.findIndex(u => u._id.equals(lastRotation.unit._id));
     const nextUnitIndex = (currentUnitIndex + 1) % allUnits.length;
     const nextUnit = allUnits[nextUnitIndex];
 
     const nextStartDate = addDays(lastRotation.endDate, 1);
-    const nextEndDate = addDays(nextStartDate, nextUnit.durationDays - 1);
+    const nextEndDate = addDays(nextStartDate, 6); // 7 days default
 
     await Rotation.create({
-      internId,
-      unitId: nextUnit._id,
+      intern: internId,
+      unit: nextUnit._id,
       startDate: nextStartDate,
       endDate: nextEndDate,
-      isManualAssignment: false,
+      status: 'active'
     });
 
     await Intern.findByIdAndUpdate(internId, { currentUnit: nextUnit._id }).exec();
@@ -86,11 +86,11 @@ async function createManualRotation(data) {
   const { internId, unitId, startDate, endDate } = data;
 
   return await Rotation.create({
-    internId,
-    unitId,
+    intern: internId,
+    unit: unitId,
     startDate,
     endDate,
-    isManualAssignment: true,
+    status: 'active'
   });
 }
 
@@ -101,11 +101,11 @@ async function updateRotation(rotationId, data) {
   const updateData = {};
   if (data.startDate !== undefined) updateData.startDate = data.startDate;
   if (data.endDate !== undefined) updateData.endDate = data.endDate;
-  if (data.unitId !== undefined) updateData.unitId = data.unitId;
+  if (data.unit !== undefined) updateData.unit = data.unit;
 
   return await Rotation.findByIdAndUpdate(rotationId, updateData, { new: true })
-    .populate('internId')
-    .populate('unitId')
+    .populate('intern')
+    .populate('unit')
     .exec();
 }
 

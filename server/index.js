@@ -221,30 +221,21 @@ async function seedDefaultData() {
   try {
     const Unit = require('./models/Unit');
     const Intern = require('./models/Intern');
+    const Rotation = require('./models/Rotation');
 
     // Check if units collection is empty
     const existingUnits = await Unit.find();
     if (existingUnits.length === 0) {
       console.log('🌱 Seeding default units...');
       await Unit.create([
-        { name: 'General Medicine', durationDays: 7, capacity: 10, workload: 'Medium', patientCount: 5, description: 'General medical unit' },
-        { name: 'Cardiology', durationDays: 10, capacity: 8, workload: 'High', patientCount: 6, description: 'Heart and cardiovascular care' },
-        { name: 'Neurology', durationDays: 8, capacity: 6, workload: 'Medium', patientCount: 4, description: 'Brain and nervous system' },
-        { name: 'Orthopedics', durationDays: 6, capacity: 12, workload: 'Low', patientCount: 3, description: 'Bones and joints' }
+        { name: 'General Medicine', order: 1, description: 'General medical unit' },
+        { name: 'Cardiology', order: 2, description: 'Heart and cardiovascular care' },
+        { name: 'Neurology', order: 3, description: 'Brain and nervous system' },
+        { name: 'Orthopedics', order: 4, description: 'Bones and joints' }
       ]);
       console.log('✅ Default units created');
     } else {
       console.log(`📊 Found ${existingUnits.length} existing units`);
-    }
-
-    // Ensure email index does not force unique null values
-    try {
-      await Intern.collection.dropIndex('email_1');
-      console.log('✅ Dropped legacy email unique index');
-    } catch (dropErr) {
-      if (!dropErr.message.includes('index not found')) {
-        console.warn('⚠️ Could not drop email index (may not exist):', dropErr.message);
-      }
     }
 
     // Check if interns collection is empty
@@ -253,11 +244,44 @@ async function seedDefaultData() {
       console.log('🌱 Seeding sample interns...');
       const units = await Unit.find();
       if (units.length > 0) {
-        await Intern.create([
-          { name: 'Alice Johnson', gender: 'Female', batch: 'A', startDate: new Date('2026-01-15'), phoneNumber: '123-456-7890', status: 'Active' },
-          { name: 'Bob Smith', gender: 'Male', batch: 'B', startDate: new Date('2026-02-01'), phoneNumber: '987-654-3210', status: 'Active' }
-        ]);
-        console.log('✅ Sample interns created');
+        const intern1 = await Intern.create({
+          name: 'Alice Johnson',
+          startDate: new Date('2026-01-15'),
+          status: 'active'
+        });
+        const intern2 = await Intern.create({
+          name: 'Bob Smith',
+          startDate: new Date('2026-02-01'),
+          status: 'active'
+        });
+
+        // Create initial rotations
+        const rotation1 = await Rotation.create({
+          intern: intern1._id,
+          unit: units[0]._id,
+          startDate: intern1.startDate,
+          endDate: new Date(intern1.startDate.getTime() + 7 * 24 * 60 * 60 * 1000), // 7 days
+          status: 'active'
+        });
+        const rotation2 = await Rotation.create({
+          intern: intern2._id,
+          unit: units[1]._id,
+          startDate: intern2.startDate,
+          endDate: new Date(intern2.startDate.getTime() + 10 * 24 * 60 * 60 * 1000), // 10 days
+          status: 'active'
+        });
+
+        // Update interns with currentUnit and rotations
+        await Intern.findByIdAndUpdate(intern1._id, {
+          currentUnit: units[0]._id,
+          rotations: [rotation1._id]
+        });
+        await Intern.findByIdAndUpdate(intern2._id, {
+          currentUnit: units[1]._id,
+          rotations: [rotation2._id]
+        });
+
+        console.log('✅ Sample interns and rotations created');
       }
     } else {
       console.log(`📊 Found ${existingInterns.length} existing interns`);

@@ -1,11 +1,11 @@
 const mongoose = require('mongoose');
 
-const ExtensionReasonSchema = new mongoose.Schema({
-  internId: { type: mongoose.Schema.Types.ObjectId, ref: 'Intern', required: true },
-  rotationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Rotation', default: null },
-  reason: { type: String, required: true, trim: true },
-  days: { type: Number, required: true, min: 1 },
+const ExtensionLogSchema = new mongoose.Schema({
+  intern: { type: mongoose.Schema.Types.ObjectId, ref: 'Intern', required: true },
+  rotation: { type: mongoose.Schema.Types.ObjectId, ref: 'Rotation' },
+  reason: { type: String, required: true },
+  days: { type: Number, required: true },
   createdAt: { type: Date, default: Date.now }
 });
 
-module.exports = mongoose.model('ExtensionReason', ExtensionReasonSchema);
+module.exports = mongoose.model('ExtensionLog', ExtensionLogSchema);

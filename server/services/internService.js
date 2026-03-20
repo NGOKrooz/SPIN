@@ -5,71 +5,44 @@ const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
 
 /**
- * Create a new intern with optional automatic rotation generation
+ * Create a new intern with automatic initial rotation
  */
-async function createIntern(data, options = {}) {
-  const { name, email, gender, batch, startDate, phoneNumber, initialUnitId } = data;
-  const { autoGenerateRotations = false } = options;
-
-  let finalBatch = batch;
-  if (!finalBatch || !['A', 'B'].includes(finalBatch)) {
-    const internCount = await Intern.countDocuments();
-    finalBatch = internCount % 2 === 0 ? 'A' : 'B';
-  }
+async function createIntern(data) {
+  const { name, email, startDate } = data;
 
   const parsedStartDate = startDate ? (typeof startDate === 'string' ? new Date(startDate) : startDate) : new Date();
 
+  // Get first unit for initial rotation
+  const firstUnit = await Unit.findOne().sort({ order: 1 }).exec();
+  if (!firstUnit) {
+    throw new Error('No units available for initial rotation');
+  }
+
+  // Create intern
   const intern = await Intern.create({
     name,
-    email: email || null,
-    gender: ['Male', 'Female'].includes(gender) ? gender : null,
-    batch: finalBatch,
+    email: email || undefined,
     startDate: parsedStartDate,
-    phoneNumber: phoneNumber || null,
-    status: 'Active',
+    status: 'active',
     extensionDays: 0,
   });
 
-  if (initialUnitId) {
-    if (!mongoose.Types.ObjectId.isValid(initialUnitId)) {
-      throw new Error('Invalid unitId format');
-    }
+  // Create initial rotation (7 days default)
+  const endDate = addDays(parsedStartDate, 6); // 7 days total
+  const rotation = await Rotation.create({
+    intern: intern._id,
+    unit: firstUnit._id,
+    startDate: parsedStartDate,
+    endDate,
+    status: 'active'
+  });
 
-    const unit = await Unit.findById(initialUnitId).exec();
-    if (!unit) {
-      throw new Error('Invalid unit selected');
-    }
+  // Update intern with currentUnit and rotations
+  intern.currentUnit = firstUnit._id;
+  intern.rotations = [rotation._id];
+  await intern.save();
 
-    const endDate = addDays(parsedStartDate, unit.durationDays - 1);
-
-    await Rotation.create({
-      internId: intern._id,
-      unitId: unit._id,
-      startDate: parsedStartDate,
-      endDate,
-      isManualAssignment: true,
-    });
-
-    intern.currentUnit = unit._id;
-    await intern.save();
-  }
-
-  if (autoGenerateRotations) {
-    await generateRotationsForIntern(intern._id, parsedStartDate);
-
-    const today = startOfDay(new Date());
-    const activeRotation = await Rotation.findOne({
-      internId: intern._id,
-      startDate: { $lte: today },
-      endDate: { $gte: today },
-    }).exec();
-
-    if (activeRotation && activeRotation.unitId) {
-      intern.currentUnit = activeRotation.unitId;
-      await intern.save();
-    }
-  }
-
+  console.log(`Created intern ${name} with initial rotation in ${firstUnit.name}`);
   return intern;
 }
 
