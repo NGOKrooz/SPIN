@@ -5,6 +5,8 @@ const Intern = require('../models/Intern');
 const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
 const ActivityLog = require('../models/ActivityLog');
+const WorkloadHistory = require('../models/WorkloadHistory');
+const ExtensionReason = require('../models/ExtensionReason');
 
 const router = express.Router();
 
@@ -12,8 +14,10 @@ async function updateBatchStats() {
   const totalInterns = await Intern.countDocuments();
   const totalUnits = await Unit.countDocuments();
   const activeRotations = await Rotation.countDocuments({ status: 'active' });
+  const totalWorkloadEntries = await WorkloadHistory.countDocuments();
+  const totalExtensions = await ExtensionReason.countDocuments();
 
-  return { totalInterns, activeRotations, totalUnits };
+  return { totalInterns, activeRotations, totalUnits, totalWorkloadEntries, totalExtensions };
 }
 
 // GET /api/dashboard - Summary stats used for dashboard
@@ -23,10 +27,13 @@ router.get('/', async (req, res) => {
     const recentActivities = await ActivityLog.find({})
       .populate('intern')
       .sort({ createdAt: -1 })
-      .limit(5)
+      .limit(10)
       .exec();
 
-    res.json({ ...stats, recentActivities });
+    const workloadInsights = await WorkloadHistory.find().populate('intern').populate('unit').sort({ date: -1 }).limit(20).exec();
+    const extensionHistory = await ExtensionReason.find().populate('intern').sort({ createdAt: -1 }).limit(20).exec();
+
+    res.json({ ...stats, recentActivities, workloadInsights, extensionHistory });
   } catch (err) {
     console.error('Error fetching dashboard stats:', err);
     res.status(500).json({ error: 'Failed to fetch dashboard stats' });

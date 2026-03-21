@@ -26,6 +26,13 @@ const connectDB = async () => {
       const collections = await mongoose.connection.db.listCollections().toArray();
       const collectionNames = collections.map(c => c.name);
       console.log(`📦 Database collections (${collectionNames.length}):`, collectionNames.join(', ') || 'No collections yet');
+      
+      // Verify interns collection exists or will be created
+      if (collectionNames.includes('interns')) {
+        console.log('✅ "interns" collection found');
+      } else {
+        console.log('⚠️  "interns" collection not yet created (will be created on first insert)');
+      }
     } catch (collectionError) {
       console.warn('⚠️  Could not list collections:', collectionError.message);
     }

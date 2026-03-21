@@ -7,6 +7,8 @@ const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
 const { createIntern, ensureInternStatusIsCorrect } = require('../services/internService');
 const { logRecentUpdateSafe } = require('../services/recentUpdatesService');
+const { createWorkloadHistory } = require('../services/workloadService');
+const { createExtensionReason } = require('../services/extensionService');
 const { buildInternView, buildInternViews } = require('../services/internViewService');
 const { updateBatchStats } = require('./dashboard');
 
@@ -36,16 +38,17 @@ const validateIntern = [
 router.get('/', async (req, res) => {
   try {
     const interns = await Intern.find().populate('currentUnit').sort({ createdAt: -1 }).exec();
-    console.log("Found interns:", await Intern.find());
+    console.log("🔵 GET /api/interns - FETCHED INTERNS:", interns.length, "interns");
+    console.log("   IDs:", interns.map(i => i._id.toString()).join(", ") || "none");
 
     const internIds = interns.map(i => i._id);
-    const rotations = await Rotation.find({ internId: { $in: internIds } })
-      .populate('unitId')
+    const rotations = await Rotation.find({ intern: { $in: internIds } })
+      .populate('unit')
       .sort({ startDate: 1 })
       .exec();
 
     const rotationsByIntern = rotations.reduce((acc, rotation) => {
-      const key = rotation.internId?.toString();
+      const key = rotation.intern?.toString();
       if (!key) return acc;
       acc[key] = acc[key] || [];
       acc[key].push(rotation);
@@ -57,9 +60,10 @@ router.get('/', async (req, res) => {
       return buildInternView(intern._id);
     }));
 
+    console.log("📤 GET /api/interns - RETURNING:", enriched.length, "formatted interns");
     res.json(enriched);
   } catch (err) {
-    console.error('Error fetching interns:', err);
+    console.error('❌ Error fetching interns:', err);
     res.status(500).json({ error: 'Failed to fetch interns' });
   }
 });
@@ -98,15 +102,35 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
   }
 
   try {
+    console.log("🔵 POST /api/interns - POST BODY:", JSON.stringify(req.body, null, 2));
+
     const intern = await createIntern(req.body);
-    await logRecentUpdateSafe('intern created', null, intern._id);
+    console.log("✅ CREATED INTERN IN SERVICE:", JSON.stringify(intern, null, 2));
+
+    // Immediate verification
+    const verified = await Intern.findById(intern._id).exec();
+    console.log("🔍 VERIFIED INTERN IN DB:", verified ? "✅ FOUND" : "❌ NOT FOUND");
+    if (verified) {
+      console.log("   Details:", JSON.stringify(verified, null, 2));
+    }
+
+    await logRecentUpdateSafe('Intern Created', null, intern._id);
+
+    const defaultUnit = await Unit.findOne().sort({ order: 1 }).exec();
+    if (defaultUnit) {
+      const workloadLog = await createWorkloadHistory(intern._id, defaultUnit._id, 0);
+      console.log('✅ Created initial workload history:', workloadLog);
+    }
 
     await updateBatchStats().catch(() => {});
 
     const internView = await buildInternView(intern._id);
-    res.status(201).json({ success: true, intern: internView });
+    console.log("📤 RETURNING INTERN VIEW:", JSON.stringify(internView, null, 2));
+    
+    // Return the internView directly (consistent with GET /api/interns format)
+    res.status(201).json(internView);
   } catch (err) {
-    console.error('Error creating intern:', err);
+    console.error('❌ Error creating intern:', err);
 
     if (err.name === 'ValidationError') {
       return res.status(400).json({ error: 'Validation failed', details: err.message });
@@ -153,7 +177,7 @@ router.delete('/:id', async (req, res) => {
     const intern = await Intern.findById(req.params.id).exec();
     if (!intern) return res.status(404).json({ error: 'Intern not found' });
 
-    await Rotation.deleteMany({ internId: intern._id }).exec();
+    await Rotation.deleteMany({ intern: intern._id }).exec();
     await intern.deleteOne();
     await logRecentUpdateSafe('intern_deleted', `Deleted intern: ${intern.name}`);
 
@@ -188,7 +212,10 @@ router.post('/:id/reassign', async (req, res) => {
     // Find current active rotation
     const today = new Date();
     const currentRotation = await Rotation.findOne({
-      intern: intern._id,
+      $or: [
+        { intern: intern._id },
+        { internId: intern._id }
+      ],
       startDate: { $lte: today },
       endDate: { $gte: today }
     }).exec();
@@ -223,7 +250,11 @@ router.post('/:id/reassign', async (req, res) => {
     await intern.save();
 
     console.log(`Successfully reassigned ${intern.name} to ${unit.name}`);
-    await logRecentUpdateSafe('unit reassigned', null, intern._id);
+
+    const recordedWorkload = await createWorkloadHistory(intern._id, unit._id, 0);
+    console.log('Workload history on reassign:', recordedWorkload);
+
+    await logRecentUpdateSafe('Unit Reassigned', null, intern._id);
 
     await updateBatchStats().catch(() => {});
 
@@ -248,7 +279,10 @@ router.post('/:id/extend', async (req, res) => {
     // Find current active rotation
     const today = new Date();
     const currentRotation = await Rotation.findOne({
-      intern: intern._id,
+      $or: [
+        { intern: intern._id },
+        { internId: intern._id }
+      ],
       startDate: { $lte: today },
       endDate: { $gte: today }
     }).exec();
@@ -258,16 +292,30 @@ router.post('/:id/extend', async (req, res) => {
     }
 
     // Extend the rotation
-    currentRotation.endDate = new Date(currentRotation.endDate);
-    currentRotation.endDate.setDate(currentRotation.endDate.getDate() + days);
-    await currentRotation.save();
+    const newEndDate = new Date(currentRotation.endDate);
+    newEndDate.setDate(newEndDate.getDate() + days);
+    
+    await Rotation.updateOne(
+      { _id: currentRotation._id },
+      { 
+        $set: { 
+          endDate: newEndDate,
+          intern: currentRotation.intern || currentRotation.internId,
+          unit: currentRotation.unit || currentRotation.unitId
+        } 
+      }
+    );
 
     // Update intern's extension days
     intern.extensionDays = (intern.extensionDays || 0) + days;
     await intern.save();
 
+    const reasonText = req.body.reason || 'No reason provided';
+    const extensionLog = await createExtensionReason(intern._id, days, reasonText);
+    console.log('Created extension reason:', extensionLog);
+
     console.log(`Successfully extended ${intern.name}'s rotation by ${days} days`);
-    await logRecentUpdateSafe('extension added', null, intern._id);
+    await logRecentUpdateSafe('Extension Added', reasonText, intern._id);
 
     await updateBatchStats().catch(() => {});
 

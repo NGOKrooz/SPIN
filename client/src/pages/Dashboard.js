@@ -45,51 +45,14 @@ export default function Dashboard() {
     );
   }
 
-  const activeInterns = interns?.filter(intern => intern.status === 'Active') || [];
-  const extendedInterns = interns?.filter(intern => intern.status === 'Extended') || [];
-  // removed unused completedInterns
-  
-  // Batch distribution includes all interns (active + extended)
-  const allActiveInterns = [...activeInterns, ...extendedInterns];
-  const batchAInterns = allActiveInterns.filter(intern => intern.batch === 'A');
-  const batchBInterns = allActiveInterns.filter(intern => intern.batch === 'B');
-
-  // Compute coverage issues from current rotations by unit and batch
-  const unitCoverageData = currentRotations?.unit_coverage || {};
-  
-  const criticalUnits = [];
-  const warningUnits = [];
-  
-  // Process coverage data from the API
-  Object.values(unitCoverageData).forEach(unit => {
-    const hasBatchA = unit.batch_a.length > 0;
-    const hasBatchB = unit.batch_b.length > 0;
-    const totalInterns = unit.batch_a.length + unit.batch_b.length;
-    
-    if (unit.coverage_status === 'critical') {
-      criticalUnits.push({ 
-        id: unit.unit_name, 
-        name: unit.unit_name, 
-        byBatch: { A: unit.batch_a.length, B: unit.batch_b.length }, 
-        total: totalInterns,
-        reason: !hasBatchA && !hasBatchB ? 'No interns assigned' : 'Insufficient coverage'
-      });
-    } else if (unit.coverage_status === 'warning') {
-      warningUnits.push({ 
-        id: unit.unit_name, 
-        name: unit.unit_name, 
-        byBatch: { A: unit.batch_a.length, B: unit.batch_b.length }, 
-        total: totalInterns,
-        reason: 'Imbalanced coverage'
-      });
-    }
-  });
+  const activeInterns = interns?.filter(intern => intern.currentUnit) || [];
+  const unassignedInterns = interns?.filter(intern => !intern.currentUnit) || [];
 
   const stats = [
     {
       title: 'Total Interns',
       value: interns?.length || 0,
-      description: `${activeInterns.length} active, ${extendedInterns.length} extended`,
+      description: `${activeInterns.length} assigned, ${unassignedInterns.length} unassigned`,
       icon: Users,
       color: 'text-blue-600',
       bgColor: 'bg-blue-100',
@@ -97,19 +60,10 @@ export default function Dashboard() {
     {
       title: 'Active Units',
       value: units?.length || 0,
-      description: `${criticalUnits.length} critical, ${warningUnits.length} warning`,
+      description: 'Available units',
       icon: Building2,
       color: 'text-green-600',
       bgColor: 'bg-green-100',
-    },
-    // Removed Current Rotations stat per requirements
-    {
-      title: 'Coverage Issues',
-      value: criticalUnits.length + warningUnits.length,
-      description: `${criticalUnits.length} critical, ${warningUnits.length} warning`,
-      icon: AlertTriangle,
-      color: 'text-red-600',
-      bgColor: 'bg-red-100',
     },
   ];
 

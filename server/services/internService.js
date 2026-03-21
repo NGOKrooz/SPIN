@@ -8,19 +8,45 @@ const Unit = require('../models/Unit');
  * Create a new intern with automatic initial rotation
  */
 async function createIntern(data) {
-  const { name } = data;
+  const { name, gender = '', batch = '', phoneNumber = '', status = 'Active', startDate } = data;
 
   // Create intern
   const intern = await Intern.create({
     name,
-    startDate: new Date(),
+    gender,
+    batch,
+    phoneNumber,
+    status,
+    startDate: startDate ? new Date(startDate) : new Date(),
+    currentUnit: null,
+    rotationHistory: [],
+    extensionDays: 0,
   });
 
-  console.log("Saved Intern:", intern);
+  console.log("✅ CREATED INTERN:", JSON.stringify(intern, null, 2));
+  console.log("   ID:", intern._id.toString());
+  console.log("   Name:", intern.name);
 
-  // Verify save
-  const check = await Intern.findById(intern._id);
-  console.log("Verified:", check);
+  // STEP 1: Verify intern is actually saved in MongoDB
+  const check = await Intern.findById(intern._id).populate('currentUnit').exec();
+  if (!check) {
+    const errorMsg = `CRITICAL: Intern ${intern._id} was created but cannot be found in DB!`;
+    console.error("❌ " + errorMsg);
+    throw new Error(errorMsg);
+  }
+
+  console.log("✅ VERIFIED IN DB:", JSON.stringify(check, null, 2));
+  console.log("   Verified ID:", check._id.toString());
+  console.log("   Verified Name:", check.name);
+  console.log("   Verified Status:", check.status);
+
+  // Double-check all fields were saved
+  if (check.name !== name) {
+    console.warn("⚠️  Name mismatch! Input:", name, "Saved:", check.name);
+  }
+  if (check.status !== status) {
+    console.warn("⚠️  Status mismatch! Input:", status, "Saved:", check.status);
+  }
 
   return intern;
 }

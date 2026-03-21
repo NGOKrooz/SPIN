@@ -1,13 +1,13 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { Plus, Edit, Trash2, Calendar, Phone, User, Clock, Eye } from 'lucide-react';
+import { Plus, Edit, Trash2, Calendar, Clock, Eye, User } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { api } from '../services/api';
-import { formatDate, getBatchColor, getStatusColor } from '../lib/utils';
+import { formatDate, getStatusColor } from '../lib/utils';
 import { useToast } from '../hooks/use-toast';
 import InternForm from '../components/InternForm';
 import ExtensionModal from '../components/ExtensionModal';
@@ -15,8 +15,6 @@ import InternDashboard from '../components/InternDashboard';
 
 export default function Interns() {
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterBatch, setFilterBatch] = useState('ALL');
-  const [filterStatus, setFilterStatus] = useState('ALL');
   const [sortByDate, setSortByDate] = useState(() => localStorage.getItem('internsSortByDate') || 'newest');
   const [showForm, setShowForm] = useState(false);
   const [editingIntern, setEditingIntern] = useState(null);
@@ -26,17 +24,34 @@ export default function Interns() {
   const queryClient = useQueryClient();
 
   const { data: interns, isLoading, refetch } = useQuery({
-    queryKey: ['interns', { batch: filterBatch, status: filterStatus, sort: sortByDate }],
-    queryFn: () => api.getInterns({
-      batch: filterBatch === 'ALL' ? undefined : filterBatch,
-      status: ['ALL', 'Inactive'].includes(filterStatus) ? undefined : filterStatus,
-      sort: sortByDate,
-    }),
+    queryKey: ['interns', { sort: sortByDate }],
+    queryFn: () => {
+      console.log('🔵 FRONTEND: Fetching interns with sort:', sortByDate);
+      return api.getInterns({
+        sort: sortByDate,
+      }).then((data) => {
+        console.log('✅ FRONTEND: Fetched interns data:', data);
+        console.log('   Type:', Array.isArray(data) ? 'Array' : typeof data);
+        console.log('   Length:', Array.isArray(data) ? data.length : 'N/A');
+        if (Array.isArray(data) && data.length > 0) {
+          console.log('   First item structure:', Object.keys(data[0]));
+          console.log('   First item:', data[0]);
+        }
+        return data;
+      })
+    },
   });
 
   React.useEffect(() => {
     localStorage.setItem('internsSortByDate', sortByDate);
   }, [sortByDate]);
+
+  // Debug: Log when interns data changes
+  React.useEffect(() => {
+    console.log('📊 EFFECT: interns data changed');
+    console.log('   interns:', interns);
+    console.log('   isLoading:', isLoading);
+  }, [interns, isLoading]);
 
   const deleteMutation = useMutation({
     mutationFn: api.deleteIntern,
@@ -75,15 +90,13 @@ export default function Interns() {
     return { ...i, derivedStatus: derived, extension_days: extensionDays };
   });
 
-  let derivedInterns = mapWithDerivedStatus(interns);
-  // apply client-side filters for search and special Inactive keyword
-  if (filterStatus === 'Inactive') {
-    derivedInterns = derivedInterns.filter((i) => i.derivedStatus !== 'Active');
-  }
+  const derivedInterns = mapWithDerivedStatus(interns);
+  console.log('📊 FRONTEND: Derived interns:', derivedInterns);
+  
   const filteredInterns = (derivedInterns || []).filter(intern => 
-    intern.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    intern.phone_number?.includes(searchTerm)
+    intern.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
+  console.log('🔎 FRONTEND: Filtered interns (search term: "' + searchTerm + '"):', filteredInterns.length, 'results');
 
   const handleDelete = (id, name) => {
     if (window.confirm(`Are you sure you want to delete ${name}?`)) {
@@ -141,43 +154,15 @@ export default function Interns() {
           <CardTitle>Filters</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-5">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
               <Label htmlFor="search">Search</Label>
               <Input
                 id="search"
-                placeholder="Search by name or phone..."
+                placeholder="Search by name..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
-            </div>
-            <div>
-              <Label htmlFor="batch">Batch</Label>
-              <Select value={filterBatch} onValueChange={setFilterBatch}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All batches" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All batches</SelectItem>
-                  <SelectItem value="A">Batch A</SelectItem>
-                  <SelectItem value="B">Batch B</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="status">Status</Label>
-              <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All statuses" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All statuses</SelectItem>
-                  <SelectItem value="Active">Active</SelectItem>
-                  <SelectItem value="Extended">Extended</SelectItem>
-                  <SelectItem value="Completed">Completed</SelectItem>
-                  <SelectItem value="Inactive">Not Active (Inactive)</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
             <div>
               <Label htmlFor="sort-date">Sort by Date</Label>
@@ -196,8 +181,6 @@ export default function Interns() {
                 variant="outline" 
                 onClick={() => {
                   setSearchTerm('');
-                  setFilterBatch('ALL');
-                  setFilterStatus('ALL');
                   setSortByDate('newest');
                 }}
               >
@@ -209,7 +192,7 @@ export default function Interns() {
       </Card>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center space-x-2">
@@ -217,32 +200,6 @@ export default function Interns() {
               <div>
                 <p className="text-sm font-medium text-gray-600">Total Interns</p>
                 <p className="text-2xl font-bold text-gray-900">{interns?.length || 0}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 rounded-full bg-batch-a"></div>
-              <div>
-                <p className="text-sm font-medium text-gray-600">Batch A</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {interns?.filter(i => i.batch === 'A').length || 0}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 rounded-full bg-batch-b"></div>
-              <div>
-                <p className="text-sm font-medium text-gray-600">Batch B</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {interns?.filter(i => i.batch === 'B').length || 0}
-                </p>
               </div>
             </div>
           </CardContent>
@@ -271,34 +228,33 @@ export default function Interns() {
         <CardContent>
           {filteredInterns.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
-              No interns found matching your criteria
+              ❌ No interns found {searchTerm ? `matching "${searchTerm}"` : ''}
+              {interns && interns.length > 0 && searchTerm && (
+                <p className="text-xs mt-2">
+                  (DB has {interns.length} interns total, but none match your search)
+                </p>
+              )}
             </div>
           ) : (
             <div className="space-y-4">
-              {filteredInterns.map((intern) => (
+              {(() => {
+                console.log('🎨 FRONTEND: Rendering', filteredInterns.length, 'interns');
+                return filteredInterns.map((intern) => {
+                  console.log('   Rendering intern:', intern.id, intern.name);
+                  return (
                 <div key={intern.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow overflow-hidden">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex items-center space-x-4 min-w-0">
-                      <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold ${getBatchColor(intern.batch)}`}>
-                        {intern.batch}
+                      <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold bg-blue-600">
+                        {intern.name.charAt(0).toUpperCase()}
                       </div>
                       <div className="min-w-0">
                         <h3 className="text-lg font-semibold text-gray-900">{intern.name}</h3>
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
                           <span className="flex items-center space-x-1">
-                            <User className="h-4 w-4" />
-                            <span>{intern.gender}</span>
-                          </span>
-                          <span className="flex items-center space-x-1">
                             <Calendar className="h-4 w-4" />
                             <span>Started: {formatDate(intern.start_date)}</span>
                           </span>
-                          {intern.phone_number && (
-                            <span className="flex items-center space-x-1">
-                              <Phone className="h-4 w-4" />
-                              <span className="break-all">{intern.phone_number}</span>
-                            </span>
-                          )}
                         </div>
                         <div className="mt-1">
                           <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(intern.derivedStatus || intern.status)}`}>
@@ -367,7 +323,9 @@ export default function Interns() {
                     </div>
                   </div>
                 </div>
-              ))}
+                  );
+                });
+              })()}
             </div>
           )}
         </CardContent>
@@ -378,16 +336,24 @@ export default function Interns() {
         <InternForm
           intern={editingIntern}
           onClose={() => {
+            console.log('🔵 INTERNS: Form closed');
             handleFormClose();
           }}
           onSuccess={async () => {
+            console.log('🔵 INTERNS: onSuccess callback triggered');
             // Close modal first
             handleFormClose();
             // Then invalidate and refetch to ensure fresh data
+            console.log('📤 INTERNS: Invalidating interns query');
             queryClient.invalidateQueries({ queryKey: ['interns'] });
             // Use setTimeout to ensure modal closes before refetch
             setTimeout(() => {
-              refetch();
+              console.log('🔄 INTERNS: Refetching interns');
+              refetch().then((result) => {
+                console.log('✅ INTERNS: Refetch complete, data:', result.data);
+              }).catch((err) => {
+                console.error('❌ INTERNS: Refetch failed:', err);
+              });
             }, 100);
           }}
         />

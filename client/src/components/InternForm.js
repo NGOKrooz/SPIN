@@ -12,11 +12,6 @@ import { useToast } from '../hooks/use-toast';
 export default function InternForm({ intern, onClose, onSuccess }) {
   const [formData, setFormData] = useState({
     name: '',
-    gender: '',
-    batch: '',
-    start_date: '',
-    phone_number: '',
-    extension_days: 0,
   });
 
   const { toast } = useToast();
@@ -24,9 +19,19 @@ export default function InternForm({ intern, onClose, onSuccess }) {
   // No initial unit assignment in create flow
 
   const createMutation = useMutation({
-    mutationFn: api.createIntern,
+    mutationFn: (data) => {
+      console.log('🔵 FORM: Submitting create intern request:', data);
+      return api.createIntern(data);
+    },
     onSuccess: (data) => {
-      console.log('Intern created successfully:', data);
+      console.log('✅ FORM: Intern created successfully');
+      console.log('   Response data:', data);
+      console.log('   Response type:', typeof data);
+      console.log('   Response keys:', Array.isArray(data) ? 'Array' : Object.keys(data));
+      if (data && typeof data === 'object' && !Array.isArray(data)) {
+        console.log('   Intern ID:', data.id);
+        console.log('   Intern name:', data.name);
+      }
       toast({
         title: 'Success',
         description: 'Intern created successfully',
@@ -35,12 +40,13 @@ export default function InternForm({ intern, onClose, onSuccess }) {
       // Use setTimeout to ensure toast shows and then trigger refresh
       setTimeout(() => {
         if (onSuccess) {
+          console.log('📤 FORM: Calling onSuccess callback');
           onSuccess();
         }
       }, 100);
     },
     onError: (error) => {
-      console.error('Error creating intern:', error);
+      console.error('❌ FORM: Error creating intern:', error);
       const errorMessage = error?.message || error?.response?.data?.error || 'Failed to create intern';
       toast({
         title: 'Error',
@@ -74,11 +80,6 @@ export default function InternForm({ intern, onClose, onSuccess }) {
     if (intern) {
       setFormData({
         name: intern.name || '',
-        gender: intern.gender || '',
-        batch: intern.batch || '',
-        start_date: intern.start_date || '',
-        phone_number: intern.phone_number || '',
-        extension_days: intern.extension_days || 0,
       });
     }
   }, [intern]);
@@ -88,23 +89,30 @@ export default function InternForm({ intern, onClose, onSuccess }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     
-    if (!formData.name || !formData.gender || !formData.batch || !formData.start_date) {
+    console.log('🔵 FORM: handleSubmit called');
+    console.log('   Form data:', formData);
+    console.log('   Is editing?:', !!intern);
+
+    if (!formData.name) {
       toast({
         title: 'Error',
-        description: 'Please fill in all required fields',
+        description: 'Please enter a name',
         variant: 'destructive',
       });
       return;
     }
 
     const submitData = {
-      ...formData,
-      extension_days: parseInt(formData.extension_days) || 0,
+      name: formData.name,
     };
 
+    console.log('📤 FORM: Submitting data:', submitData);
+
     if (intern) {
+      console.log('   Mode: UPDATE (ID: ' + intern.id + ')');
       updateMutation.mutate({ id: intern.id, data: submitData });
     } else {
+      console.log('   Mode: CREATE (new intern)');
       createMutation.mutate(submitData);
     }
   };
@@ -137,77 +145,16 @@ export default function InternForm({ intern, onClose, onSuccess }) {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="name">Full Name *</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) => handleChange('name', e.target.value)}
-                  placeholder="Enter full name"
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="gender">Gender *</Label>
-                <Select value={formData.gender} onValueChange={(value) => handleChange('gender', value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select gender" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Male">Male</SelectItem>
-                    <SelectItem value="Female">Female</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div>
+              <Label htmlFor="name">Full Name *</Label>
+              <Input
+                id="name"
+                value={formData.name}
+                onChange={(e) => handleChange('name', e.target.value)}
+                placeholder="Enter full name"
+                required
+              />
             </div>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="batch">Batch *</Label>
-                <Select value={formData.batch} onValueChange={(value) => handleChange('batch', value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select batch" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="A">A</SelectItem>
-                    <SelectItem value="B">B</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="start_date">Start Date *</Label>
-                <Input
-                  id="start_date"
-                  type="date"
-                  value={formData.start_date}
-                  onChange={(e) => handleChange('start_date', e.target.value)}
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="phone_number">Phone Number</Label>
-                <Input
-                  id="phone_number"
-                  value={formData.phone_number}
-                  onChange={(e) => handleChange('phone_number', e.target.value)}
-                  placeholder="Enter phone number"
-                />
-              </div>
-              
-            </div>
-
-            
-
-            {formData.status === 'Extended' && (
-              <div>
-                <Label htmlFor="extension_days">Extension Days</Label>
-                <Input
-                  id="extension_days"
-                  type="number"
                   min="1"
                   max="365"
                   value={formData.extension_days}

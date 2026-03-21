@@ -69,9 +69,21 @@ http.interceptors.response.use(
 
 // Interns API
 export const internsAPI = {
-  getAll: (params = {}) => http.get('/interns', { params }),
+  getAll: (params = {}) => {
+    console.log('🔗 API: GET /interns with params:', params);
+    return http.get('/interns', { params }).then((data) => {
+      console.log('🔗 API: GET /interns response:', data);
+      return data;
+    });
+  },
   getById: (id) => http.get(`/interns/${id}`),
-  create: (data) => http.post('/interns', data),
+  create: (data) => {
+    console.log('🔗 API: POST /interns with data:', data);
+    return http.post('/interns', data).then((response) => {
+      console.log('🔗 API: POST /interns response:', response);
+      return response;
+    });
+  },
   update: (id, data) => http.put(`/interns/${id}`, data),
   delete: (id) => http.delete(`/interns/${id}`),
   extend: (id, data) => http.post(`/interns/${id}/extend`, data),
