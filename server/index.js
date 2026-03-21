@@ -247,41 +247,13 @@ async function seedDefaultData() {
         const intern1 = await Intern.create({
           name: 'Alice Johnson',
           startDate: new Date('2026-01-15'),
-          status: 'active'
         });
         const intern2 = await Intern.create({
           name: 'Bob Smith',
           startDate: new Date('2026-02-01'),
-          status: 'active'
         });
 
-        // Create initial rotations
-        const rotation1 = await Rotation.create({
-          intern: intern1._id,
-          unit: units[0]._id,
-          startDate: intern1.startDate,
-          endDate: new Date(intern1.startDate.getTime() + 7 * 24 * 60 * 60 * 1000), // 7 days
-          status: 'active'
-        });
-        const rotation2 = await Rotation.create({
-          intern: intern2._id,
-          unit: units[1]._id,
-          startDate: intern2.startDate,
-          endDate: new Date(intern2.startDate.getTime() + 10 * 24 * 60 * 60 * 1000), // 10 days
-          status: 'active'
-        });
-
-        // Update interns with currentUnit and rotations
-        await Intern.findByIdAndUpdate(intern1._id, {
-          currentUnit: units[0]._id,
-          rotations: [rotation1._id]
-        });
-        await Intern.findByIdAndUpdate(intern2._id, {
-          currentUnit: units[1]._id,
-          rotations: [rotation2._id]
-        });
-
-        console.log('✅ Sample interns and rotations created');
+        console.log('✅ Sample interns created');
       }
     } else {
       console.log(`📊 Found ${existingInterns.length} existing interns`);

@@ -9,15 +9,11 @@ const ActivityLog = require('../models/ActivityLog');
 const router = express.Router();
 
 async function updateBatchStats() {
-  const today = startOfDay(new Date());
   const totalInterns = await Intern.countDocuments();
   const totalUnits = await Unit.countDocuments();
-  const activeInterns = await Rotation.countDocuments({
-    startDate: { $lte: today },
-    endDate: { $gte: today },
-  });
+  const activeRotations = await Rotation.countDocuments({ status: 'active' });
 
-  return { totalInterns, activeInterns, totalUnits };
+  return { totalInterns, activeRotations, totalUnits };
 }
 
 // GET /api/dashboard - Summary stats used for dashboard

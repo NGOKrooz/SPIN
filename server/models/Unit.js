@@ -3,7 +3,6 @@ const mongoose = require('mongoose');
 const UnitSchema = new mongoose.Schema({
   name: { type: String, required: true, unique: true },
   order: { type: Number, required: true },
-  description: { type: String },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });

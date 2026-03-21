@@ -8,41 +8,20 @@ const Unit = require('../models/Unit');
  * Create a new intern with automatic initial rotation
  */
 async function createIntern(data) {
-  const { name, email, startDate } = data;
-
-  const parsedStartDate = startDate ? (typeof startDate === 'string' ? new Date(startDate) : startDate) : new Date();
-
-  // Get first unit for initial rotation
-  const firstUnit = await Unit.findOne().sort({ order: 1 }).exec();
-  if (!firstUnit) {
-    throw new Error('No units available for initial rotation');
-  }
+  const { name } = data;
 
   // Create intern
   const intern = await Intern.create({
     name,
-    email: email || undefined,
-    startDate: parsedStartDate,
-    status: 'active',
-    extensionDays: 0,
+    startDate: new Date(),
   });
 
-  // Create initial rotation (7 days default)
-  const endDate = addDays(parsedStartDate, 6); // 7 days total
-  const rotation = await Rotation.create({
-    intern: intern._id,
-    unit: firstUnit._id,
-    startDate: parsedStartDate,
-    endDate,
-    status: 'active'
-  });
+  console.log("Saved Intern:", intern);
 
-  // Update intern with currentUnit and rotations
-  intern.currentUnit = firstUnit._id;
-  intern.rotations = [rotation._id];
-  await intern.save();
+  // Verify save
+  const check = await Intern.findById(intern._id);
+  console.log("Verified:", check);
 
-  console.log(`Created intern ${name} with initial rotation in ${firstUnit.name}`);
   return intern;
 }
 

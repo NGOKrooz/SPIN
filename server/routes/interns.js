@@ -29,23 +29,14 @@ const normalizeInternPayload = (req, res, next) => {
 
 const validateIntern = [
   body('name').trim().isLength({ min: 2, max: 100 }).withMessage('Name must be 2-100 characters'),
-  body('gender').optional().isIn(['Male', 'Female']).withMessage('Gender must be Male or Female'),
-  body('batch').optional().isIn(['A', 'B']).withMessage('Batch must be A or B'),
   body('startDate').optional().isISO8601().withMessage('Start date must be a valid date'),
-  body('email').optional().isEmail().withMessage('Email must be valid'),
-  body('phoneNumber').optional().isString().withMessage('Phone number must be a string'),
 ];
 
 // GET /api/interns - List interns
 router.get('/', async (req, res) => {
   try {
-    const { batch, status, sort } = req.query;
-    const filter = {};
-    if (batch) filter.batch = batch;
-    if (status) filter.status = status;
-
-    const sortDirection = String(sort || 'newest').toLowerCase() === 'oldest' ? 1 : -1;
-    const interns = await Intern.find(filter).populate('currentUnit').sort({ createdAt: sortDirection }).exec();
+    const interns = await Intern.find().populate('currentUnit').sort({ createdAt: -1 }).exec();
+    console.log("Found interns:", await Intern.find());
 
     const internIds = interns.map(i => i._id);
     const rotations = await Rotation.find({ internId: { $in: internIds } })
@@ -108,7 +99,7 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
 
   try {
     const intern = await createIntern(req.body);
-    await logRecentUpdateSafe('new_intern', `Created intern: ${intern.name}`);
+    await logRecentUpdateSafe('intern created', null, intern._id);
 
     await updateBatchStats().catch(() => {});
 
@@ -228,11 +219,11 @@ router.post('/:id/reassign', async (req, res) => {
 
     await newRotation.save();
     intern.currentUnit = unit._id;
-    intern.rotations.push(newRotation._id);
+    intern.rotationHistory.push(newRotation._id);
     await intern.save();
 
     console.log(`Successfully reassigned ${intern.name} to ${unit.name}`);
-    await logRecentUpdateSafe('intern_reassigned', `Reassigned ${intern.name} to ${unit.name}`);
+    await logRecentUpdateSafe('unit reassigned', null, intern._id);
 
     await updateBatchStats().catch(() => {});
 
@@ -275,17 +266,8 @@ router.post('/:id/extend', async (req, res) => {
     intern.extensionDays = (intern.extensionDays || 0) + days;
     await intern.save();
 
-    // Log extension
-    const ExtensionLog = require('../models/ExtensionReason');
-    await ExtensionLog.create({
-      intern: intern._id,
-      rotation: currentRotation._id,
-      reason: req.body.reason || 'Extension requested',
-      days
-    });
-
     console.log(`Successfully extended ${intern.name}'s rotation by ${days} days`);
-    await logRecentUpdateSafe('intern_extended', `Extended ${intern.name}'s rotation by ${days} days`);
+    await logRecentUpdateSafe('extension added', null, intern._id);
 
     await updateBatchStats().catch(() => {});
 
