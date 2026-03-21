@@ -5,7 +5,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { api } from '../services/api';
 import { useToast } from '../hooks/use-toast';
 
@@ -155,14 +154,6 @@ export default function InternForm({ intern, onClose, onSuccess }) {
                 required
               />
             </div>
-                  min="1"
-                  max="365"
-                  value={formData.extension_days}
-                  onChange={(e) => handleChange('extension_days', e.target.value)}
-                  placeholder="Enter extension days"
-                />
-              </div>
-            )}
 
             <div className="flex items-center justify-end space-x-3 pt-4 border-t">
               <Button type="button" variant="outline" onClick={onClose}>

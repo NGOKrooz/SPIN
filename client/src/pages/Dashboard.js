@@ -5,8 +5,7 @@ import {
   Users, 
   Building2, 
   AlertTriangle,
-  UserCheck,
-  UserPlus
+  UserCheck
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { api } from '../services/api';
@@ -23,7 +22,7 @@ export default function Dashboard() {
     queryFn: api.getUnits,
   });
 
-  const { data: currentRotations, isLoading: rotationsLoading } = useQuery({
+  const { isLoading: rotationsLoading } = useQuery({
     queryKey: ['rotations', 'current'],
     queryFn: api.getCurrentRotations,
   });
@@ -47,6 +46,11 @@ export default function Dashboard() {
 
   const activeInterns = interns?.filter(intern => intern.currentUnit) || [];
   const unassignedInterns = interns?.filter(intern => !intern.currentUnit) || [];
+
+  const criticalUnits = units?.filter(unit => unit?.status === 'critical') || [];
+  const warningUnits = units?.filter(unit => unit?.status === 'warning') || [];
+  const batchAInterns = interns?.filter(intern => intern?.batch === 'A') || [];
+  const batchBInterns = interns?.filter(intern => intern?.batch === 'B') || [];
 
   const stats = [
     {

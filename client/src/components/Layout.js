@@ -5,7 +5,6 @@ import {
   LayoutDashboard, 
   Users, 
   Building2, 
-  UserPlus, 
   Settings,
   Stethoscope,
   MessageCircle,
