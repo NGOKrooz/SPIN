@@ -8,14 +8,14 @@ const Unit = require('../models/Unit');
  * Create a new intern with automatic initial rotation
  */
 async function createIntern(data) {
-  const { name, gender = '', batch = '', phoneNumber = '', status = 'Active', startDate } = data;
+  const { name, gender = '', batch = '', phone = '', status = 'Active', startDate } = data;
 
   // Create intern
   const intern = await Intern.create({
     name,
     gender,
     batch,
-    phoneNumber,
+    phone,
     status,
     startDate: startDate ? new Date(startDate) : new Date(),
     currentUnit: null,

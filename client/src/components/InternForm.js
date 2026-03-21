@@ -5,55 +5,23 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { api } from '../services/api';
 import { useToast } from '../hooks/use-toast';
 
 export default function InternForm({ intern, onClose, onSuccess }) {
   const [formData, setFormData] = useState({
     name: '',
+    gender: '',
+    startDate: '',
+    phone: '',
   });
+  const [submitError, setSubmitError] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
 
   const { toast } = useToast();
 
   // No initial unit assignment in create flow
-
-  const createMutation = useMutation({
-    mutationFn: (data) => {
-      console.log('🔵 FORM: Submitting create intern request:', data);
-      return api.createIntern(data);
-    },
-    onSuccess: (data) => {
-      console.log('✅ FORM: Intern created successfully');
-      console.log('   Response data:', data);
-      console.log('   Response type:', typeof data);
-      console.log('   Response keys:', Array.isArray(data) ? 'Array' : Object.keys(data));
-      if (data && typeof data === 'object' && !Array.isArray(data)) {
-        console.log('   Intern ID:', data.id);
-        console.log('   Intern name:', data.name);
-      }
-      toast({
-        title: 'Success',
-        description: 'Intern created successfully',
-      });
-      // Call onSuccess which should invalidate queries and close modal
-      // Use setTimeout to ensure toast shows and then trigger refresh
-      setTimeout(() => {
-        if (onSuccess) {
-          console.log('📤 FORM: Calling onSuccess callback');
-          onSuccess();
-        }
-      }, 100);
-    },
-    onError: (error) => {
-      console.error('❌ FORM: Error creating intern:', error);
-      const errorMessage = error?.message || error?.response?.data?.error || 'Failed to create intern';
-      toast({
-        title: 'Error',
-        description: errorMessage,
-        variant: 'destructive',
-      });
-    },
-  });
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }) => api.updateIntern(id, data),
@@ -79,6 +47,9 @@ export default function InternForm({ intern, onClose, onSuccess }) {
     if (intern) {
       setFormData({
         name: intern.name || '',
+        gender: intern.gender || '',
+        startDate: intern.startDate ? String(intern.startDate).slice(0, 10) : '',
+        phone: intern.phone || intern.phone_number || '',
       });
     }
   }, [intern]);
@@ -101,18 +72,82 @@ export default function InternForm({ intern, onClose, onSuccess }) {
       return;
     }
 
+    if (!formData.gender) {
+      toast({
+        title: 'Error',
+        description: 'Please select a gender',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!formData.startDate) {
+      toast({
+        title: 'Error',
+        description: 'Please choose a start date',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     const submitData = {
       name: formData.name,
+      gender: formData.gender,
+      startDate: formData.startDate,
+      phone: formData.phone,
     };
 
     console.log('📤 FORM: Submitting data:', submitData);
+    setSubmitError('');
 
     if (intern) {
-      console.log('   Mode: UPDATE (ID: ' + intern.id + ')');
-      updateMutation.mutate({ id: intern.id, data: submitData });
+      const internId = intern.id || intern._id;
+      console.log('   Mode: UPDATE (ID: ' + internId + ')');
+      updateMutation.mutate({ id: internId, data: submitData });
     } else {
       console.log('   Mode: CREATE (new intern)');
-      createMutation.mutate(submitData);
+      setIsCreating(true);
+      fetch('/api/interns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(submitData),
+      })
+        .then(async (res) => {
+          const data = await res.json();
+          console.log('CREATE RESPONSE:', data);
+
+          if (!res.ok) {
+            throw new Error(data?.error || data?.details || 'Failed to create intern');
+          }
+
+          setFormData({
+            name: '',
+            gender: '',
+            startDate: '',
+            phone: '',
+          });
+
+          toast({
+            title: 'Success',
+            description: 'Intern created successfully',
+          });
+
+          if (onSuccess) {
+            onSuccess();
+          }
+        })
+        .catch((error) => {
+          console.error(error);
+          setSubmitError(error.message || 'Failed to create intern');
+          toast({
+            title: 'Error',
+            description: error.message || 'Failed to create intern',
+            variant: 'destructive',
+          });
+        })
+        .finally(() => {
+          setIsCreating(false);
+        });
     }
   };
 
@@ -123,7 +158,7 @@ export default function InternForm({ intern, onClose, onSuccess }) {
     }));
   };
 
-  const isLoading = createMutation.isPending || updateMutation.isPending;
+  const isLoading = isCreating || updateMutation.isPending;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -154,6 +189,47 @@ export default function InternForm({ intern, onClose, onSuccess }) {
                 required
               />
             </div>
+
+            <div>
+              <Label htmlFor="gender">Gender *</Label>
+              <Select value={formData.gender} onValueChange={(value) => handleChange('gender', value)}>
+                <SelectTrigger id="gender">
+                  <SelectValue placeholder="Select gender" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Male">Male</SelectItem>
+                  <SelectItem value="Female">Female</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label htmlFor="startDate">Start Date *</Label>
+              <Input
+                id="startDate"
+                type="date"
+                value={formData.startDate}
+                onChange={(e) => handleChange('startDate', e.target.value)}
+                required
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="phone">Phone</Label>
+              <Input
+                id="phone"
+                type="tel"
+                value={formData.phone}
+                onChange={(e) => handleChange('phone', e.target.value)}
+                placeholder="Optional phone number"
+              />
+            </div>
+
+            {submitError ? (
+              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {submitError}
+              </div>
+            ) : null}
 
             <div className="flex items-center justify-end space-x-3 pt-4 border-t">
               <Button type="button" variant="outline" onClick={onClose}>

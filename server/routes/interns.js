@@ -5,9 +5,8 @@ const { body, validationResult } = require('express-validator');
 const Intern = require('../models/Intern');
 const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
-const { createIntern, ensureInternStatusIsCorrect } = require('../services/internService');
+const { ensureInternStatusIsCorrect } = require('../services/internService');
 const { logRecentUpdateSafe } = require('../services/recentUpdatesService');
-const { createWorkloadHistory } = require('../services/workloadService');
 const { createExtensionReason } = require('../services/extensionService');
 const { buildInternView, buildInternViews } = require('../services/internViewService');
 const { updateBatchStats } = require('./dashboard');
@@ -19,8 +18,11 @@ const normalizeInternPayload = (req, res, next) => {
   if (req.body.start_date !== undefined && req.body.startDate === undefined) {
     req.body.startDate = req.body.start_date;
   }
-  if (req.body.phone_number !== undefined && req.body.phoneNumber === undefined) {
-    req.body.phoneNumber = req.body.phone_number;
+  if (req.body.phone_number !== undefined && req.body.phone === undefined) {
+    req.body.phone = req.body.phone_number;
+  }
+  if (req.body.phoneNumber !== undefined && req.body.phone === undefined) {
+    req.body.phone = req.body.phoneNumber;
   }
   if (req.body.extension_days !== undefined && req.body.extensionDays === undefined) {
     req.body.extensionDays = req.body.extension_days;
@@ -31,37 +33,20 @@ const normalizeInternPayload = (req, res, next) => {
 
 const validateIntern = [
   body('name').trim().isLength({ min: 2, max: 100 }).withMessage('Name must be 2-100 characters'),
-  body('startDate').optional().isISO8601().withMessage('Start date must be a valid date'),
+  body('gender').isIn(['Male', 'Female']).withMessage('Gender is required and must be Male or Female'),
+  body('startDate').isISO8601().withMessage('Start date is required and must be a valid date'),
 ];
 
 // GET /api/interns - List interns
 router.get('/', async (req, res) => {
   try {
-    const interns = await Intern.find().populate('currentUnit').sort({ createdAt: -1 }).exec();
-    console.log("🔵 GET /api/interns - FETCHED INTERNS:", interns.length, "interns");
-    console.log("   IDs:", interns.map(i => i._id.toString()).join(", ") || "none");
-
-    const internIds = interns.map(i => i._id);
-    const rotations = await Rotation.find({ intern: { $in: internIds } })
-      .populate('unit')
-      .sort({ startDate: 1 })
+    const interns = await Intern.find()
+      .select('-email -phoneNumber')
+      .populate('currentUnit')
+      .sort({ createdAt: -1 })
       .exec();
-
-    const rotationsByIntern = rotations.reduce((acc, rotation) => {
-      const key = rotation.intern?.toString();
-      if (!key) return acc;
-      acc[key] = acc[key] || [];
-      acc[key].push(rotation);
-      return acc;
-    }, {});
-
-    const enriched = await Promise.all(interns.map(async (intern) => {
-      await ensureInternStatusIsCorrect(intern._id);
-      return buildInternView(intern._id);
-    }));
-
-    console.log("📤 GET /api/interns - RETURNING:", enriched.length, "formatted interns");
-    res.json(enriched);
+    console.log('FETCHED INTERNS:', interns);
+    return res.json(interns);
   } catch (err) {
     console.error('❌ Error fetching interns:', err);
     res.status(500).json({ error: 'Failed to fetch interns' });
@@ -102,41 +87,28 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
   }
 
   try {
-    console.log("🔵 POST /api/interns - POST BODY:", JSON.stringify(req.body, null, 2));
+    const { name, gender, startDate, phone = '' } = req.body;
+    console.log('POST BODY:', req.body);
 
-    const intern = await createIntern(req.body);
-    console.log("✅ CREATED INTERN IN SERVICE:", JSON.stringify(intern, null, 2));
+    const intern = await Intern.create({
+      name,
+      gender,
+      startDate,
+      phone,
+    });
 
-    // Immediate verification
-    const verified = await Intern.findById(intern._id).exec();
-    console.log("🔍 VERIFIED INTERN IN DB:", verified ? "✅ FOUND" : "❌ NOT FOUND");
-    if (verified) {
-      console.log("   Details:", JSON.stringify(verified, null, 2));
-    }
+    console.log('CREATED INTERN:', intern);
+
+    const check = await Intern.findById(intern._id).select('-email -phoneNumber');
+    console.log('VERIFIED INTERN:', check);
 
     await logRecentUpdateSafe('Intern Created', null, intern._id);
-
-    const defaultUnit = await Unit.findOne().sort({ order: 1 }).exec();
-    if (defaultUnit) {
-      const workloadLog = await createWorkloadHistory(intern._id, defaultUnit._id, 0);
-      console.log('✅ Created initial workload history:', workloadLog);
-    }
-
     await updateBatchStats().catch(() => {});
 
-    const internView = await buildInternView(intern._id);
-    console.log("📤 RETURNING INTERN VIEW:", JSON.stringify(internView, null, 2));
-    
-    // Return the internView directly (consistent with GET /api/interns format)
-    res.status(201).json(internView);
-  } catch (err) {
-    console.error('❌ Error creating intern:', err);
-
-    if (err.name === 'ValidationError') {
-      return res.status(400).json({ error: 'Validation failed', details: err.message });
-    }
-
-    res.status(500).json({ error: 'Failed to create intern', details: err.message });
+    return res.status(201).json(intern);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: error.message });
   }
 });
 
@@ -151,7 +123,7 @@ router.put('/:id', normalizeInternPayload, validateIntern, async (req, res) => {
     const intern = await Intern.findById(req.params.id).exec();
     if (!intern) return res.status(404).json({ error: 'Intern not found' });
 
-    const updates = ['name', 'gender', 'batch', 'startDate', 'phoneNumber', 'status', 'extensionDays'];
+    const updates = ['name', 'gender', 'batch', 'startDate', 'phone', 'status', 'extensionDays'];
     updates.forEach(field => {
       if (req.body[field] !== undefined) {
         intern[field] = req.body[field];

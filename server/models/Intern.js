@@ -2,11 +2,11 @@ const mongoose = require('mongoose');
 
 const InternSchema = new mongoose.Schema({
   name: { type: String, required: true },
-  gender: { type: String, enum: ['Male', 'Female', 'Other', ''], default: '' },
+  gender: { type: String, enum: ['Male', 'Female'], required: true },
   batch: { type: String, enum: ['A', 'B', 'C', ''], default: '' },
-  phoneNumber: { type: String, default: '' },
+  phone: { type: String, default: '' },
   status: { type: String, enum: ['Active', 'Extended', 'Completed', 'Inactive', ''], default: 'Active' },
-  startDate: { type: Date, default: Date.now },
+  startDate: { type: Date, required: true },
   currentUnit: { type: mongoose.Schema.Types.ObjectId, ref: 'Unit' },
   rotationHistory: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Rotation' }],
   extensionDays: { type: Number, default: 0 },

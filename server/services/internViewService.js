@@ -72,7 +72,6 @@ const formatIntern = (intern, rotations = []) => {
   return {
     id: intern._id?.toString(),
     name: intern.name || '',
-    email: intern.email || null,
     startDate: toIsoString(startDate),
     start_date: toIsoString(startDate),
     gender: intern.gender || null,
@@ -80,8 +79,8 @@ const formatIntern = (intern, rotations = []) => {
     status: intern.status || null,
     extensionDays: intern.extensionDays || intern.extension_days || 0,
     extension_days: intern.extensionDays || intern.extension_days || 0,
-    phoneNumber: intern.phoneNumber || intern.phone_number || '',
-    phone_number: intern.phoneNumber || intern.phone_number || '',
+    phone: intern.phone || intern.phone_number || '',
+    phone_number: intern.phone || intern.phone_number || '',
     currentUnit,
     rotations: formattedRotations,
     upcomingUnits: upcomingRotations,

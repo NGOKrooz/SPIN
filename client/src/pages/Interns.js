@@ -79,7 +79,7 @@ export default function Interns() {
 
   // Derive status on client: trust backend status, but force Extended when extension days exist
   const mapWithDerivedStatus = (list) => (list || []).map((i) => {
-    const extensionDays = Number(i.extension_days) || 0;
+    const extensionDays = Number(i.extensionDays ?? i.extension_days) || 0;
 
     let derived = i.status || 'Active';
 
@@ -87,7 +87,16 @@ export default function Interns() {
       derived = 'Extended';
     }
 
-    return { ...i, derivedStatus: derived, extension_days: extensionDays };
+    return {
+      ...i,
+      id: i.id || i._id,
+      startDate: i.startDate || i.start_date,
+      extensionDays,
+      currentUnits: Array.isArray(i.current_units)
+        ? i.current_units
+        : (i.currentUnit?.name ? [i.currentUnit.name] : []),
+      derivedStatus: derived,
+    };
   });
 
   const derivedInterns = mapWithDerivedStatus(interns);
@@ -253,16 +262,16 @@ export default function Interns() {
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
                           <span className="flex items-center space-x-1">
                             <Calendar className="h-4 w-4" />
-                            <span>Started: {formatDate(intern.start_date)}</span>
+                            <span>Started: {formatDate(intern.startDate)}</span>
                           </span>
                         </div>
                         <div className="mt-1">
                           <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(intern.derivedStatus || intern.status)}`}>
                             {intern.derivedStatus || intern.status}
                           </span>
-                          {(intern.derivedStatus === 'Extended' || intern.status === 'Extended') && intern.extension_days > 0 && (
+                          {(intern.derivedStatus === 'Extended' || intern.status === 'Extended') && intern.extensionDays > 0 && (
                             <span className="ml-2 text-xs text-yellow-600">
-                              +{intern.extension_days} days
+                              +{intern.extensionDays} days
                             </span>
                           )}
                         </div>
@@ -312,12 +321,12 @@ export default function Interns() {
                       </div>
                       <div>
                         <span className="text-gray-500">Start date:</span>
-                        <span className="ml-2 font-medium">{formatDate(intern.start_date)}</span>
+                        <span className="ml-2 font-medium">{formatDate(intern.startDate)}</span>
                       </div>
                       <div>
                         <span className="text-gray-500">Current units:</span>
                         <span className="ml-2 font-medium">
-                          {intern.current_units?.length > 0 ? intern.current_units.join(', ') : 'None'}
+                          {intern.currentUnits?.length > 0 ? intern.currentUnits.join(', ') : 'None'}
                         </span>
                       </div>
                     </div>
