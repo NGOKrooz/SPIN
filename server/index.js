@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 // ═══════════════════════════════════════════════════════════
@@ -72,22 +73,34 @@ app.use((req, res, next) => {
 
 // Admin authorization middleware for write operations
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+const JWT_SECRET = process.env.JWT_SECRET || 'dev_jwt_secret';
 function requireAdminForWrites(req, res, next) {
   if (req.method === 'OPTIONS') return next();
   const isWrite = req.method === 'POST' || req.method === 'PUT' || req.method === 'DELETE';
   if (!isWrite) return next();
 
-  if (!ADMIN_PASSWORD) {
-    console.warn('ADMIN_PASSWORD is not set. Blocking write operation.');
-    return res.status(403).json({ error: 'Admin not configured on server' });
+  const authHeader = req.headers.authorization;
+  console.log('AUTH HEADER:', authHeader);
+
+  const token = authHeader?.split(' ')[1];
+  if (!token) {
+    return res.status(401).json({ error: 'No token provided' });
   }
 
-  const key = req.header('x-admin-key') || '';
-  if (key !== ADMIN_PASSWORD) {
-    return res.status(401).json({ error: 'Admin authentication required' });
-  }
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    console.log('DECODED USER:', decoded);
+    req.user = decoded;
 
-  next();
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin authentication required' });
+    }
+
+    return next();
+  } catch (error) {
+    console.error('JWT verification failed:', error.message);
+    return res.status(401).json({ error: 'Invalid token' });
+  }
 }
 
 // Health check endpoint - define early so it's always available
@@ -136,7 +149,14 @@ app.get('/api/auth/verify-admin', (req, res) => {
   if (key !== ADMIN_PASSWORD) {
     return res.status(401).json({ error: 'Invalid admin password' });
   }
-  res.json({ ok: true });
+
+  const token = jwt.sign(
+    { role: 'admin' },
+    JWT_SECRET,
+    { expiresIn: '12h' }
+  );
+
+  res.json({ ok: true, token });
 });
 
 // Routes - wrap in try-catch to prevent server crash if route loading fails

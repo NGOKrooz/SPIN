@@ -34,13 +34,12 @@ const http = axios.create({
 // Request interceptor
 http.interceptors.request.use(
   (config) => {
-    // Attach admin key for write operations when in admin mode
+    // Attach bearer token for authenticated requests
     try {
-      const role = localStorage.getItem('role');
-      const adminKey = localStorage.getItem('adminKey');
+      const token = localStorage.getItem('token');
       const isWrite = (config.method || '').toUpperCase() === 'POST' || (config.method || '').toUpperCase() === 'PUT' || (config.method || '').toUpperCase() === 'DELETE';
-      if (role === 'admin' && adminKey && isWrite) {
-        config.headers['x-admin-key'] = adminKey;
+      if (token && isWrite) {
+        config.headers.Authorization = `Bearer ${token}`;
       }
     } catch (_) {}
     return config;

@@ -15,6 +15,7 @@ export default function InternForm({ intern, onClose, onSuccess }) {
     gender: '',
     startDate: '',
     phone: '',
+    batch: '',
   });
   const [submitError, setSubmitError] = useState('');
   const [isCreating, setIsCreating] = useState(false);
@@ -50,6 +51,7 @@ export default function InternForm({ intern, onClose, onSuccess }) {
         gender: intern.gender || '',
         startDate: intern.startDate ? String(intern.startDate).slice(0, 10) : '',
         phone: intern.phone || intern.phone_number || '',
+        batch: intern.batch || '',
       });
     }
   }, [intern]);
@@ -90,11 +92,21 @@ export default function InternForm({ intern, onClose, onSuccess }) {
       return;
     }
 
+    if (!formData.batch) {
+      toast({
+        title: 'Error',
+        description: 'Please select a batch',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     const submitData = {
       name: formData.name,
       gender: formData.gender,
       startDate: formData.startDate,
       phone: formData.phone,
+      batch: formData.batch,
     };
 
     console.log('📤 FORM: Submitting data:', submitData);
@@ -107,9 +119,13 @@ export default function InternForm({ intern, onClose, onSuccess }) {
     } else {
       console.log('   Mode: CREATE (new intern)');
       setIsCreating(true);
+      const token = localStorage.getItem('token');
       fetch('/api/interns', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token || ''}`,
+        },
         body: JSON.stringify(submitData),
       })
         .then(async (res) => {
@@ -125,6 +141,7 @@ export default function InternForm({ intern, onClose, onSuccess }) {
             gender: '',
             startDate: '',
             phone: '',
+            batch: '',
           });
 
           toast({
@@ -223,6 +240,19 @@ export default function InternForm({ intern, onClose, onSuccess }) {
                 onChange={(e) => handleChange('phone', e.target.value)}
                 placeholder="Optional phone number"
               />
+            </div>
+
+            <div>
+              <Label htmlFor="batch">Batch *</Label>
+              <Select value={formData.batch} onValueChange={(value) => handleChange('batch', value)}>
+                <SelectTrigger id="batch">
+                  <SelectValue placeholder="Select batch" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="A">Batch A</SelectItem>
+                  <SelectItem value="B">Batch B</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {submitError ? (

@@ -40,9 +40,12 @@ export default function Layout() {
                 const trimmed = (key || '').trim();
                 if (!trimmed) return;
                 api.verifyAdmin(trimmed)
-                  .then(() => {
+                  .then((data) => {
                     localStorage.setItem('role', 'admin');
                     localStorage.setItem('adminKey', trimmed);
+                    if (data?.token) {
+                      localStorage.setItem('token', data.token);
+                    }
                     window.location.reload();
                   })
                   .catch((err) => {
@@ -57,6 +60,7 @@ export default function Layout() {
               className="w-full rounded-md border border-gray-300 px-4 py-2 text-gray-800 hover:bg-gray-50"
               onClick={() => {
                 localStorage.setItem('role', 'guest');
+                localStorage.removeItem('token');
                 window.location.reload();
               }}
             >
@@ -184,6 +188,7 @@ export default function Layout() {
               onClick={() => {
                 if (role === 'admin') {
                   localStorage.removeItem('adminKey');
+                  localStorage.removeItem('token');
                 }
                 localStorage.removeItem('role');
                 window.location.reload();

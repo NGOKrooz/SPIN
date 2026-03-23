@@ -34,6 +34,7 @@ const normalizeInternPayload = (req, res, next) => {
 const validateIntern = [
   body('name').trim().isLength({ min: 2, max: 100 }).withMessage('Name must be 2-100 characters'),
   body('gender').isIn(['Male', 'Female']).withMessage('Gender is required and must be Male or Female'),
+  body('batch').isIn(['A', 'B']).withMessage('Batch is required and must be A or B'),
   body('startDate').isISO8601().withMessage('Start date is required and must be a valid date'),
 ];
 
@@ -87,7 +88,7 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
   }
 
   try {
-    const { name, gender, startDate, phone = '' } = req.body;
+    const { name, gender, startDate, phone = '', batch } = req.body;
     console.log('POST BODY:', req.body);
 
     const intern = await Intern.create({
@@ -95,6 +96,7 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
       gender,
       startDate,
       phone,
+      batch,
     });
 
     console.log('CREATED INTERN:', intern);

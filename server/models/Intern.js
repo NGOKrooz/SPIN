@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const InternSchema = new mongoose.Schema({
   name: { type: String, required: true },
   gender: { type: String, enum: ['Male', 'Female'], required: true },
-  batch: { type: String, enum: ['A', 'B', 'C', ''], default: '' },
+  batch: { type: String, enum: ['A', 'B'], required: true },
   phone: { type: String, default: '' },
   status: { type: String, enum: ['Active', 'Extended', 'Completed', 'Inactive', ''], default: 'Active' },
   startDate: { type: Date, required: true },
