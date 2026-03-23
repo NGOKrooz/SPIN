@@ -27,7 +27,6 @@ CHOOSE YOUR DEPLOYMENT PLATFORM:
    - MONGO_URI = mongodb+srv://godswillnnachi5_db_user:YouaretheLightoftheworldmatt514@spin.oz92f4l.mongodb.net/SPIn?retryWrites=true&w=majority&appName=SPIN
    - ADMIN_PASSWORD = space3key (change this for production!)
    - NODE_ENV = production
-   - JWT_SECRET = (generate a random string)
    - AUTO_ROTATION = true
 
 7. Click "Create Web Service"
@@ -48,7 +47,6 @@ CHOOSE YOUR DEPLOYMENT PLATFORM:
    - MONGO_URI = mongodb+srv://godswillnnachi5_db_user:YouaretheLightoftheworldmatt514@spin.oz92f4l.mongodb.net/SPIn?retryWrites=true&w=majority&appName=SPIN
    - ADMIN_PASSWORD = space3key (change this for production!)
    - NODE_ENV = production
-   - JWT_SECRET = (generate a random string)
    - AUTO_ROTATION = true
 
 7. Deploy will start automatically
@@ -71,13 +69,11 @@ CHOOSE YOUR DEPLOYMENT PLATFORM:
 
 4. Test Unit Creation:
    POST https://your-app-url.onrender.com/api/units
-   Headers: x-admin-key: space3key
    Body: {"name": "Test Unit"}
    Expected: 201 status with unit data
 
 5. Test Intern Creation:
    POST https://your-app-url.onrender.com/api/interns
-   Headers: x-admin-key: space3key
    Body: {"name":"John Doe","email":"john@example.com","gender":"Male","startDate":"2026-03-17"}
    Expected: 201 status with intern data
 
@@ -103,7 +99,7 @@ CHOOSE YOUR DEPLOYMENT PLATFORM:
 
 ❌ If API returns 500 errors:
    - Check deployment logs for console.error messages
-   - Verify ADMIN_PASSWORD header is included in POST requests
+   - Verify ADMIN_PASSWORD environment variable is configured
 
 ═════════════════════════════════════════════════════════════════════════════════
 

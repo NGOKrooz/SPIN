@@ -143,11 +143,9 @@ Client Directory:
 
 5. Create Test Data:
    - POST https://<app-url>/api/units
-     Headers: x-admin-key: <ADMIN_PASSWORD>
      Body: { "name": "Test Unit", "durationDays": 7 }
    
    - POST https://<app-url>/api/interns
-     Headers: x-admin-key: <ADMIN_PASSWORD>
      Body: { "name": "Test Intern", "gender": "Male", "batch": "A", "email": "test@example.com", "startDate": "2026-03-17" }
 
 ═════════════════════════════════════════════════════════════════════════════════
@@ -172,9 +170,8 @@ Client Directory:
    - Production (Render): Add Render's IPs (0.0.0.0/0 for testing)
 
 4. Admin Authentication:
-   - All POST/PUT/DELETE routes require x-admin-key header
-   - Header value must match ADMIN_PASSWORD environment variable
-   - GET routes don't require authentication
+   - Use ADMIN_PASSWORD only for admin login checks
+   - API routes no longer require authentication headers
 
 5. Logs to Monitor:
    - "✅ MongoDB Connected Successfully" = Success

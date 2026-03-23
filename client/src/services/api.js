@@ -31,26 +31,6 @@ const http = axios.create({
   },
 });
 
-// Request interceptor
-http.interceptors.request.use(
-  (config) => {
-    // Attach bearer token for authenticated requests
-    try {
-      const token = localStorage.getItem('token');
-      const method = (config.method || '').toUpperCase();
-      const isWrite = method === 'POST' || method === 'PUT' || method === 'DELETE' || method === 'PATCH';
-      if (token && isWrite) {
-        config.headers.Authorization = `Bearer ${token}`;
-        console.log('TOKEN SENT:', token);
-      }
-    } catch (_) {}
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
-
 // Response interceptor
 http.interceptors.response.use(
   (response) => response.data,
@@ -144,7 +124,7 @@ export const healthAPI = {
 
 // Auth helpers
 export const authAPI = {
-  verifyAdmin: (key) => http.get('/auth/verify-admin', { headers: { 'x-admin-key': key } }),
+  verifyAdmin: (adminPassword) => http.post('/auth/login', { adminPassword }),
 };
 
 // Main API object with all endpoints

@@ -61,6 +61,30 @@ router.get('/', async (req, res) => {
   }
 });
 
+// PUT /api/units/reorder - Update unit order
+router.put('/reorder', async (req, res) => {
+  const items = req.body;
+  if (!Array.isArray(items)) {
+    return res.status(400).json({ error: 'Payload must be an array of { id, position } objects' });
+  }
+
+  try {
+    const updates = items.map(item => {
+      if (!item || !item.id) return null;
+      const nextOrder = Number.isInteger(item.order) ? item.order : (Number.isInteger(item.position) ? item.position : 0);
+      return Unit.findByIdAndUpdate(item.id, { order: nextOrder }).exec();
+    }).filter(Boolean);
+
+    await Promise.all(updates);
+    await logRecentUpdateSafe('units_reordered', 'Updated unit ordering');
+    await updateBatchStats().catch(() => {});
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error reordering units:', err);
+    res.status(500).json({ success: false, error: 'Failed to reorder units' });
+  }
+});
+
 // GET /api/units/:id - Get specific unit
 router.get('/:id', async (req, res) => {
   try {
@@ -148,30 +172,6 @@ router.delete('/:id', async (req, res) => {
   } catch (err) {
     console.error('Error deleting unit:', err);
     res.status(500).json({ success: false, error: 'Failed to delete unit' });
-  }
-});
-
-// PUT /api/units/reorder - Update unit order
-router.put('/reorder', async (req, res) => {
-  const items = req.body;
-  if (!Array.isArray(items)) {
-    return res.status(400).json({ error: 'Payload must be an array of { id, position } objects' });
-  }
-
-  try {
-    const updates = items.map(item => {
-      if (!item || !item.id) return null;
-      const nextOrder = Number.isInteger(item.order) ? item.order : (Number.isInteger(item.position) ? item.position : 0);
-      return Unit.findByIdAndUpdate(item.id, { order: nextOrder }).exec();
-    }).filter(Boolean);
-
-    await Promise.all(updates);
-    await logRecentUpdateSafe('units_reordered', 'Updated unit ordering');
-    await updateBatchStats().catch(() => {});
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Error reordering units:', err);
-    res.status(500).json({ success: false, error: 'Failed to reorder units' });
   }
 });
 

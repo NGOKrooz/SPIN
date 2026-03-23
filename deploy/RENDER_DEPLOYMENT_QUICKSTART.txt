@@ -85,7 +85,6 @@ RUNTIME PHASE:
 2. Create a Unit (replace YOUR_PASSWORD):
    curl -X POST https://your-app.onrender.com/api/units \
      -H "Content-Type: application/json" \
-     -H "x-admin-key: YOUR_PASSWORD" \
      -d '{"name":"Cardiology","duration_days":30,"workload":"Medium"}'
 
 3. Verify in Frontend:

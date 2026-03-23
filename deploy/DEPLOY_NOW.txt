@@ -109,7 +109,6 @@ Test these endpoints (replace with your Render URL):
 3. Create Unit (use your ADMIN_PASSWORD):
    curl -X POST https://your-app.onrender.com/api/units \
      -H "Content-Type: application/json" \
-     -H "x-admin-key: YOUR_ADMIN_PASSWORD" \
      -d '{"name":"Cardiology","duration_days":30,"workload":"Medium"}'
 
 4. Open Frontend:

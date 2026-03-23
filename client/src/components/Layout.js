@@ -26,20 +26,21 @@ export default function Layout() {
   const role = useMemo(() => localStorage.getItem('role') || '', []);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
     const adminKey = localStorage.getItem('adminKey');
     const currentRole = localStorage.getItem('role');
 
-    if (currentRole === 'admin' && !token && adminKey) {
+    if (currentRole === 'admin' && adminKey) {
       api.verifyAdmin(adminKey)
         .then((data) => {
-          if (data?.token) {
-            localStorage.setItem('token', data.token);
-            console.log('TOKEN STORED:', data.token);
+          if (!data?.success) {
+            localStorage.removeItem('adminKey');
+            localStorage.removeItem('role');
           }
         })
         .catch((err) => {
-          console.error('Failed to restore admin token:', err?.message || err);
+          console.error('Failed to verify admin password:', err?.message || err);
+          localStorage.removeItem('adminKey');
+          localStorage.removeItem('role');
         });
     }
   }, []);
@@ -59,13 +60,9 @@ export default function Layout() {
                 const trimmed = (key || '').trim();
                 if (!trimmed) return;
                 api.verifyAdmin(trimmed)
-                  .then((data) => {
+                  .then(() => {
                     localStorage.setItem('role', 'admin');
                     localStorage.setItem('adminKey', trimmed);
-                    if (data?.token) {
-                      localStorage.setItem('token', data.token);
-                      console.log('TOKEN STORED:', data.token);
-                    }
                     window.location.reload();
                   })
                   .catch((err) => {
@@ -80,7 +77,6 @@ export default function Layout() {
               className="w-full rounded-md border border-gray-300 px-4 py-2 text-gray-800 hover:bg-gray-50"
               onClick={() => {
                 localStorage.setItem('role', 'guest');
-                localStorage.removeItem('token');
                 window.location.reload();
               }}
             >
@@ -208,7 +204,6 @@ export default function Layout() {
               onClick={() => {
                 if (role === 'admin') {
                   localStorage.removeItem('adminKey');
-                  localStorage.removeItem('token');
                 }
                 localStorage.removeItem('role');
                 window.location.reload();

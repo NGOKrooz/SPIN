@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 // ═══════════════════════════════════════════════════════════
@@ -66,44 +65,12 @@ app.use((req, res, next) => {
 // CORS headers fallback for environments behind proxies
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "https://spin-interns.vercel.app");
-  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH");
   next();
 });
 
-// Admin authorization middleware for write operations
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
-const JWT_SECRET = process.env.JWT_SECRET || 'dev_jwt_secret';
-
-if (!process.env.JWT_SECRET) {
-  console.warn('⚠️ JWT_SECRET not set. Falling back to dev_jwt_secret.');
-}
-
-function requireAdminForWrites(req, res, next) {
-  if (req.method === 'OPTIONS') return next();
-  const isWrite = req.method === 'POST' || req.method === 'PUT' || req.method === 'DELETE';
-  if (!isWrite) return next();
-
-  try {
-    const token = req.headers.authorization?.split(' ')[1];
-
-    if (!token) {
-      return res.status(401).json({ error: 'No token provided' });
-    }
-
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
-
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Admin authentication required' });
-    }
-
-    return next();
-  } catch (error) {
-    console.error('TOKEN ERROR:', error.message);
-    return res.status(401).json({ error: 'Invalid token' });
-  }
-}
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'space3key';
 
 // Health check endpoint - define early so it's always available
 app.get('/api/health', (req, res) => {
@@ -139,28 +106,19 @@ app.get('/test-db', async (req, res) => {
   }
 });
 
-// Apply admin protection to all API write routes
-app.use('/api', requireAdminForWrites);
-
-// Auth helper: verify admin key
-app.get('/api/auth/verify-admin', (req, res) => {
+// Auth helper: simple admin password verification
+app.post('/api/auth/login', (req, res) => {
   if (!ADMIN_PASSWORD) {
     return res.status(503).json({ error: 'Admin not configured' });
   }
-  const key = req.header('x-admin-key') || '';
-  if (key !== ADMIN_PASSWORD) {
-    return res.status(401).json({ error: 'Invalid admin password' });
+
+  const { adminPassword } = req.body || {};
+  if (adminPassword !== ADMIN_PASSWORD) {
+    return res.status(403).json({ error: 'Invalid admin password' });
   }
 
-  const token = jwt.sign(
-    { role: 'admin' },
-    JWT_SECRET,
-    { expiresIn: '12h' }
-  );
-
   res.json({
-    ok: true,
-    token,
+    success: true,
     user: { role: 'admin' }
   });
 });

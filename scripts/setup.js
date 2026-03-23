@@ -31,7 +31,7 @@ console.log('📝 Creating environment files...');
 // Server .env
 const serverEnvContent = `PORT=5000
 NODE_ENV=development
-JWT_SECRET=spin_jwt_secret_key_${Date.now()}
+ADMIN_PASSWORD=space3key
 DB_PATH=./database/spin.db
 CORS_ORIGIN=http://localhost:3000`;
 
