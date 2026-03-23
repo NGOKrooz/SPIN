@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import api from '../services/api';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { 
@@ -25,6 +25,25 @@ export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const role = useMemo(() => localStorage.getItem('role') || '', []);
 
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    const adminKey = localStorage.getItem('adminKey');
+    const currentRole = localStorage.getItem('role');
+
+    if (currentRole === 'admin' && !token && adminKey) {
+      api.verifyAdmin(adminKey)
+        .then((data) => {
+          if (data?.token) {
+            localStorage.setItem('token', data.token);
+            console.log('TOKEN STORED:', data.token);
+          }
+        })
+        .catch((err) => {
+          console.error('Failed to restore admin token:', err?.message || err);
+        });
+    }
+  }, []);
+
   // Simple gate overlay if no role selected yet
   if (!role) {
     return (
@@ -45,6 +64,7 @@ export default function Layout() {
                     localStorage.setItem('adminKey', trimmed);
                     if (data?.token) {
                       localStorage.setItem('token', data.token);
+                      console.log('TOKEN STORED:', data.token);
                     }
                     window.location.reload();
                   })

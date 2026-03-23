@@ -120,6 +120,7 @@ export default function InternForm({ intern, onClose, onSuccess }) {
       console.log('   Mode: CREATE (new intern)');
       setIsCreating(true);
       const token = localStorage.getItem('token');
+      console.log('TOKEN BEFORE REQUEST:', token);
       fetch('/api/interns', {
         method: 'POST',
         headers: {
