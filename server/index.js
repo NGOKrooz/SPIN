@@ -74,22 +74,24 @@ app.use((req, res, next) => {
 // Admin authorization middleware for write operations
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_jwt_secret';
+
+if (!process.env.JWT_SECRET) {
+  console.warn('⚠️ JWT_SECRET not set. Falling back to dev_jwt_secret.');
+}
+
 function requireAdminForWrites(req, res, next) {
   if (req.method === 'OPTIONS') return next();
   const isWrite = req.method === 'POST' || req.method === 'PUT' || req.method === 'DELETE';
   if (!isWrite) return next();
 
-  const authHeader = req.headers.authorization;
-  console.log('AUTH HEADER:', authHeader);
-
-  const token = authHeader?.split(' ')[1];
-  if (!token) {
-    return res.status(401).json({ error: 'No token provided' });
-  }
-
   try {
+    const token = req.headers.authorization?.split(' ')[1];
+
+    if (!token) {
+      return res.status(401).json({ error: 'No token provided' });
+    }
+
     const decoded = jwt.verify(token, JWT_SECRET);
-    console.log('DECODED USER:', decoded);
     req.user = decoded;
 
     if (req.user.role !== 'admin') {
@@ -98,7 +100,7 @@ function requireAdminForWrites(req, res, next) {
 
     return next();
   } catch (error) {
-    console.error('JWT verification failed:', error.message);
+    console.error('TOKEN ERROR:', error.message);
     return res.status(401).json({ error: 'Invalid token' });
   }
 }
@@ -156,7 +158,11 @@ app.get('/api/auth/verify-admin', (req, res) => {
     { expiresIn: '12h' }
   );
 
-  res.json({ ok: true, token });
+  res.json({
+    ok: true,
+    token,
+    user: { role: 'admin' }
+  });
 });
 
 // Routes - wrap in try-catch to prevent server crash if route loading fails

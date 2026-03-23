@@ -15,6 +15,7 @@ import InternDashboard from '../components/InternDashboard';
 
 export default function Interns() {
   const [searchTerm, setSearchTerm] = useState('');
+  const [batchFilter, setBatchFilter] = useState('');
   const [sortByDate, setSortByDate] = useState(() => localStorage.getItem('internsSortByDate') || 'newest');
   const [showForm, setShowForm] = useState(false);
   const [editingIntern, setEditingIntern] = useState(null);
@@ -100,9 +101,11 @@ export default function Interns() {
   const derivedInterns = mapWithDerivedStatus(interns);
   console.log('📊 FRONTEND: Derived interns:', derivedInterns);
   
-  const filteredInterns = (derivedInterns || []).filter(intern => 
-    intern.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredInterns = (derivedInterns || []).filter((intern) => {
+    const nameMatches = intern.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const batchMatches = !batchFilter || intern.batch === batchFilter;
+    return nameMatches && batchMatches;
+  });
   console.log('🔎 FRONTEND: Filtered interns (search term: "' + searchTerm + '"):', filteredInterns.length, 'results');
 
   const handleDelete = (id, name) => {
@@ -161,7 +164,7 @@ export default function Interns() {
           <CardTitle>Filters</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
             <div>
               <Label htmlFor="search">Search</Label>
               <Input
@@ -183,12 +186,26 @@ export default function Interns() {
                 </SelectContent>
               </Select>
             </div>
+            <div>
+              <Label htmlFor="batch-filter">Batch</Label>
+              <Select value={batchFilter || 'all'} onValueChange={(value) => setBatchFilter(value === 'all' ? '' : value)}>
+                <SelectTrigger id="batch-filter">
+                  <SelectValue placeholder="All" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="A">Batch A</SelectItem>
+                  <SelectItem value="B">Batch B</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="flex items-end">
               <Button 
                 variant="outline" 
                 onClick={() => {
                   setSearchTerm('');
                   setSortByDate('newest');
+                  setBatchFilter('');
                 }}
               >
                 Clear Filters

@@ -31,17 +31,16 @@ const validateUnitPayload = [
 // GET /api/units - Get all units
 router.get('/', async (req, res) => {
   try {
-    const units = await Unit.find({}).sort({ position: 1, name: 1 }).exec();
+    const units = await Unit.find({}).sort({ order: 1, name: 1 }).exec();
 
     // Count current active interns per unit (today)
     const today = new Date();
     const activeRotations = await Rotation.find({
-      startDate: { $lte: today },
-      endDate: { $gte: today },
+      status: 'active',
     }).exec();
 
     const counts = activeRotations.reduce((acc, rotation) => {
-      const key = String(rotation.unitId);
+      const key = String(rotation.unit);
       acc[key] = (acc[key] || 0) + 1;
       return acc;
     }, {});
@@ -71,12 +70,11 @@ router.get('/:id', async (req, res) => {
     // Get current interns in this unit
     const today = new Date();
     const currentRotations = await Rotation.find({
-      unitId: unit._id,
-      startDate: { $lte: today },
-      endDate: { $gte: today }
+      unit: unit._id,
+      status: 'active',
     }).exec();
 
-    const internIds = currentRotations.map(r => r.internId);
+    const internIds = currentRotations.map(r => r.intern);
     const interns = await buildInternViews(internIds);
 
     res.json({
@@ -143,7 +141,7 @@ router.delete('/:id', async (req, res) => {
     const unit = await deleteUnit(req.params.id);
     if (!unit) return res.status(404).json({ error: 'Unit not found' });
 
-    await Rotation.deleteMany({ unitId: unit._id }).exec();
+    await Rotation.deleteMany({ unit: unit._id }).exec();
     await logRecentUpdateSafe('unit_deleted', `Deleted unit: ${unit.name}`);
     await updateBatchStats().catch(() => {});
     res.json({ success: true });
@@ -163,7 +161,8 @@ router.put('/reorder', async (req, res) => {
   try {
     const updates = items.map(item => {
       if (!item || !item.id) return null;
-      return Unit.findByIdAndUpdate(item.id, { position: item.position || 0 }).exec();
+      const nextOrder = Number.isInteger(item.order) ? item.order : (Number.isInteger(item.position) ? item.position : 0);
+      return Unit.findByIdAndUpdate(item.id, { order: nextOrder }).exec();
     }).filter(Boolean);
 
     await Promise.all(updates);

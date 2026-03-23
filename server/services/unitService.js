@@ -35,7 +35,7 @@ async function getUnitById(id) {
  * Create a new unit
  */
 async function createUnit(data) {
-  const { name, durationDays, duration, workload, patientCount, capacity, description } = data;
+  const { name, durationDays, duration, order, position, patientCount, capacity, description } = data;
 
   // Normalize duration (support `duration` or `durationDays`)
   const finalDurationDays = typeof durationDays === 'number' ? durationDays : (typeof duration === 'number' ? duration : 7);
@@ -43,8 +43,16 @@ async function createUnit(data) {
   const finalPatientCount = typeof patientCount === 'number' ? patientCount : 0;
   const finalCapacity = typeof capacity === 'number' ? capacity : 0;
 
+  // Normalize ordering inputs. `order` is canonical; `position` is accepted for backward compatibility.
+  let finalOrder = Number.isInteger(order) ? order : (Number.isInteger(position) ? position : null);
+  if (finalOrder === null) {
+    const lastUnit = await Unit.findOne({}).sort({ order: -1 }).exec();
+    finalOrder = (lastUnit?.order || 0) + 1;
+  }
+
   const unit = new Unit({
     name,
+    order: finalOrder,
     durationDays: finalDurationDays,
     capacity: finalCapacity,
     patientCount: finalPatientCount,
@@ -59,12 +67,14 @@ async function createUnit(data) {
  * Update a unit
  */
 async function updateUnit(id, data) {
-  const { name, durationDays, duration, workload, patientCount, capacity, description } = data;
+  const { name, durationDays, duration, order, position, patientCount, capacity, description } = data;
 
   const updateData = {};
   if (name !== undefined) updateData.name = name;
   if (durationDays !== undefined) updateData.durationDays = durationDays;
   if (duration !== undefined) updateData.durationDays = duration;
+  if (order !== undefined) updateData.order = order;
+  if (position !== undefined && order === undefined) updateData.order = position;
   if (capacity !== undefined) updateData.capacity = capacity;
   if (patientCount !== undefined) updateData.patientCount = patientCount;
   if (description !== undefined) updateData.description = description;

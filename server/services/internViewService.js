@@ -114,6 +114,29 @@ const addUnitProgress = (internView, currentUnit, units = []) => {
   const upcomingUnitDoc = currentIndex >= 0 ? (units[currentIndex + 1] || null) : null;
   const remainingUnitDocs = currentIndex >= 0 ? units.slice(currentIndex + 1) : [];
 
+  const activeRotation = (internView.rotations || []).find((rotation) => rotation.status === 'active') || null;
+  const activeStartDate = activeRotation?.startDate ? new Date(activeRotation.startDate) : null;
+  const now = new Date();
+  const daysSpent = activeStartDate ? Math.max(0, Math.floor((now - activeStartDate) / (1000 * 60 * 60 * 24))) : 0;
+  const totalDays = Number(
+    activeRotation?.unit?.duration ||
+    activeRotation?.unit?.durationDays ||
+    activeRotation?.unit?.duration_days ||
+    20
+  );
+  const currentUnitProgress = activeRotation ? `${daysSpent}/${totalDays}` : null;
+
+  const upcomingStartDate = upcomingUnitDoc
+    ? new Date(activeRotation?.endDate || now)
+    : null;
+  const upcomingEndDate = upcomingStartDate
+    ? new Date(upcomingStartDate)
+    : null;
+
+  if (upcomingEndDate) {
+    upcomingEndDate.setDate(upcomingEndDate.getDate() + totalDays);
+  }
+
   return {
     ...internView,
     upcomingUnit: upcomingUnitDoc ? {
@@ -126,6 +149,13 @@ const addUnitProgress = (internView, currentUnit, units = []) => {
       name: u.name,
       order: u.order ?? u.position ?? null,
     })),
+    dashboard: {
+      currentUnit: internView.currentUnit?.name || null,
+      progress: currentUnitProgress,
+      upcomingUnit: upcomingUnitDoc?.name || null,
+      upcomingStart: upcomingStartDate ? upcomingStartDate.toISOString() : null,
+      upcomingEnd: upcomingEndDate ? upcomingEndDate.toISOString() : null,
+    },
   };
 };
 

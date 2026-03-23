@@ -142,6 +142,24 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
     return orderedUnits.slice(currentIndex + 1);
   }, [orderedUnits, currentIndex]);
 
+  const progressFromCurrentRotation = React.useMemo(() => {
+    const rotation = currentRotations[0];
+    if (!rotation?.start_date) return null;
+
+    const startDate = normalizeDate(rotation.start_date);
+    const currentDate = normalizeDate(new Date());
+    const daysSpent = Math.max(0, Math.floor((currentDate - startDate) / (1000 * 60 * 60 * 24)));
+    const totalDays = rotation.start_date && rotation.end_date
+      ? Math.max(1, calculateDaysBetween(rotation.start_date, rotation.end_date))
+      : 20;
+
+    return `${daysSpent}/${totalDays}`;
+  }, [currentRotations]);
+
+  const dashboardProgress = currentIntern?.dashboard?.progress || progressFromCurrentRotation;
+  const dashboardUpcomingStart = currentIntern?.dashboard?.upcomingStart || null;
+  const dashboardUpcomingEnd = currentIntern?.dashboard?.upcomingEnd || null;
+
   React.useEffect(() => {
     console.log('[InternDashboard] CURRENT UNIT:', currentIntern?.currentUnit || null);
     console.log('[InternDashboard] ALL UNITS:', orderedUnits.map((u) => ({ id: u.id || u._id, name: u.name, order: u.order })));
@@ -249,6 +267,17 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
     });
   }, [intern.id, internState?.extension_days, invalidateInternLists, onInternUpdated, queryClient]);
 
+  const handleReassign = React.useCallback(() => {
+    const current = currentRotations[0] || {
+      id: 'fallback-current-rotation',
+      unit_name: currentIntern?.currentUnit?.name || 'Current Unit',
+      start_date: currentIntern?.start_date || currentIntern?.startDate || new Date().toISOString(),
+      end_date: null,
+    };
+    setActiveRotation(current);
+    setShowReassign(true);
+  }, [currentIntern?.currentUnit?.name, currentIntern?.startDate, currentIntern?.start_date, currentRotations]);
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
       <div className="w-full max-w-6xl max-h-[90vh] overflow-y-auto">
@@ -272,15 +301,8 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
             <div className="flex flex-wrap items-center justify-end gap-2">
               <Button 
                 variant="outline" 
-                onClick={() => {
-                  // Use the first current rotation (interns typically have one active unit at a time)
-                  if (currentRotations.length > 0) {
-                    setActiveRotation(currentRotations[0]);
-                    setShowReassign(true);
-                  }
-                }}
-                disabled={currentRotations.length === 0}
-                title={currentRotations.length === 0 ? "No active unit to reassign" : "Reassign current unit"}
+                onClick={() => handleReassign(intern._id || intern.id)}
+                title="Reassign current unit"
               >
                 Reassign
               </Button>
@@ -438,6 +460,18 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                   <div>
                     <p className="text-gray-500">Remaining Units</p>
                     <p className="font-medium">{remainingUnits.length}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">Current Progress</p>
+                    <p className="font-medium">{dashboardProgress || '0/20'}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">Upcoming Start</p>
+                    <p className="font-medium">{dashboardUpcomingStart ? formatDate(dashboardUpcomingStart) : 'None'}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">Upcoming End</p>
+                    <p className="font-medium">{dashboardUpcomingEnd ? formatDate(dashboardUpcomingEnd) : 'None'}</p>
                   </div>
                 </div>
               </CardContent>

@@ -37,9 +37,11 @@ http.interceptors.request.use(
     // Attach bearer token for authenticated requests
     try {
       const token = localStorage.getItem('token');
-      const isWrite = (config.method || '').toUpperCase() === 'POST' || (config.method || '').toUpperCase() === 'PUT' || (config.method || '').toUpperCase() === 'DELETE';
+      const method = (config.method || '').toUpperCase();
+      const isWrite = method === 'POST' || method === 'PUT' || method === 'DELETE' || method === 'PATCH';
       if (token && isWrite) {
         config.headers.Authorization = `Bearer ${token}`;
+        console.log('TOKEN SENT:', token);
       }
     } catch (_) {}
     return config;

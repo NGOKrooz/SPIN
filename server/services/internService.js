@@ -217,40 +217,31 @@ async function extendInternship(internId, extensionDays, reason, notes, unitId) 
  * Ensure intern status matches their rotation state
  */
 async function ensureInternStatusIsCorrect(internId) {
-  const today = startOfDay(new Date());
-
-  const activeRotation = await Rotation.findOne({
-    internId,
-    startDate: { $lte: today },
-    endDate: { $gte: today },
-  }).exec();
-
-  const upcomingRotation = await Rotation.findOne({
-    internId,
-    startDate: { $gt: today },
-  }).exec();
-
   const intern = await Intern.findById(internId).exec();
   if (!intern) return;
 
-  let newStatus = intern.status;
+  const totalUnits = await Unit.countDocuments().exec();
+  const completedRotations = await Rotation.countDocuments({
+    intern: intern._id,
+    status: 'completed',
+  }).exec();
 
-  if (!activeRotation && !upcomingRotation) {
-    newStatus = 'Completed';
-  } else if (intern.extensionDays > 0 && intern.status !== 'Completed') {
-    newStatus = 'Extended';
-  } else if (intern.status !== 'Completed') {
-    newStatus = 'Active';
-  }
+  const activeRotation = await Rotation.findOne({
+    intern: intern._id,
+    status: 'active',
+  })
+    .sort({ startDate: -1 })
+    .exec();
 
-  if (activeRotation && activeRotation.unitId) {
-    intern.currentUnit = activeRotation.unitId;
-  } else {
-    intern.currentUnit = null;
-  }
+  const newStatus = (totalUnits > 0 && completedRotations === totalUnits) ? 'Completed' : 'Active';
+  const newCurrentUnit = activeRotation?.unit || intern.currentUnit || null;
 
-  if (newStatus !== intern.status || intern.isModified('currentUnit')) {
+  const statusChanged = intern.status !== newStatus;
+  const currentUnitChanged = String(intern.currentUnit || '') !== String(newCurrentUnit || '');
+
+  if (statusChanged || currentUnitChanged) {
     intern.status = newStatus;
+    intern.currentUnit = newCurrentUnit;
     await intern.save();
   }
 }

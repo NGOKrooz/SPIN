@@ -25,18 +25,28 @@ const mapInternWithUnits = (internDoc, units) => {
     ? units.findIndex((unit) => unit._id.toString() === currentUnitId)
     : -1;
   const upcomingUnitDoc = currentIndex >= 0 ? (units[currentIndex + 1] || null) : null;
+  const remainingUnitDocs = currentIndex === -1 ? [] : units.slice(currentIndex + 1);
+  const completedRotations = (intern.rotationHistory || []).filter((rotation) => rotation?.status === 'completed').length;
+  const derivedStatus = (units.length > 0 && completedRotations === units.length) ? 'Completed' : 'Active';
 
   console.log('CURRENT UNIT:', intern.currentUnit);
   console.log('UPCOMING UNIT:', upcomingUnitDoc);
 
   return {
     ...intern,
+    batch: intern.batch || null,
+    status: derivedStatus,
     currentUnit: intern.currentUnit || null,
     upcomingUnit: upcomingUnitDoc ? {
       _id: upcomingUnitDoc._id,
       name: upcomingUnitDoc.name,
       order: upcomingUnitDoc.order ?? upcomingUnitDoc.position ?? null,
     } : null,
+    remainingUnits: remainingUnitDocs.map((unit) => ({
+      _id: unit._id,
+      name: unit.name,
+      order: unit.order ?? unit.position ?? null,
+    })),
   };
 };
 
@@ -137,9 +147,17 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
 
     const units = await getOrderedUnits();
     if (units.length > 0) {
-      intern.currentUnit = units[0]._id;
+      const firstUnit = units[0];
+      const rotation = await Rotation.create({
+        intern: intern._id,
+        unit: firstUnit._id,
+        startDate: new Date(),
+        status: 'active',
+      });
+      intern.currentUnit = firstUnit._id;
+      intern.rotationHistory.push(rotation._id);
       await intern.save();
-      console.log('ASSIGNED FIRST UNIT:', units[0].name);
+      console.log('ASSIGNED FIRST UNIT:', firstUnit.name);
     }
 
     console.log('CREATED INTERN:', intern);
@@ -227,7 +245,7 @@ router.post('/:id/reassign', async (req, res) => {
     if (!intern) return res.status(404).json({ error: 'Intern not found' });
 
     const unit = await Unit.findById(unitId).exec();
-    if (!unit) return res.status(404).json({ error: 'Unit not found' });
+    if (!unit) return res.status(400).json({ error: 'Invalid unit selected' });
 
     await Rotation.updateMany(
       { intern: intern._id, status: 'active' },
@@ -251,6 +269,7 @@ router.post('/:id/reassign', async (req, res) => {
     }
 
     await intern.save();
+    await ensureInternStatusIsCorrect(intern._id);
     console.log('UPDATED CURRENT UNIT:', intern.currentUnit);
 
     console.log(`Successfully reassigned ${intern.name} to ${unit.name}`);
