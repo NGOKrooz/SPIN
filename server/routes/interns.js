@@ -14,6 +14,32 @@ const { updateBatchStats } = require('./dashboard');
 
 const router = express.Router();
 
+const getOrderedUnits = async () => {
+  return Unit.find({}).sort({ order: 1, position: 1, createdAt: 1 }).exec();
+};
+
+const mapInternWithUnits = (internDoc, units) => {
+  const intern = internDoc.toObject();
+  const currentUnitId = intern.currentUnit?._id?.toString() || null;
+  const currentIndex = currentUnitId
+    ? units.findIndex((unit) => unit._id.toString() === currentUnitId)
+    : -1;
+  const upcomingUnitDoc = currentIndex >= 0 ? (units[currentIndex + 1] || null) : null;
+
+  console.log('CURRENT UNIT:', intern.currentUnit);
+  console.log('UPCOMING UNIT:', upcomingUnitDoc);
+
+  return {
+    ...intern,
+    currentUnit: intern.currentUnit || null,
+    upcomingUnit: upcomingUnitDoc ? {
+      _id: upcomingUnitDoc._id,
+      name: upcomingUnitDoc.name,
+      order: upcomingUnitDoc.order ?? upcomingUnitDoc.position ?? null,
+    } : null,
+  };
+};
+
 const normalizeInternPayload = (req, res, next) => {
   // Support both camelCase and snake_case payloads (frontend may send snake_case)
   if (req.body.start_date !== undefined && req.body.startDate === undefined) {
@@ -42,7 +68,7 @@ const validateIntern = [
 // GET /api/interns - List interns
 router.get('/', async (req, res) => {
   try {
-    const units = await Unit.find({}).sort({ order: 1, position: 1, createdAt: 1 }).exec();
+    const units = await getOrderedUnits();
 
     const interns = await Intern.find()
       .select('-email -phoneNumber')
@@ -54,35 +80,7 @@ router.get('/', async (req, res) => {
       .sort({ createdAt: -1 })
       .exec();
 
-    const withUnitProgress = interns.map((internDoc) => {
-      const intern = internDoc.toObject();
-      const currentUnitId = intern.currentUnit?._id?.toString() || null;
-      const currentIndex = currentUnitId
-        ? units.findIndex((u) => u._id.toString() === currentUnitId)
-        : -1;
-
-      const upcomingUnitDoc = currentIndex >= 0 ? (units[currentIndex + 1] || null) : null;
-      const remainingUnitDocs = currentIndex >= 0 ? units.slice(currentIndex + 1) : [];
-
-      console.log('CURRENT UNIT:', intern.currentUnit);
-      console.log('ALL UNITS:', units.map((u) => ({ id: u._id.toString(), name: u.name, order: u.order ?? u.position ?? null })));
-      console.log('CURRENT INDEX:', currentIndex);
-
-      return {
-        ...intern,
-        currentUnit: intern.currentUnit || null,
-        upcomingUnit: upcomingUnitDoc ? {
-          id: upcomingUnitDoc._id.toString(),
-          name: upcomingUnitDoc.name,
-          order: upcomingUnitDoc.order ?? upcomingUnitDoc.position ?? null,
-        } : null,
-        remainingUnits: remainingUnitDocs.map((u) => ({
-          id: u._id.toString(),
-          name: u.name,
-          order: u.order ?? u.position ?? null,
-        })),
-      };
-    });
+    const withUnitProgress = interns.map((internDoc) => mapInternWithUnits(internDoc, units));
 
     console.log('FETCHED INTERNS:', withUnitProgress);
     return res.json(withUnitProgress);
@@ -137,15 +135,25 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
       batch,
     });
 
+    const units = await getOrderedUnits();
+    if (units.length > 0) {
+      intern.currentUnit = units[0]._id;
+      await intern.save();
+      console.log('ASSIGNED FIRST UNIT:', units[0].name);
+    }
+
     console.log('CREATED INTERN:', intern);
 
-    const check = await Intern.findById(intern._id).select('-email -phoneNumber');
+    const check = await Intern.findById(intern._id)
+      .select('-email -phoneNumber')
+      .populate('currentUnit')
+      .exec();
     console.log('VERIFIED INTERN:', check);
 
     await logRecentUpdateSafe('Intern Created', null, intern._id);
     await updateBatchStats().catch(() => {});
 
-    return res.status(201).json(intern);
+    return res.status(201).json(mapInternWithUnits(check, units));
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: error.message });

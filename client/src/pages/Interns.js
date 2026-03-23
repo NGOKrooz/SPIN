@@ -79,6 +79,7 @@ export default function Interns() {
 
   // Derive status on client: trust backend status, but force Extended when extension days exist
   const mapWithDerivedStatus = (list) => (list || []).map((i) => {
+    console.log('INTERN DATA:', i);
     const extensionDays = Number(i.extensionDays ?? i.extension_days) || 0;
 
     let derived = i.status || 'Active';
@@ -92,9 +93,6 @@ export default function Interns() {
       id: i.id || i._id,
       startDate: i.startDate || i.start_date,
       extensionDays,
-      currentUnitName: i.currentUnit?.name || 'Not Assigned',
-      upcomingUnitName: i.upcomingUnit?.name || null,
-      remainingUnitsCount: Array.isArray(i.remainingUnits) ? i.remainingUnits.length : 0,
       derivedStatus: derived,
     };
   });
@@ -325,15 +323,15 @@ export default function Interns() {
                       </div>
                       <div>
                         <span className="text-gray-500">Current unit:</span>
-                        <span className="ml-2 font-medium">{intern.currentUnitName || 'Not Assigned'}</span>
+                        <span className="ml-2 font-medium">{intern.currentUnit?.name || 'Not Assigned'}</span>
                       </div>
                       <div>
                         <span className="text-gray-500">Upcoming unit:</span>
-                        <span className="ml-2 font-medium">{intern.upcomingUnitName || 'None'}</span>
+                        <span className="ml-2 font-medium">{intern.upcomingUnit?.name || 'None'}</span>
                       </div>
                       <div>
                         <span className="text-gray-500">Remaining units:</span>
-                        <span className="ml-2 font-medium">{intern.remainingUnitsCount}</span>
+                        <span className="ml-2 font-medium">{Array.isArray(intern.remainingUnits) ? intern.remainingUnits.length : 0}</span>
                       </div>
                     </div>
                   </div>
