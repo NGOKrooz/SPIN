@@ -48,7 +48,7 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
   // Available units: exclude ONLY past units (not current unit)
   // When reassigning FROM the current unit, that unit becomes available again for future rotations
   const availableUnits = units?.filter(unit => 
-    !pastUnitIds.includes(unit.id)
+    !pastUnitIds.includes(unit.id || unit._id)
   ) || [];
 
   // Calculate days spent in current rotation
@@ -66,8 +66,8 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
   const showWarning = daysInCurrentRotation > 1;
 
   const reassignMutation = useMutation({
-    mutationFn: ({ rotationId, unitId, startDate, endDate }) => 
-      api.updateRotation(rotationId, { unit_id: unitId, start_date: startDate, end_date: endDate }),
+    mutationFn: ({ internId, unitId }) =>
+      api.reassignIntern(internId, { unitId }),
     onSuccess: async () => {
       toast({
         title: 'Success',
@@ -98,7 +98,7 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
       return;
     }
 
-    const selectedUnit = units?.find(unit => unit.id === parseInt(selectedUnitId));
+    const selectedUnit = units?.find(unit => (unit.id || unit._id) === selectedUnitId);
     if (!selectedUnit) {
       toast({
         title: 'Error',
@@ -108,13 +108,9 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
       return;
     }
 
-    // MAINTAIN ORIGINAL DATES - don't recalculate based on unit duration
-    // Just swap the unit, keep the same start_date and end_date
     reassignMutation.mutate({
-      rotationId: currentRotation.id,
-      unitId: parseInt(selectedUnitId),
-      startDate: currentRotation.start_date,
-      endDate: currentRotation.end_date
+      internId: intern.id || intern._id,
+      unitId: selectedUnitId,
     });
   };
 
@@ -147,7 +143,7 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
                 </SelectTrigger>
                 <SelectContent>
                   {availableUnits.map((unit) => (
-                    <SelectItem key={unit.id} value={unit.id.toString()}>
+                    <SelectItem key={(unit.id || unit._id).toString()} value={(unit.id || unit._id).toString()}>
                       {unit.name} ({unit.duration_days} days)
                     </SelectItem>
                   ))}
@@ -159,9 +155,9 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
               <div className="bg-blue-50 p-3 rounded-lg">
                 <div className="text-sm text-blue-800">
                   <p><strong>Current:</strong> {currentRotation.unit_name} ({currentRotation.duration_days} days)</p>
-                  <p><strong>New:</strong> {units?.find(u => u.id === parseInt(selectedUnitId))?.name} ({units?.find(u => u.id === parseInt(selectedUnitId))?.duration_days} days)</p>
+                  <p><strong>New:</strong> {units?.find(u => (u.id || u._id) === selectedUnitId)?.name} ({units?.find(u => (u.id || u._id) === selectedUnitId)?.duration_days} days)</p>
                   <p><strong>Start Date:</strong> {currentRotation.start_date}</p>
-                  <p><strong>New End Date:</strong> {selectedUnitId ? format(addDays(parseISO(currentRotation.start_date), (units?.find(u => u.id === parseInt(selectedUnitId))?.duration_days || 0) - 1), 'yyyy-MM-dd') : ''}</p>
+                  <p><strong>New End Date:</strong> {selectedUnitId ? format(addDays(parseISO(currentRotation.start_date), (units?.find(u => (u.id || u._id) === selectedUnitId)?.duration_days || 0) - 1), 'yyyy-MM-dd') : ''}</p>
                 </div>
               </div>
             )}

@@ -119,17 +119,34 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
     console.log('[InternDashboard] Upcoming:', upcomingRotations.length);
   }, [completedRotations.length, currentRotations.length, upcomingRotations.length]);
 
-  // Get units not yet assigned to this intern
-  // Exclude units that are in completed, current, OR upcoming rotations
-  // Units in upcoming rotations should NOT appear in remaining units
-  const assignedUnitIds = [
-    ...completedRotations.map(r => r.unit_id),
-    ...currentRotations.map(r => r.unit_id),
-    ...upcomingRotations.map(r => r.unit_id)
-  ];
-  const remainingUnits = units?.filter(unit => 
-    !assignedUnitIds.includes(unit.id)
-  ) || [];
+  const orderedUnits = React.useMemo(() => {
+    return [...(units || [])].sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+  }, [units]);
+
+  const currentUnitId = React.useMemo(() => {
+    return currentIntern?.currentUnit?.id || currentIntern?.currentUnit?._id || null;
+  }, [currentIntern]);
+
+  const currentIndex = React.useMemo(() => {
+    if (!currentUnitId) return -1;
+    return orderedUnits.findIndex((u) => (u.id || u._id) === currentUnitId);
+  }, [orderedUnits, currentUnitId]);
+
+  const upcomingUnit = React.useMemo(() => {
+    if (currentIndex < 0) return null;
+    return orderedUnits[currentIndex + 1] || null;
+  }, [orderedUnits, currentIndex]);
+
+  const remainingUnits = React.useMemo(() => {
+    if (currentIndex < 0) return [];
+    return orderedUnits.slice(currentIndex + 1);
+  }, [orderedUnits, currentIndex]);
+
+  React.useEffect(() => {
+    console.log('[InternDashboard] CURRENT UNIT:', currentIntern?.currentUnit || null);
+    console.log('[InternDashboard] ALL UNITS:', orderedUnits.map((u) => ({ id: u.id || u._id, name: u.name, order: u.order })));
+    console.log('[InternDashboard] CURRENT INDEX:', currentIndex);
+  }, [currentIntern?.currentUnit, orderedUnits, currentIndex]);
 
   const getRotationDuration = React.useCallback((rotation) => {
     // NEVER use rotation.duration_days - backend doesn't update it after extension
@@ -400,6 +417,31 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                 </CardContent>
               </Card>
             </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <MapPin className="h-5 w-5" />
+                  <span>Assignment Summary</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                  <div>
+                    <p className="text-gray-500">Current Unit</p>
+                    <p className="font-medium">{currentIntern?.currentUnit?.name || 'Not Assigned'}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">Upcoming Unit</p>
+                    <p className="font-medium">{upcomingUnit?.name || 'None'}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">Remaining Units</p>
+                    <p className="font-medium">{remainingUnits.length}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
             {/* Current Units */}
             {currentRotations.length > 0 && (

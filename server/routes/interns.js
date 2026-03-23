@@ -8,6 +8,7 @@ const Unit = require('../models/Unit');
 const { ensureInternStatusIsCorrect } = require('../services/internService');
 const { logRecentUpdateSafe } = require('../services/recentUpdatesService');
 const { createExtensionReason } = require('../services/extensionService');
+const { createWorkloadHistory } = require('../services/workloadService');
 const { buildInternView, buildInternViews } = require('../services/internViewService');
 const { updateBatchStats } = require('./dashboard');
 
@@ -41,13 +42,50 @@ const validateIntern = [
 // GET /api/interns - List interns
 router.get('/', async (req, res) => {
   try {
+    const units = await Unit.find({}).sort({ order: 1, position: 1, createdAt: 1 }).exec();
+
     const interns = await Intern.find()
       .select('-email -phoneNumber')
       .populate('currentUnit')
+      .populate({
+        path: 'rotationHistory',
+        populate: { path: 'unit' }
+      })
       .sort({ createdAt: -1 })
       .exec();
-    console.log('FETCHED INTERNS:', interns);
-    return res.json(interns);
+
+    const withUnitProgress = interns.map((internDoc) => {
+      const intern = internDoc.toObject();
+      const currentUnitId = intern.currentUnit?._id?.toString() || null;
+      const currentIndex = currentUnitId
+        ? units.findIndex((u) => u._id.toString() === currentUnitId)
+        : -1;
+
+      const upcomingUnitDoc = currentIndex >= 0 ? (units[currentIndex + 1] || null) : null;
+      const remainingUnitDocs = currentIndex >= 0 ? units.slice(currentIndex + 1) : [];
+
+      console.log('CURRENT UNIT:', intern.currentUnit);
+      console.log('ALL UNITS:', units.map((u) => ({ id: u._id.toString(), name: u.name, order: u.order ?? u.position ?? null })));
+      console.log('CURRENT INDEX:', currentIndex);
+
+      return {
+        ...intern,
+        currentUnit: intern.currentUnit || null,
+        upcomingUnit: upcomingUnitDoc ? {
+          id: upcomingUnitDoc._id.toString(),
+          name: upcomingUnitDoc.name,
+          order: upcomingUnitDoc.order ?? upcomingUnitDoc.position ?? null,
+        } : null,
+        remainingUnits: remainingUnitDocs.map((u) => ({
+          id: u._id.toString(),
+          name: u.name,
+          order: u.order ?? u.position ?? null,
+        })),
+      };
+    });
+
+    console.log('FETCHED INTERNS:', withUnitProgress);
+    return res.json(withUnitProgress);
   } catch (err) {
     console.error('❌ Error fetching interns:', err);
     res.status(500).json({ error: 'Failed to fetch interns' });
@@ -173,7 +211,7 @@ router.post('/:id/manual-assign', async (req, res) => {
 router.post('/:id/reassign', async (req, res) => {
   try {
     console.log(`Reassigning intern ${req.params.id} to unit ${req.body.unitId}`);
-    const { unitId, startDate } = req.body;
+    const { unitId } = req.body;
     if (!unitId) return res.status(400).json({ error: 'unitId is required' });
     if (!mongoose.Types.ObjectId.isValid(unitId)) return res.status(400).json({ error: 'Invalid unitId format' });
 
@@ -183,50 +221,38 @@ router.post('/:id/reassign', async (req, res) => {
     const unit = await Unit.findById(unitId).exec();
     if (!unit) return res.status(404).json({ error: 'Unit not found' });
 
-    // Find current active rotation
-    const today = new Date();
-    const currentRotation = await Rotation.findOne({
-      $or: [
-        { intern: intern._id },
-        { internId: intern._id }
-      ],
-      startDate: { $lte: today },
-      endDate: { $gte: today }
-    }).exec();
+    await Rotation.updateMany(
+      { intern: intern._id, status: 'active' },
+      { $set: { status: 'completed', endDate: new Date() } }
+    ).exec();
 
-    if (!currentRotation) {
-      return res.status(400).json({ error: 'No active rotation found for this intern' });
-    }
-
-    // Update the current rotation to end today
-    currentRotation.endDate = today;
-    currentRotation.status = 'completed';
-    await currentRotation.save();
-
-    // Create new rotation starting from specified date or tomorrow
-    const newStartDate = startDate ? new Date(startDate) : new Date(today);
-    newStartDate.setDate(newStartDate.getDate() + 1); // Start tomorrow if no date specified
-
-    const newEndDate = new Date(newStartDate);
-    newEndDate.setDate(newEndDate.getDate() + 6); // 7 days default
-
-    const newRotation = new Rotation({
+    const newRotation = await Rotation.create({
       intern: intern._id,
       unit: unit._id,
-      startDate: newStartDate,
-      endDate: newEndDate,
-      status: 'active'
+      startDate: new Date(),
+      status: 'active',
     });
 
-    await newRotation.save();
     intern.currentUnit = unit._id;
-    intern.rotationHistory.push(newRotation._id);
+
+    const existsInHistory = (intern.rotationHistory || []).some(
+      (rotationId) => rotationId.toString() === newRotation._id.toString()
+    );
+    if (!existsInHistory) {
+      intern.rotationHistory.push(newRotation._id);
+    }
+
     await intern.save();
+    console.log('UPDATED CURRENT UNIT:', intern.currentUnit);
 
     console.log(`Successfully reassigned ${intern.name} to ${unit.name}`);
 
-    const recordedWorkload = await createWorkloadHistory(intern._id, unit._id, 0);
-    console.log('Workload history on reassign:', recordedWorkload);
+    try {
+      const recordedWorkload = await createWorkloadHistory(intern._id, unit._id, 0);
+      console.log('Workload history on reassign:', recordedWorkload);
+    } catch (workloadError) {
+      console.warn('Failed to write workload history during reassignment:', workloadError.message);
+    }
 
     await logRecentUpdateSafe('Unit Reassigned', null, intern._id);
 

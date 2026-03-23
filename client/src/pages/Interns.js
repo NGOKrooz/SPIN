@@ -92,9 +92,9 @@ export default function Interns() {
       id: i.id || i._id,
       startDate: i.startDate || i.start_date,
       extensionDays,
-      currentUnits: Array.isArray(i.current_units)
-        ? i.current_units
-        : (i.currentUnit?.name ? [i.currentUnit.name] : []),
+      currentUnitName: i.currentUnit?.name || 'Not Assigned',
+      upcomingUnitName: i.upcomingUnit?.name || null,
+      remainingUnitsCount: Array.isArray(i.remainingUnits) ? i.remainingUnits.length : 0,
       derivedStatus: derived,
     };
   });
@@ -324,10 +324,16 @@ export default function Interns() {
                         <span className="ml-2 font-medium">{formatDate(intern.startDate)}</span>
                       </div>
                       <div>
-                        <span className="text-gray-500">Current units:</span>
-                        <span className="ml-2 font-medium">
-                          {intern.currentUnits?.length > 0 ? intern.currentUnits.join(', ') : 'None'}
-                        </span>
+                        <span className="text-gray-500">Current unit:</span>
+                        <span className="ml-2 font-medium">{intern.currentUnitName || 'Not Assigned'}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Upcoming unit:</span>
+                        <span className="ml-2 font-medium">{intern.upcomingUnitName || 'None'}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Remaining units:</span>
+                        <span className="ml-2 font-medium">{intern.remainingUnitsCount}</span>
                       </div>
                     </div>
                   </div>

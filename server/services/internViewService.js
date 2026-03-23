@@ -13,9 +13,24 @@ const toIsoString = (date) => {
 };
 
 const getRotationStatus = (rotation, today = new Date()) => {
-  const start = rotation.startDate ? new Date(rotation.startDate) : new Date(rotation.start_date);
-  const end = rotation.endDate ? new Date(rotation.endDate) : new Date(rotation.end_date);
-  if (!start || !end) return 'upcoming';
+  if (rotation?.status === 'active' || rotation?.status === 'completed') {
+    return rotation.status;
+  }
+
+  const startRaw = rotation.startDate || rotation.start_date;
+  const endRaw = rotation.endDate || rotation.end_date;
+
+  const start = startRaw ? new Date(startRaw) : null;
+  const end = endRaw ? new Date(endRaw) : null;
+
+  const hasValidStart = start instanceof Date && !Number.isNaN(start.getTime());
+  const hasValidEnd = end instanceof Date && !Number.isNaN(end.getTime());
+
+  if (!hasValidStart) return 'upcoming';
+
+  if (!hasValidEnd) {
+    return start <= today ? 'active' : 'upcoming';
+  }
 
   if (start <= today && end >= today) return 'active';
   if (start > today) return 'upcoming';
@@ -90,6 +105,30 @@ const formatIntern = (intern, rotations = []) => {
   };
 };
 
+const addUnitProgress = (internView, currentUnit, units = []) => {
+  const currentUnitId = currentUnit?._id?.toString?.() || currentUnit?.id || null;
+  const currentIndex = currentUnitId
+    ? units.findIndex((u) => u._id.toString() === currentUnitId)
+    : -1;
+
+  const upcomingUnitDoc = currentIndex >= 0 ? (units[currentIndex + 1] || null) : null;
+  const remainingUnitDocs = currentIndex >= 0 ? units.slice(currentIndex + 1) : [];
+
+  return {
+    ...internView,
+    upcomingUnit: upcomingUnitDoc ? {
+      id: upcomingUnitDoc._id.toString(),
+      name: upcomingUnitDoc.name,
+      order: upcomingUnitDoc.order ?? upcomingUnitDoc.position ?? null,
+    } : null,
+    remainingUnits: remainingUnitDocs.map((u) => ({
+      id: u._id.toString(),
+      name: u.name,
+      order: u.order ?? u.position ?? null,
+    })),
+  };
+};
+
 /**
  * Central data builder for intern views
  * Builds comprehensive intern data with rotations and unit information
@@ -108,7 +147,8 @@ const buildInternView = async (internId) => {
       .sort({ startDate: 1 })
       .exec();
 
-    return formatIntern(intern, rotations);
+    const units = await Unit.find({}).sort({ order: 1, position: 1, createdAt: 1 }).exec();
+    return addUnitProgress(formatIntern(intern, rotations), intern.currentUnit, units);
   } catch (error) {
     console.error('Error building intern view:', error);
     throw error;
@@ -123,6 +163,7 @@ const buildInternView = async (internId) => {
 const buildInternViews = async (internIds) => {
   try {
     const interns = await Intern.find({ _id: { $in: internIds } }).populate('currentUnit').exec();
+    const units = await Unit.find({}).sort({ order: 1, position: 1, createdAt: 1 }).exec();
     const rotations = await Rotation.find({ intern: { $in: internIds } })
       .populate('unit')
       .sort({ startDate: 1 })
@@ -136,7 +177,10 @@ const buildInternViews = async (internIds) => {
       return acc;
     }, {});
 
-    return interns.map(intern => formatIntern(intern, rotationsByIntern[intern._id.toString()] || []));
+    return interns.map((intern) => {
+      const formatted = formatIntern(intern, rotationsByIntern[intern._id.toString()] || []);
+      return addUnitProgress(formatted, intern.currentUnit, units);
+    });
   } catch (error) {
     console.error('Error building intern views:', error);
     throw error;
