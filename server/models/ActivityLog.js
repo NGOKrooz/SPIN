@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 const ActivityLogSchema = new mongoose.Schema({
   action: { type: String, required: true },
+  message: { type: String, default: null },
   intern: { type: mongoose.Schema.Types.ObjectId, ref: 'Intern' },
   createdAt: { type: Date, default: Date.now }
 });

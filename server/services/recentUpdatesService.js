@@ -3,6 +3,7 @@ const ActivityLog = require('../models/ActivityLog');
 async function logRecentUpdate(type, message, internId = null) {
   const activity = await ActivityLog.create({
     action: type,
+    message: message || null,
     intern: internId,
   });
 

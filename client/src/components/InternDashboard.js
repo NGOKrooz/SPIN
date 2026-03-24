@@ -8,6 +8,16 @@ import { Button } from './ui/button';
 import { exportToCSV, openPrintableWindow, formatDate, getBatchColor, getStatusColor, getWorkloadColor, normalizeDate, calculateDaysBetween } from '../lib/utils';
 import { api } from '../services/api';
 
+function format(date) {
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return 'Not started';
+  return parsed.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
 export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   const queryClient = useQueryClient();
   const [showExtend, setShowExtend] = React.useState(false);
@@ -108,6 +118,9 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   }, [schedulePayload, scheduleRows]);
 
   const upcomingRotations = React.useMemo(() => {
+    if (Array.isArray(schedulePayload?.upcomingRotations) && schedulePayload.upcomingRotations.length > 0) {
+      return schedulePayload.upcomingRotations;
+    }
     if (schedulePayload?.upcoming) return schedulePayload.upcoming;
     return scheduleRows.filter(r => normalizeDate(r.start_date) > normalizeDate(new Date()));
   }, [schedulePayload, scheduleRows]);
@@ -129,7 +142,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
 
   const currentIndex = React.useMemo(() => {
     if (!currentUnitId) return -1;
-    return orderedUnits.findIndex((u) => (u.id || u._id) === currentUnitId);
+    return orderedUnits.findIndex((u) => String(u.id || u._id) === String(currentUnitId));
   }, [orderedUnits, currentUnitId]);
 
   const upcomingUnit = React.useMemo(() => {
@@ -156,9 +169,12 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
     return `${daysSpent}/${totalDays}`;
   }, [currentRotations]);
 
-  const dashboardProgress = currentIntern?.dashboard?.progress || progressFromCurrentRotation;
-  const dashboardUpcomingStart = currentIntern?.dashboard?.upcomingStart || null;
-  const dashboardUpcomingEnd = currentIntern?.dashboard?.upcomingEnd || null;
+  const dashboardProgress = schedulePayload?.progress || currentIntern?.dashboard?.progress || progressFromCurrentRotation;
+  const dashboardUpcomingStart = schedulePayload?.upcomingRotations?.[0]?.start_date || currentIntern?.dashboard?.upcomingStart || null;
+  const dashboardUpcomingEnd = schedulePayload?.upcomingRotations?.[0]?.end_date || currentIntern?.dashboard?.upcomingEnd || null;
+  const timelineCurrentUnit = schedulePayload?.currentUnit || currentIntern?.dashboard?.currentUnit || currentIntern?.currentUnit?.name || 'Not started';
+  const timelineCurrentStart = schedulePayload?.currentStart || null;
+  const timelineCurrentEnd = schedulePayload?.currentEnd || null;
 
   React.useEffect(() => {
     console.log('[InternDashboard] CURRENT UNIT:', currentIntern?.currentUnit || null);
@@ -451,7 +467,12 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
                   <div>
                     <p className="text-gray-500">Current Unit</p>
-                    <p className="font-medium">{currentIntern?.currentUnit?.name || 'Not Assigned'}</p>
+                    <p className="font-medium">{timelineCurrentUnit}</p>
+                    <p className="text-xs text-gray-500">
+                      {timelineCurrentStart && timelineCurrentEnd
+                        ? `${format(timelineCurrentStart)} - ${format(timelineCurrentEnd)}`
+                        : 'Not started'}
+                    </p>
                   </div>
                   <div>
                     <p className="text-gray-500">Upcoming Unit</p>
@@ -463,7 +484,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                   </div>
                   <div>
                     <p className="text-gray-500">Current Progress</p>
-                    <p className="font-medium">{dashboardProgress || '0/20'}</p>
+                    <p className="font-medium">{dashboardProgress || 'Not started'}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">Upcoming Start</p>
@@ -558,18 +579,18 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                     {upcomingRotations.map((rotation) => (
                       <div key={rotation.id || `upcoming-${rotation.unit_id}`} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 bg-yellow-50 rounded-lg">
                         <div>
-                          <h4 className="font-medium">{rotation.unit_name}</h4>
+                          <h4 className="font-medium">{rotation.unit_name || rotation.unit}</h4>
                           <p className="text-sm text-gray-600">
                             {rotation.start_date && rotation.end_date
-                              ? `${formatDate(rotation.start_date)} - ${formatDate(rotation.end_date)}`
+                              ? `${format(rotation.start_date)} - ${format(rotation.end_date)}`
                               : 'Pending scheduling'}
                           </p>
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-medium text-yellow-600">
                             {rotation.start_date && rotation.end_date
-                              ? `${getRotationDuration(rotation)} days`
-                              : `${rotation.duration_days || rotationDurationDays} days`}
+                              ? `${rotation.duration_days || rotation.duration || getRotationDuration(rotation)} days`
+                              : `${rotation.duration_days || rotation.duration || rotationDurationDays} days`}
                           </p>
                           <span className="text-xs text-gray-500">
                             {(rotation.workload || 'N/A')} workload

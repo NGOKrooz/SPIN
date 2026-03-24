@@ -3,6 +3,12 @@ const mongoose = require('mongoose');
 const UnitSchema = new mongoose.Schema({
   name: { type: String, required: true, unique: true },
   order: { type: Number, required: true },
+  durationDays: { type: Number, default: 20 },
+  capacity: { type: Number, default: 0 },
+  patientCount: { type: Number, default: 0 },
+  workload: { type: String, default: 'Low' },
+  description: { type: String, default: null },
+  position: { type: Number },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });

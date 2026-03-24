@@ -37,6 +37,27 @@ export default function RecentUpdates() {
     refetchInterval: 30000, // Refetch every 30 seconds
   });
 
+  const activities = React.useMemo(() => {
+    const source = Array.isArray(data)
+      ? data
+      : (Array.isArray(data?.data) ? data.data : []);
+
+    return source
+      .map((activity) => {
+        const action = activity?.action || activity?.type || 'activity';
+        const description = activity?.description || activity?.message || activity?.messageText || String(action).replace(/_/g, ' ');
+        const createdAt = activity?.created_at || activity?.createdAt || null;
+
+        return {
+          id: activity?.id || activity?._id || `${String(action)}-${String(createdAt || '')}`,
+          action,
+          description,
+          created_at: createdAt,
+        };
+      })
+      .filter((activity) => Boolean(activity.id) && Boolean(activity.description));
+  }, [data]);
+
   if (isLoading) {
     return (
       <Card>
@@ -72,8 +93,6 @@ export default function RecentUpdates() {
       </Card>
     );
   }
-
-  const activities = data || [];
 
   const handleClear = async () => {
     const confirmed = window.confirm('Clear all recent updates? This action cannot be undone.');

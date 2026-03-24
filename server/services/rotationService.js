@@ -3,6 +3,14 @@ const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
 const Intern = require('../models/Intern');
 
+const DEFAULT_ROTATION_DURATION_DAYS = 20;
+
+const getDuration = (unitDoc) => {
+  const raw = unitDoc?.duration ?? unitDoc?.durationDays ?? unitDoc?.duration_days;
+  const duration = Number(raw);
+  return Number.isFinite(duration) && duration > 0 ? duration : DEFAULT_ROTATION_DURATION_DAYS;
+};
+
 /**
  * Get current rotations (active today)
  */
@@ -61,13 +69,16 @@ async function autoAdvanceRotation(internId) {
     const nextUnitIndex = (currentUnitIndex + 1) % allUnits.length;
     const nextUnit = allUnits[nextUnitIndex];
 
-    const nextStartDate = addDays(lastRotation.endDate, 1);
-    const nextEndDate = addDays(nextStartDate, 6); // 7 days default
+    const duration = getDuration(nextUnit);
+    const nextStartDate = new Date(lastRotation.endDate);
+    const nextEndDate = new Date(nextStartDate);
+    nextEndDate.setDate(nextEndDate.getDate() + duration);
 
     await Rotation.create({
       intern: internId,
       unit: nextUnit._id,
       startDate: nextStartDate,
+      duration,
       endDate: nextEndDate,
       status: 'active'
     });
@@ -83,12 +94,25 @@ async function autoAdvanceRotation(internId) {
  * Create a manual rotation assignment
  */
 async function createManualRotation(data) {
-  const { internId, unitId, startDate, endDate } = data;
+  const { internId, unitId } = data;
+  const unit = await Unit.findById(unitId).exec();
+  const duration = getDuration(unit);
+  let startDate = data.startDate ? new Date(data.startDate) : new Date();
+  if (Number.isNaN(startDate.getTime())) {
+    startDate = new Date();
+  }
+
+  let endDate = data.endDate ? new Date(data.endDate) : new Date(startDate);
+  if (!data.endDate || Number.isNaN(endDate.getTime())) {
+    endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + duration);
+  }
 
   return await Rotation.create({
     intern: internId,
     unit: unitId,
     startDate,
+    duration,
     endDate,
     status: 'active'
   });

@@ -14,6 +14,111 @@ const { updateBatchStats } = require('./dashboard');
 
 const router = express.Router();
 
+const DEFAULT_ROTATION_DURATION_DAYS = 20;
+
+const getUnitDuration = (unitDoc) => {
+  const raw = unitDoc?.duration ?? unitDoc?.durationDays ?? unitDoc?.duration_days;
+  const duration = Number(raw);
+  return Number.isFinite(duration) && duration > 0 ? duration : DEFAULT_ROTATION_DURATION_DAYS;
+};
+
+const buildScheduleTimeline = ({ intern, units, rotations }) => {
+  const orderedUnits = Array.isArray(units) ? units : [];
+  const internCurrentUnitId = intern?.currentUnit?._id?.toString?.() || intern?.currentUnit?.toString?.() || null;
+
+  const now = new Date();
+  const currentRotation = (rotations || []).find((rotation) => {
+    const start = rotation?.startDate ? new Date(rotation.startDate) : null;
+    const end = rotation?.endDate ? new Date(rotation.endDate) : null;
+    if (!start || Number.isNaN(start.getTime()) || !end || Number.isNaN(end.getTime())) {
+      return false;
+    }
+    return start <= now && end >= now;
+  }) || (rotations || []).find((rotation) => rotation?.status === 'active') || null;
+
+  if (!currentRotation) {
+    console.log('CURRENT ROTATION:', null);
+    console.log('UPCOMING ROTATIONS:', []);
+    return {
+      currentUnit: 'Not started',
+      currentStart: null,
+      currentEnd: null,
+      progress: 'Not started',
+      upcomingRotations: [],
+    };
+  }
+
+  const populatedUnit = currentRotation.unit || null;
+  const currentUnitId = populatedUnit?._id?.toString?.() || internCurrentUnitId;
+  const currentUnitName = populatedUnit?.name || intern?.currentUnit?.name || 'Not started';
+  const rotationDuration = Number(currentRotation?.duration);
+  const currentDuration = Number.isFinite(rotationDuration) && rotationDuration > 0
+    ? rotationDuration
+    : getUnitDuration(populatedUnit);
+
+  const currentStartDate = currentRotation.startDate ? new Date(currentRotation.startDate) : null;
+  let currentEndDate = currentRotation.endDate ? new Date(currentRotation.endDate) : null;
+
+  if (!currentEndDate || Number.isNaN(currentEndDate.getTime())) {
+    if (currentStartDate && !Number.isNaN(currentStartDate.getTime())) {
+      currentEndDate = new Date(currentStartDate);
+      currentEndDate.setDate(currentEndDate.getDate() + currentDuration);
+    }
+  }
+
+  let daysSpent = 0;
+  if (currentStartDate && !Number.isNaN(currentStartDate.getTime())) {
+    daysSpent = Math.max(0, Math.floor((now - currentStartDate) / (1000 * 60 * 60 * 24)));
+  }
+
+  const currentIndex = currentUnitId
+    ? orderedUnits.findIndex((unit) => unit?._id?.toString?.() === currentUnitId)
+    : -1;
+
+  const unitIndexForUpcoming = currentIndex >= 0
+    ? currentIndex
+    : orderedUnits.findIndex((unit) => unit?.name === currentUnitName);
+
+  let previousEndDate = currentEndDate && !Number.isNaN(currentEndDate.getTime())
+    ? new Date(currentEndDate)
+    : (currentStartDate && !Number.isNaN(currentStartDate.getTime()) ? new Date(currentStartDate) : new Date(now));
+
+  const upcomingRotations = [];
+  for (let i = unitIndexForUpcoming + 1; i < orderedUnits.length; i += 1) {
+    const nextUnit = orderedUnits[i];
+    const duration = getUnitDuration(nextUnit);
+
+    const startDate = new Date(previousEndDate);
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + duration);
+
+    upcomingRotations.push({
+      unit: nextUnit.name,
+      unit_name: nextUnit.name,
+      unit_id: nextUnit._id.toString(),
+      startDate,
+      endDate,
+      start_date: startDate.toISOString(),
+      end_date: endDate.toISOString(),
+      duration,
+      duration_days: duration,
+    });
+
+    previousEndDate = endDate;
+  }
+
+  console.log('CURRENT ROTATION:', currentRotation);
+  console.log('UPCOMING ROTATIONS:', upcomingRotations);
+
+  return {
+    currentUnit: currentUnitName,
+    currentStart: currentStartDate && !Number.isNaN(currentStartDate.getTime()) ? currentStartDate : null,
+    currentEnd: currentEndDate && !Number.isNaN(currentEndDate.getTime()) ? currentEndDate : null,
+    progress: `${daysSpent}/${currentDuration}`,
+    upcomingRotations,
+  };
+};
+
 const getOrderedUnits = async () => {
   return Unit.find({}).sort({ order: 1, position: 1, createdAt: 1 }).exec();
 };
@@ -104,11 +209,46 @@ router.get('/', async (req, res) => {
 router.get('/:id/schedule', async (req, res) => {
   try {
     const internView = await buildInternView(req.params.id);
-    const current = internView.rotations.find(r => r.status === 'active') || null;
-    const upcoming = internView.rotations.filter(r => r.status === 'upcoming');
+    const internDoc = await Intern.findById(req.params.id).populate('currentUnit').exec();
+    if (!internDoc) return res.status(404).json({ error: 'Intern not found' });
+
+    const units = await getOrderedUnits();
+    const rawRotations = await Rotation.find({ intern: internDoc._id })
+      .populate('unit')
+      .sort({ startDate: 1 })
+      .exec();
+
+    const schedule = buildScheduleTimeline({
+      intern: internDoc,
+      units,
+      rotations: rawRotations,
+    });
+
+    const current = schedule.currentStart
+      ? {
+          id: `current-${internDoc._id.toString()}`,
+          unit_name: schedule.currentUnit,
+          unit: { name: schedule.currentUnit },
+          start_date: schedule.currentStart,
+          end_date: schedule.currentEnd,
+          duration_days: Number((schedule.progress || '').split('/')[1]) || DEFAULT_ROTATION_DURATION_DAYS,
+          status: 'active',
+        }
+      : null;
+    const upcoming = schedule.upcomingRotations;
     const completed = internView.rotations.filter(r => r.status === 'completed');
 
-    res.json({ rotations: internView.rotations, current, upcoming, completed });
+    res.json({
+      rotations: internView.rotations,
+      current,
+      upcoming,
+      completed,
+      currentUnit: schedule.currentUnit,
+      currentStart: schedule.currentStart,
+      currentEnd: schedule.currentEnd,
+      progress: schedule.progress,
+      upcomingRotations: schedule.upcomingRotations,
+    });
   } catch (err) {
     console.error('Error fetching intern schedule:', err);
     res.status(500).json({ error: 'Failed to fetch intern schedule' });
@@ -148,10 +288,17 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
     const units = await getOrderedUnits();
     if (units.length > 0) {
       const firstUnit = units[0];
+      const duration = getUnitDuration(firstUnit);
+      const startDate = new Date();
+      const endDate = new Date(startDate);
+      endDate.setDate(endDate.getDate() + duration);
+
       const rotation = await Rotation.create({
         intern: intern._id,
         unit: firstUnit._id,
-        startDate: new Date(),
+        startDate,
+        duration,
+        endDate,
         status: 'active',
       });
       intern.currentUnit = firstUnit._id;
@@ -252,10 +399,17 @@ router.post('/:id/reassign', async (req, res) => {
       { $set: { status: 'completed', endDate: new Date() } }
     ).exec();
 
+    const duration = getUnitDuration(unit);
+    const startDate = new Date();
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + duration);
+
     const newRotation = await Rotation.create({
       intern: intern._id,
       unit: unit._id,
-      startDate: new Date(),
+      startDate,
+      duration,
+      endDate,
       status: 'active',
     });
 
