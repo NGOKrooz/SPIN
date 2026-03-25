@@ -1,24 +1,36 @@
 const ActivityLog = require('../models/ActivityLog');
 
-async function logRecentUpdate(type, message, internId = null) {
+async function logActivity(action, details = {}, internId = null) {
   const activity = await ActivityLog.create({
-    action: type,
-    message: message || null,
-    intern: internId,
+    action,
+    details: details || null,
+    message: details?.message || null,
+    intern: internId || details?.internId || null,
+    timestamp: new Date(),
   });
 
   return activity;
 }
 
-async function logRecentUpdateSafe(type, message, internId = null) {
+async function logActivitySafe(action, details = {}, internId = null) {
   try {
-    await logRecentUpdate(type, message, internId);
+    await logActivity(action, details, internId);
   } catch (err) {
-    console.error(`[RecentUpdates] Failed to log activity ${type}:`, err);
+    console.error(`[RecentUpdates] Failed to log activity ${action}:`, err);
   }
 }
 
+async function logRecentUpdate(type, message, internId = null) {
+  return logActivity(type, { message }, internId);
+}
+
+async function logRecentUpdateSafe(type, message, internId = null) {
+  return logActivitySafe(type, { message }, internId);
+}
+
 module.exports = {
+  logActivity,
+  logActivitySafe,
   logRecentUpdate,
   logRecentUpdateSafe,
 };

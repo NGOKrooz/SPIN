@@ -6,7 +6,7 @@ const Intern = require('../models/Intern');
 const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
 const { ensureInternStatusIsCorrect } = require('../services/internService');
-const { logRecentUpdateSafe } = require('../services/recentUpdatesService');
+const { logRecentUpdateSafe, logActivitySafe } = require('../services/recentUpdatesService');
 const { createExtensionReason } = require('../services/extensionService');
 const { createWorkloadHistory } = require('../services/workloadService');
 const { buildInternView, buildInternViews } = require('../services/internViewService');
@@ -75,6 +75,32 @@ const shiftUpcomingRotations = async (internId, startingEndDate) => {
     previousEnd = new Date(rotation.endDate);
     await rotation.save();
   }
+};
+
+const createFullRotationPlanForIntern = async (internId, units) => {
+  let cursor = new Date();
+  const created = [];
+
+  for (let i = 0; i < units.length; i += 1) {
+    const unit = units[i];
+    const duration = getUnitDuration(unit);
+    const startDate = new Date(cursor);
+    const endDate = recalculateEndDate(startDate, duration);
+
+    const rotation = await Rotation.create({
+      intern: internId,
+      unit: unit._id,
+      startDate,
+      endDate,
+      duration,
+      status: i === 0 ? 'active' : 'upcoming',
+    });
+
+    created.push(rotation);
+    cursor = new Date(endDate);
+  }
+
+  return created;
 };
 
 const syncInternRotationStates = async (internId) => {
@@ -358,6 +384,8 @@ router.get('/:id/schedule', async (req, res) => {
     const upcoming = upcomingRotations.map(formatRotationForSchedule);
     const completed = completedRotations.map(formatRotationForSchedule);
 
+    console.log('UPCOMING:', upcoming);
+
     const internView = await buildInternView(req.params.id);
 
     res.json({
@@ -415,24 +443,23 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
 
     const units = await getOrderedUnits();
     if (units.length > 0) {
+      const plan = await createFullRotationPlanForIntern(intern._id, units);
+      const firstRotation = plan[0];
       const firstUnit = units[0];
-      const duration = getUnitDuration(firstUnit);
-      const startDate = new Date();
-      const endDate = new Date(startDate);
-      endDate.setDate(endDate.getDate() + duration);
 
-      const rotation = await Rotation.create({
-        intern: intern._id,
-        unit: firstUnit._id,
-        startDate,
-        duration,
-        endDate,
-        status: 'active',
-      });
-      intern.currentUnit = firstUnit._id;
-      intern.rotationHistory.push(rotation._id);
+      intern.currentUnit = firstRotation?.unit || firstUnit._id;
+      intern.rotationHistory = plan.map((rotation) => rotation._id);
       await intern.save();
-      console.log('ASSIGNED FIRST UNIT:', firstUnit.name);
+      console.log('ASSIGNED FULL ROTATION PLAN:', plan.map((rotation) => ({
+        id: rotation._id.toString(),
+        status: rotation.status,
+      })));
+
+      await logActivitySafe('ASSIGN_UNIT', {
+        intern: intern.name,
+        unit: firstUnit.name,
+        message: `Assigned ${intern.name} to ${firstUnit.name}`,
+      }, intern._id);
     }
 
     console.log('CREATED INTERN:', intern);
@@ -443,7 +470,11 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
       .exec();
     console.log('VERIFIED INTERN:', check);
 
-    await logRecentUpdateSafe('Intern Created', null, intern._id);
+    await logActivitySafe('CREATE_INTERN', {
+      intern: intern.name,
+      message: `Created intern ${intern.name}`,
+    }, intern._id);
+    await logRecentUpdateSafe('Intern Created', `Created intern ${intern.name}`, intern._id);
     await updateBatchStats().catch(() => {});
 
     return res.status(201).json(mapInternWithUnits(check, units));
@@ -559,6 +590,11 @@ router.post('/:id/reassign', async (req, res) => {
     }
 
     await logRecentUpdateSafe('Unit Reassigned', null, intern._id);
+    await logActivitySafe('REASSIGN', {
+      intern: intern.name,
+      newUnit: unit.name,
+      message: `Reassigned ${intern.name} to ${unit.name}`,
+    }, intern._id);
 
     await updateBatchStats().catch(() => {});
 
@@ -615,6 +651,11 @@ router.post('/:id/extend', async (req, res) => {
 
     console.log(`Successfully extended ${intern.name}'s rotation by ${days} days`);
     await logRecentUpdateSafe(days > 0 ? 'Extension Added' : 'Extension Removed', reasonText, intern._id);
+    await logActivitySafe('EXTENSION', {
+      intern: intern.name,
+      days,
+      message: `Extension update for ${intern.name}: ${days} days`,
+    }, intern._id);
 
     await ensureInternStatusIsCorrect(intern._id);
 

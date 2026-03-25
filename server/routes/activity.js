@@ -6,6 +6,15 @@ const ActivityLog = require('../models/ActivityLog');
 const router = express.Router();
 
 function toDescription(activity) {
+  if (activity?.details?.message) return activity.details.message;
+  if (activity?.details?.intern || activity?.details?.unit || activity?.details?.newUnit) {
+    const internText = activity?.details?.intern ? `intern: ${activity.details.intern}` : null;
+    const unitText = activity?.details?.unit ? `unit: ${activity.details.unit}` : null;
+    const newUnitText = activity?.details?.newUnit ? `newUnit: ${activity.details.newUnit}` : null;
+    const daysText = Number.isFinite(Number(activity?.details?.days)) ? `days: ${activity.details.days}` : null;
+    const parts = [internText, unitText, newUnitText, daysText].filter(Boolean);
+    if (parts.length > 0) return parts.join(', ');
+  }
   if (activity?.message) return activity.message;
   if (activity?.description) return activity.description;
   if (activity?.messageText) return activity.messageText;
@@ -21,9 +30,10 @@ function normalizeActivity(item) {
   return {
     id: item?._id?.toString?.() || item?.id || null,
     action: item?.action || item?.type || 'activity',
+    details: item?.details || null,
     description: toDescription(item),
-    created_at: item?.createdAt || item?.created_at || null,
-    createdAt: item?.createdAt || item?.created_at || null,
+    created_at: item?.timestamp || item?.createdAt || item?.created_at || null,
+    createdAt: item?.timestamp || item?.createdAt || item?.created_at || null,
     intern: item?.intern || item?.internId || null,
     unit: item?.unit || item?.unitId || null,
   };
@@ -40,7 +50,7 @@ router.get('/recent', async (req, res) => {
     const [activityLogs, legacyActivities] = await Promise.all([
       ActivityLog.find({})
         .populate('intern')
-        .sort({ createdAt: -1 })
+        .sort({ timestamp: -1, createdAt: -1 })
         .limit(limit)
         .exec(),
       Activity.find({})
@@ -53,12 +63,16 @@ router.get('/recent', async (req, res) => {
 
     const merged = [...(activityLogs || []), ...(legacyActivities || [])]
       .sort((a, b) => {
-        const aDate = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const bDate = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+        const aRawDate = a?.timestamp || a?.createdAt || a?.created_at;
+        const bRawDate = b?.timestamp || b?.createdAt || b?.created_at;
+        const aDate = aRawDate ? new Date(aRawDate).getTime() : 0;
+        const bDate = bRawDate ? new Date(bRawDate).getTime() : 0;
         return bDate - aDate;
       })
       .slice(0, limit)
       .map(normalizeActivity);
+
+    console.log('ACTIVITIES:', merged);
 
     res.json(merged);
   } catch (err) {
