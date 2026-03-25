@@ -13,7 +13,7 @@ const toIsoString = (date) => {
 };
 
 const getRotationStatus = (rotation, today = new Date()) => {
-  if (rotation?.status === 'active' || rotation?.status === 'completed') {
+  if (rotation?.status === 'active' || rotation?.status === 'upcoming' || rotation?.status === 'completed') {
     return rotation.status;
   }
 
@@ -94,6 +94,8 @@ const formatIntern = (intern, rotations = []) => {
     status: intern.status || null,
     extensionDays: intern.extensionDays || intern.extension_days || 0,
     extension_days: intern.extensionDays || intern.extension_days || 0,
+    totalExtensionDays: intern.totalExtensionDays || intern.total_extension_days || 0,
+    total_extension_days: intern.totalExtensionDays || intern.total_extension_days || 0,
     phone: intern.phone || intern.phone_number || '',
     phone_number: intern.phone || intern.phone_number || '',
     currentUnit,

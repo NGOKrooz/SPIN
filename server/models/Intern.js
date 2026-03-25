@@ -5,11 +5,16 @@ const InternSchema = new mongoose.Schema({
   gender: { type: String, enum: ['Male', 'Female'], required: true },
   batch: { type: String, enum: ['A', 'B'], required: true },
   phone: { type: String, default: '' },
-  status: { type: String, enum: ['Active', 'Extended', 'Completed', 'Inactive', ''], default: 'Active' },
+  status: {
+    type: String,
+    enum: ['active', 'extended', 'completed', 'inactive', 'Active', 'Extended', 'Completed', 'Inactive', ''],
+    default: 'active'
+  },
   startDate: { type: Date, required: true },
   currentUnit: { type: mongoose.Schema.Types.ObjectId, ref: 'Unit' },
   rotationHistory: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Rotation' }],
   extensionDays: { type: Number, default: 0 },
+  totalExtensionDays: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });

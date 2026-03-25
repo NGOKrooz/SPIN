@@ -8,7 +8,7 @@ const Unit = require('../models/Unit');
  * Create a new intern with automatic initial rotation
  */
 async function createIntern(data) {
-  const { name, gender = '', batch = '', phone = '', status = 'Active', startDate } = data;
+  const { name, gender = '', batch = '', phone = '', status = 'active', startDate } = data;
 
   // Create intern
   const intern = await Intern.create({
@@ -21,6 +21,7 @@ async function createIntern(data) {
     currentUnit: null,
     rotationHistory: [],
     extensionDays: 0,
+    totalExtensionDays: 0,
   });
 
   console.log("✅ CREATED INTERN:", JSON.stringify(intern, null, 2));
@@ -220,11 +221,21 @@ async function ensureInternStatusIsCorrect(internId) {
   const intern = await Intern.findById(internId).exec();
   if (!intern) return;
 
-  const totalUnits = await Unit.countDocuments().exec();
-  const completedRotations = await Rotation.countDocuments({
-    intern: intern._id,
-    status: 'completed',
-  }).exec();
+  const now = new Date();
+
+  await Rotation.updateMany(
+    {
+      intern: intern._id,
+      status: 'active',
+      endDate: { $lt: now },
+    },
+    { $set: { status: 'completed' } }
+  ).exec();
+
+  const allRotations = await Rotation.find({ intern: intern._id }).sort({ startDate: 1 }).exec();
+
+  const totalRotations = allRotations.length;
+  const completedRotations = allRotations.filter((rotation) => rotation.status === 'completed').length;
 
   const activeRotation = await Rotation.findOne({
     intern: intern._id,
@@ -233,7 +244,13 @@ async function ensureInternStatusIsCorrect(internId) {
     .sort({ startDate: -1 })
     .exec();
 
-  const newStatus = (totalUnits > 0 && completedRotations === totalUnits) ? 'Completed' : 'Active';
+  let newStatus = 'active';
+  if (totalRotations > 0 && completedRotations === totalRotations) {
+    newStatus = 'completed';
+  } else if (Number(intern.extensionDays || 0) > 0) {
+    newStatus = 'extended';
+  }
+
   const newCurrentUnit = activeRotation?.unit || intern.currentUnit || null;
 
   const statusChanged = intern.status !== newStatus;

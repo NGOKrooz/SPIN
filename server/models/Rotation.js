@@ -6,7 +6,7 @@ const RotationSchema = new mongoose.Schema({
   startDate: { type: Date, required: true },
   duration: { type: Number, default: 20 },
   endDate: { type: Date },
-  status: { type: String, enum: ['active', 'completed'], default: 'active' },
+  status: { type: String, enum: ['active', 'upcoming', 'completed'], default: 'active' },
   createdAt: { type: Date, default: Date.now }
 });
 
