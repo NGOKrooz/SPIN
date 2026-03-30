@@ -99,7 +99,24 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
       return;
     }
 
-    const adjustmentValue = parseInt(daysToUse);
+    const adjustmentValue = Number(daysToUse);
+    if (!Number.isFinite(adjustmentValue)) {
+      toast({
+        title: 'Error',
+        description: 'Please enter a valid number of days',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!hasExtension && adjustmentValue <= 0) {
+      toast({
+        title: 'Error',
+        description: 'Extension days must be greater than 0',
+        variant: 'destructive',
+      });
+      return;
+    }
     
     // Calculate new total extension days
     const newTotalExtension = hasExtension ? currentExtension + adjustmentValue : adjustmentValue;
@@ -200,7 +217,7 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
                 />
                 <div className="text-xs text-gray-500 mt-1">
                   Use positive numbers to add days, negative to reduce. 
-                  {formData.adjustment_days && ` New total: ${currentExtension + parseInt(formData.adjustment_days || 0)} days`}
+                  {formData.adjustment_days && ` New total: ${currentExtension + Number(formData.adjustment_days || 0)} days`}
                 </div>
               </div>
             ) : (

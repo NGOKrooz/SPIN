@@ -14,12 +14,6 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
 
   const { toast } = useToast();
 
-  // Get all units
-  const { data: units } = useQuery({
-    queryKey: ['units'],
-    queryFn: api.getUnits,
-  });
-
   // Get intern's schedule to find units they've done before
   const { data: internSchedule } = useQuery({
     queryKey: ['intern-schedule', intern.id],
@@ -30,26 +24,34 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
     Array.isArray(internSchedule) ? internSchedule : (internSchedule?.rotations || [])
   ), [internSchedule]);
 
-  // Get units the intern has done in the PAST (exclude current and future rotations)
-  // IMPORTANT: When reassigning FROM a unit, that unit should become available again
-  // So we DON'T exclude the current unit - reassigning from it makes it available for future rotations
-  const today = format(new Date(), 'yyyy-MM-dd');
-  const pastRotations = scheduleRows.filter(r => {
-    const endDate = r.end_date ? format(parseISO(r.end_date), 'yyyy-MM-dd') : null;
-    const rotationId = r.id;
-    const currentRotationId = currentRotation?.id;
-    // Exclude the current rotation from past rotations (even if it ended in the past)
-    // because reassigning from it makes that unit available again
-    return endDate && endDate < today && rotationId !== currentRotationId;
-  });
-  
-  const pastUnitIds = pastRotations.map(r => r.unit_id);
-  
-  // Available units: exclude ONLY past units (not current unit)
-  // When reassigning FROM the current unit, that unit becomes available again for future rotations
-  const availableUnits = units?.filter(unit => 
-    !pastUnitIds.includes(unit.id || unit._id)
-  ) || [];
+  const upcomingFromPayload = React.useMemo(() => (
+    Array.isArray(internSchedule?.upcoming)
+      ? internSchedule.upcoming
+      : (Array.isArray(internSchedule?.upcomingRotations) ? internSchedule.upcomingRotations : [])
+  ), [internSchedule]);
+
+  const availableUnits = React.useMemo(() => {
+    const source = upcomingFromPayload.length > 0
+      ? upcomingFromPayload
+      : scheduleRows.filter((rotation) => String(rotation.status || '').toLowerCase() === 'upcoming');
+
+    const seen = new Set();
+    return source
+      .map((rotation) => {
+        const unitId = String(rotation.unit_id || rotation.unitId || rotation.unit?.id || rotation.unit?._id || '');
+        const unitName = rotation.unit_name || rotation.unitName || rotation.unit?.name || null;
+        const duration = Number(rotation.duration_days || rotation.duration || rotation.unit?.duration_days || rotation.unit?.durationDays || 0);
+
+        if (!unitId || !unitName || seen.has(unitId)) return null;
+        seen.add(unitId);
+        return {
+          id: unitId,
+          name: unitName,
+          duration_days: duration,
+        };
+      })
+      .filter(Boolean);
+  }, [scheduleRows, upcomingFromPayload]);
 
   // Calculate days spent in current rotation
   const daysInCurrentRotation = React.useMemo(() => {
@@ -98,14 +100,22 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
       return;
     }
 
-    const selectedUnit = units?.find(unit => (unit.id || unit._id) === selectedUnitId);
+    const selectedUnit = availableUnits.find(unit => String(unit.id) === String(selectedUnitId));
     if (!selectedUnit) {
       toast({
         title: 'Error',
-        description: 'Invalid unit selected',
+        description: 'Please select a valid upcoming unit',
         variant: 'destructive',
       });
       return;
+    }
+
+    if (showWarning) {
+      const message = `⚠️ This intern has already spent ${daysInCurrentRotation} day(s) in ${currentRotation.unit_name}. Reassigning may disrupt the rotation schedule. Do you want to continue?`;
+      const confirmed = window.confirm(message);
+      if (!confirmed) {
+        return;
+      }
     }
 
     reassignMutation.mutate({
@@ -143,7 +153,7 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
                 </SelectTrigger>
                 <SelectContent>
                   {availableUnits.map((unit) => (
-                    <SelectItem key={(unit.id || unit._id).toString()} value={(unit.id || unit._id).toString()}>
+                    <SelectItem key={unit.id.toString()} value={unit.id.toString()}>
                       {unit.name} ({unit.duration_days} days)
                     </SelectItem>
                   ))}
@@ -155,9 +165,9 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
               <div className="bg-blue-50 p-3 rounded-lg">
                 <div className="text-sm text-blue-800">
                   <p><strong>Current:</strong> {currentRotation.unit_name} ({currentRotation.duration_days} days)</p>
-                  <p><strong>New:</strong> {units?.find(u => (u.id || u._id) === selectedUnitId)?.name} ({units?.find(u => (u.id || u._id) === selectedUnitId)?.duration_days} days)</p>
+                  <p><strong>New:</strong> {availableUnits.find(u => u.id === selectedUnitId)?.name} ({availableUnits.find(u => u.id === selectedUnitId)?.duration_days} days)</p>
                   <p><strong>Start Date:</strong> {currentRotation.start_date}</p>
-                  <p><strong>New End Date:</strong> {selectedUnitId ? format(addDays(parseISO(currentRotation.start_date), (units?.find(u => (u.id || u._id) === selectedUnitId)?.duration_days || 0) - 1), 'yyyy-MM-dd') : ''}</p>
+                  <p><strong>New End Date:</strong> {selectedUnitId ? format(addDays(parseISO(currentRotation.start_date), (availableUnits.find(u => u.id === selectedUnitId)?.duration_days || 0) - 1), 'yyyy-MM-dd') : ''}</p>
                 </div>
               </div>
             )}
@@ -181,7 +191,7 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
             {availableUnits.length === 0 && (
               <div className="bg-yellow-50 p-3 rounded-lg">
                 <p className="text-sm text-yellow-800">
-                  No available units for reassignment. All remaining units have already been completed by this intern.
+                  No upcoming units are available for reassignment.
                 </p>
               </div>
             )}
