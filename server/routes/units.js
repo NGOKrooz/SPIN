@@ -6,6 +6,11 @@ const Rotation = require('../models/Rotation');
 const { createUnit, updateUnit, deleteUnit, calculateWorkload, isCritical } = require('../services/unitService');
 const { ACTIVITY_TYPES, logActivityEventSafe, logRecentUpdateSafe } = require('../services/recentUpdatesService');
 const { buildInternViews } = require('../services/internViewService');
+const {
+  getActiveUnitLoadMap,
+  getReservedForwardSequenceKeys,
+  rebuildInternFutureRotations,
+} = require('../services/rotationPlanService');
 const { updateBatchStats } = require('./dashboard');
 
 const router = express.Router();
@@ -140,34 +145,6 @@ async function getUnitAssignments(unitIds) {
   return rotationsByUnit;
 }
 
-async function rebuildFutureRotationsForIntern(internId) {
-  const rotations = await Rotation.find({ intern: internId })
-    .populate('unit')
-    .sort({ startDate: 1 })
-    .exec();
-
-  let previousEndDate = null;
-  for (const rotation of rotations) {
-    if (rotation.status === 'completed') {
-      previousEndDate = startOfDay(rotation.endDate);
-      continue;
-    }
-
-    const duration = getUnitDuration(rotation.unit);
-    rotation.duration = duration;
-
-    if (previousEndDate) {
-      rotation.startDate = addDays(previousEndDate, 1);
-    } else {
-      rotation.startDate = startOfDay(rotation.startDate);
-    }
-
-    rotation.endDate = recalculateEndDate(rotation.startDate, duration);
-    previousEndDate = startOfDay(rotation.endDate);
-    await rotation.save();
-  }
-}
-
 const normalizeUnitPayload = (req, res, next) => {
   // Support both camelCase and snake_case payloads (frontend may send snake_case)
   if (req.body.unit_name !== undefined && req.body.name === undefined) {
@@ -265,6 +242,21 @@ router.put('/reorder', async (req, res) => {
     }).filter(Boolean);
 
     await Promise.all(updates);
+
+    const internIds = await Rotation.distinct('intern').exec();
+    const activeUnitLoadMap = await getActiveUnitLoadMap();
+    for (const internId of internIds) {
+      if (!internId) continue;
+      const reservedSequenceKeys = await getReservedForwardSequenceKeys(String(internId));
+
+      await rebuildInternFutureRotations({
+        internId,
+        reservedSequenceKeys,
+        activeUnitLoadMap,
+        now: new Date(),
+      });
+    }
+
     await logRecentUpdateSafe('units_reordered', 'Updated unit ordering');
     await updateBatchStats().catch(() => {});
     res.json({ success: true });
@@ -396,8 +388,16 @@ router.put('/:id', normalizeUnitPayload, validateUnitPayload, async (req, res) =
         .select('intern')
         .exec();
       const affectedInternIds = [...new Set(affectedRotations.map((rotation) => rotation.intern?.toString()).filter(Boolean))];
+      const activeUnitLoadMap = await getActiveUnitLoadMap();
       for (const internId of affectedInternIds) {
-        await rebuildFutureRotationsForIntern(internId);
+        const reservedSequenceKeys = await getReservedForwardSequenceKeys(internId);
+
+        await rebuildInternFutureRotations({
+          internId,
+          reservedSequenceKeys,
+          activeUnitLoadMap,
+          now: new Date(),
+        });
       }
     }
 

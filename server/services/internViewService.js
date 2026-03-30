@@ -124,12 +124,49 @@ const addUnitProgress = (internView, currentUnit, units = []) => {
       .map((value) => String(value))
   );
 
-  const remainingUnitDocs = (units || []).filter((unit) => {
+  const unitById = new Map((units || []).map((unit) => {
     const unitId = unit?._id?.toString?.() || unit?.id?.toString?.() || null;
-    if (!unitId) return false;
-    if (currentUnitId && String(currentUnitId) === unitId) return false;
-    return !completedUnitIds.has(unitId);
-  });
+    return [unitId, unit];
+  }).filter(([unitId]) => Boolean(unitId)));
+
+  const upcomingRotations = [...(internView.upcomingUnits || [])]
+    .sort((left, right) => {
+      const leftTime = left?.startDate ? new Date(left.startDate).getTime() : Number.MAX_SAFE_INTEGER;
+      const rightTime = right?.startDate ? new Date(right.startDate).getTime() : Number.MAX_SAFE_INTEGER;
+      return leftTime - rightTime;
+    });
+
+  const seenUpcomingUnitIds = new Set();
+  const remainingUnitDocs = [];
+
+  for (const rotation of upcomingRotations) {
+    const unitId = String(rotation.unitId || rotation.unit_id || '');
+    if (!unitId || seenUpcomingUnitIds.has(unitId)) continue;
+
+    const unitFromRotation = rotation.unit || null;
+    const fallbackUnit = unitById.get(unitId) || null;
+    const mergedUnit = {
+      ...(fallbackUnit || {}),
+      ...(unitFromRotation || {}),
+      _id: fallbackUnit?._id || fallbackUnit?.id || unitFromRotation?._id || unitFromRotation?.id || unitId,
+      name: unitFromRotation?.name || fallbackUnit?.name || rotation.unitName || rotation.unit_name || 'Unknown Unit',
+      durationDays: unitFromRotation?.durationDays || unitFromRotation?.duration_days || fallbackUnit?.durationDays || fallbackUnit?.duration || fallbackUnit?.duration_days || null,
+      duration: unitFromRotation?.duration || fallbackUnit?.duration || fallbackUnit?.durationDays || fallbackUnit?.duration_days || null,
+      order: fallbackUnit?.order ?? fallbackUnit?.position ?? null,
+      workload: fallbackUnit?.workload || null,
+    };
+
+    remainingUnitDocs.push(mergedUnit);
+    seenUpcomingUnitIds.add(unitId);
+  }
+
+  for (const unit of units || []) {
+    const unitId = unit?._id?.toString?.() || unit?.id?.toString?.() || null;
+    if (!unitId || seenUpcomingUnitIds.has(unitId)) continue;
+    if (currentUnitId && String(currentUnitId) === unitId) continue;
+    if (completedUnitIds.has(unitId)) continue;
+    remainingUnitDocs.push(unit);
+  }
 
   const upcomingUnitDoc = remainingUnitDocs[0] || null;
 
@@ -144,16 +181,9 @@ const addUnitProgress = (internView, currentUnit, units = []) => {
   );
   const currentUnitProgress = activeRotation ? `${daysSpent}/${totalDays}` : null;
 
-  const upcomingStartDate = upcomingUnitDoc
-    ? new Date(activeRotation?.endDate || now)
-    : null;
-  const upcomingEndDate = upcomingStartDate
-    ? new Date(upcomingStartDate)
-    : null;
-
-  if (upcomingEndDate) {
-    upcomingEndDate.setDate(upcomingEndDate.getDate() + totalDays);
-  }
+  const nextUpcomingRotation = upcomingRotations[0] || null;
+  const upcomingStartDate = nextUpcomingRotation?.startDate ? new Date(nextUpcomingRotation.startDate) : null;
+  const upcomingEndDate = nextUpcomingRotation?.endDate ? new Date(nextUpcomingRotation.endDate) : null;
 
   const internshipStartDate = internView.startDate ? new Date(internView.startDate) : null;
   const internshipDays = internshipStartDate && !Number.isNaN(internshipStartDate.getTime())
