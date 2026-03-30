@@ -26,18 +26,20 @@ function parseLimit(rawValue, fallback = 10, max = 1000) {
 
 function recalculateEndDate(startDate, duration) {
   const start = new Date(startDate);
+  start.setHours(0, 0, 0, 0);
   const safeDuration = Number(duration);
   const finalDuration = Number.isFinite(safeDuration) && safeDuration > 0
     ? safeDuration
     : DEFAULT_ROTATION_DURATION_DAYS;
 
   const end = new Date(start);
-  end.setDate(end.getDate() + finalDuration);
+  end.setDate(end.getDate() + finalDuration - 1);
   return end;
 }
 
 async function syncRotationMovementsForFeed() {
   const now = new Date();
+  now.setHours(0, 0, 0, 0);
   const interns = await Intern.find({})
     .select('name currentUnit status extensionDays')
     .populate('currentUnit', 'name')
@@ -66,6 +68,8 @@ async function syncRotationMovementsForFeed() {
 
       const startDate = new Date(rotation.startDate);
       const endDate = new Date(rotation.endDate);
+      startDate.setHours(0, 0, 0, 0);
+      endDate.setHours(0, 0, 0, 0);
 
       let nextStatus = rotation.status;
       if (rotation.status !== 'completed' && now > endDate) {

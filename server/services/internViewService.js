@@ -166,11 +166,16 @@ const addUnitProgress = (internView, currentUnit, units = []) => {
       id: upcomingUnitDoc._id.toString(),
       name: upcomingUnitDoc.name,
       order: upcomingUnitDoc.order ?? upcomingUnitDoc.position ?? null,
+      duration: upcomingUnitDoc.durationDays ?? upcomingUnitDoc.duration ?? null,
+      duration_days: upcomingUnitDoc.durationDays ?? upcomingUnitDoc.duration ?? null,
     } : null,
     remainingUnits: remainingUnitDocs.map((u) => ({
       id: u._id.toString(),
       name: u.name,
       order: u.order ?? u.position ?? null,
+      duration: u.durationDays ?? u.duration ?? null,
+      duration_days: u.durationDays ?? u.duration ?? null,
+      workload: u.workload || null,
     })),
     dashboard: {
       currentUnit: internView.currentUnit?.name || null,

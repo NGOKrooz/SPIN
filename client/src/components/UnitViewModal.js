@@ -14,7 +14,9 @@ export default function UnitViewModal({ unit, onClose }) {
   });
 
   const activeUnit = unitDetails || unit;
-  const rotations = activeUnit?.current_rotations || [];
+  const rotations = Array.isArray(activeUnit?.current_rotations)
+    ? activeUnit.current_rotations
+    : [];
   const today = normalizeDate(new Date());
 
   const currentInterns = rotations.filter(r => {
@@ -28,10 +30,22 @@ export default function UnitViewModal({ unit, onClose }) {
     return end < today;
   });
 
+  const fallbackCurrentInterns = Array.isArray(activeUnit?.interns)
+    ? activeUnit.interns.map((intern) => ({
+      id: intern.id || intern.intern_id,
+      intern_name: intern.name || intern.intern_name,
+      intern_batch: intern.batch || intern.intern_batch,
+      start_date: intern.currentRotation?.start_date || intern.currentRotation?.startDate,
+      end_date: intern.currentRotation?.end_date || intern.currentRotation?.endDate,
+    })).filter((intern) => intern.intern_name)
+    : [];
+
+  const visibleCurrentInterns = currentInterns.length > 0 ? currentInterns : fallbackCurrentInterns;
+
   const handleExportCsv = () => {
     try {
       const rows = [
-        ...currentInterns.map(r => ({
+        ...visibleCurrentInterns.map(r => ({
           section: 'Current',
           name: r.intern_name,
           batch: r.intern_batch,
@@ -57,7 +71,7 @@ export default function UnitViewModal({ unit, onClose }) {
 
   const handleDownloadPdf = () => {
     try {
-      const currentRows = currentInterns.map(r => `
+      const currentRows = visibleCurrentInterns.map(r => `
         <tr>
           <td>${r.intern_name}</td>
           <td>${r.intern_batch}</td>
@@ -145,7 +159,7 @@ export default function UnitViewModal({ unit, onClose }) {
 
               <div className="space-y-2">
                 <div className="text-sm font-medium text-gray-700">Current Interns</div>
-                {currentInterns.length === 0 ? (
+                {visibleCurrentInterns.length === 0 ? (
                   <div className="text-sm text-gray-500">No current interns</div>
                 ) : (
                   <div className="overflow-x-auto">
@@ -159,7 +173,7 @@ export default function UnitViewModal({ unit, onClose }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {currentInterns.map((intern) => (
+                        {visibleCurrentInterns.map((intern) => (
                           <tr key={intern.id} className="border-b last:border-b-0">
                             <td className="py-2">{intern.intern_name}</td>
                             <td className="py-2">

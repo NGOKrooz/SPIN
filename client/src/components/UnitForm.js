@@ -68,11 +68,23 @@ export default function UnitForm({ unit, onClose, onSuccess }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    
-    if (!formData.name || !formData.duration_days) {
+
+    const normalizedName = formData.name.trim();
+    const parsedDuration = Number(formData.duration_days);
+
+    if (!normalizedName) {
       toast({
         title: 'Error',
-        description: 'Please fill in all required fields',
+        description: 'Unit name is required',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!Number.isFinite(parsedDuration) || parsedDuration <= 0) {
+      toast({
+        title: 'Error',
+        description: 'Valid duration is required',
         variant: 'destructive',
       });
       return;
@@ -80,9 +92,11 @@ export default function UnitForm({ unit, onClose, onSuccess }) {
 
     const submitData = {
       ...formData,
-      unit_name: formData.name,
-      duration_days: parseInt(formData.duration_days),
-      patient_count: parseInt(formData.patient_count) || 0,
+      name: normalizedName,
+      unit_name: normalizedName,
+      duration_days: parsedDuration,
+      duration: parsedDuration,
+      patient_count: Number(formData.patient_count) || 0,
     };
 
     console.log('Submitting unit data:', submitData);

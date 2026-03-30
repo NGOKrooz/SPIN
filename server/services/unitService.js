@@ -37,11 +37,24 @@ async function getUnitById(id) {
 async function createUnit(data) {
   const { name, durationDays, duration, order, position, patientCount, capacity, description } = data;
 
-  // Normalize duration (support `duration` or `durationDays`)
-  const finalDurationDays = typeof durationDays === 'number' ? durationDays : (typeof duration === 'number' ? duration : 7);
+  const normalizedName = typeof name === 'string' ? name.trim() : '';
+  if (!normalizedName) {
+    throw new Error('Unit name is required');
+  }
 
-  const finalPatientCount = typeof patientCount === 'number' ? patientCount : 0;
-  const finalCapacity = typeof capacity === 'number' ? capacity : 0;
+  // Normalize duration (support `duration` or `durationDays`)
+  const parsedDurationDays = Number(durationDays);
+  const parsedDuration = Number(duration);
+  const finalDurationDays = Number.isFinite(parsedDurationDays)
+    ? parsedDurationDays
+    : (Number.isFinite(parsedDuration) ? parsedDuration : NaN);
+
+  if (!Number.isFinite(finalDurationDays) || finalDurationDays <= 0) {
+    throw new Error('Valid duration is required');
+  }
+
+  const finalPatientCount = Number.isFinite(Number(patientCount)) ? Number(patientCount) : 0;
+  const finalCapacity = Number.isFinite(Number(capacity)) ? Number(capacity) : 0;
 
   // Normalize ordering inputs. `order` is canonical; `position` is accepted for backward compatibility.
   let finalOrder = Number.isInteger(order) ? order : (Number.isInteger(position) ? position : null);
@@ -51,7 +64,7 @@ async function createUnit(data) {
   }
 
   const unit = new Unit({
-    name,
+    name: normalizedName,
     order: finalOrder,
     durationDays: finalDurationDays,
     capacity: finalCapacity,
@@ -70,13 +83,13 @@ async function updateUnit(id, data) {
   const { name, durationDays, duration, order, position, patientCount, capacity, description } = data;
 
   const updateData = {};
-  if (name !== undefined) updateData.name = name;
-  if (durationDays !== undefined) updateData.durationDays = durationDays;
-  if (duration !== undefined) updateData.durationDays = duration;
+  if (name !== undefined) updateData.name = typeof name === 'string' ? name.trim() : name;
+  if (durationDays !== undefined) updateData.durationDays = Number(durationDays);
+  if (duration !== undefined) updateData.durationDays = Number(duration);
   if (order !== undefined) updateData.order = order;
   if (position !== undefined && order === undefined) updateData.order = position;
-  if (capacity !== undefined) updateData.capacity = capacity;
-  if (patientCount !== undefined) updateData.patientCount = patientCount;
+  if (capacity !== undefined) updateData.capacity = Number(capacity);
+  if (patientCount !== undefined) updateData.patientCount = Number(patientCount);
   if (description !== undefined) updateData.description = description;
 
   const updatedUnit = await Unit.findByIdAndUpdate(id, updateData, { new: true }).exec();

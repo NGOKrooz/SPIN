@@ -38,10 +38,40 @@ export default function Units() {
     });
   }, [queryClient]);
 
-  const { data: units, isLoading } = useQuery({
+  const { data: units, isLoading, isError, error } = useQuery({
     queryKey: ['units'],
     queryFn: api.getUnits,
   });
+
+  const getUnitInterns = React.useCallback((unit) => {
+    if (Array.isArray(unit?.interns) && unit.interns.length > 0) {
+      return unit.interns;
+    }
+
+    if (Array.isArray(unit?.current_rotations) && unit.current_rotations.length > 0) {
+      return unit.current_rotations
+        .filter((rotation) => rotation?.is_current)
+        .map((rotation) => ({
+          id: rotation.intern_id || rotation.internId,
+          name: rotation.intern_name,
+          batch: rotation.intern_batch,
+        }))
+        .filter((intern) => intern.name);
+    }
+
+    if (Array.isArray(unit?.intern_names) && unit.intern_names.length > 0) {
+      return unit.intern_names.map((name, index) => {
+        const hasBatch = name.endsWith(' (A)') || name.endsWith(' (B)');
+        return {
+          id: `${unit.id || unit._id || 'unit'}-${index}`,
+          name: name.replace(' (A)', '').replace(' (B)', ''),
+          batch: hasBatch ? name.slice(-2, -1) : null,
+        };
+      });
+    }
+
+    return [];
+  }, []);
 
   const filteredUnits = units?.filter(unit => {
     const matchesSearch = unit.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -88,6 +118,18 @@ export default function Units() {
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
       </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
+        <CardContent className="py-8 text-center">
+          <AlertTriangle className="h-10 w-10 text-red-500 mx-auto" />
+          <h2 className="text-lg font-semibold text-gray-900 mt-3">Unable to load units</h2>
+          <p className="text-sm text-gray-600 mt-1">{error?.message || 'Please retry.'}</p>
+        </CardContent>
+      </Card>
     );
   }
 
@@ -281,18 +323,24 @@ export default function Units() {
             <CardContent className="space-y-4">
               {/* Current Interns */}
               <div>
+              {(() => {
+                const assignedInterns = getUnitInterns(unit);
+                const currentInternCount = unit.current_interns ?? unit.currentInterns ?? assignedInterns.length;
+
+                return (
+                  <>
               <div className="flex items-center justify-between mb-2">
                   <h4 className="text-sm font-medium text-gray-700">Current Interns</h4>
-                  <span className="text-sm text-gray-500">{unit.current_interns}</span>
+                  <span className="text-sm text-gray-500">{currentInternCount}</span>
                 </div>
-                {unit.intern_names && unit.intern_names.length > 0 ? (
+                {assignedInterns.length > 0 ? (
                   <div className="space-y-1">
-                    {unit.intern_names.map((name, index) => {
-                      const batch = name.includes('(A)') ? 'A' : 'B';
+                    {assignedInterns.map((intern, index) => {
+                      const batch = intern.batch;
                       return (
-                        <div key={index} className="flex items-center space-x-2 text-sm min-w-0">
-                          <div className={`w-2 h-2 rounded-full ${getBatchColor(batch)}`}></div>
-                          <span className="break-words">{name.replace(' (A)', '').replace(' (B)', '')}</span>
+                        <div key={intern.id || index} className="flex items-center space-x-2 text-sm min-w-0">
+                          <div className={`w-2 h-2 rounded-full ${getBatchColor(batch || 'A')}`}></div>
+                          <span className="break-words">{intern.name}</span>
                         </div>
                       );
                     })}
@@ -300,6 +348,9 @@ export default function Units() {
                 ) : (
                   <p className="text-sm text-gray-500">No interns assigned</p>
                 )}
+                  </>
+                );
+              })()}
               </div>
 
               {/* Patient Count Information */}

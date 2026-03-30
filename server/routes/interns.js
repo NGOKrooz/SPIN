@@ -52,7 +52,7 @@ const recalculateEndDate = (startDate, duration) => {
     ? safeDuration
     : DEFAULT_ROTATION_DURATION_DAYS;
 
-  const end = addDays(start, finalDuration);
+  const end = addDays(start, finalDuration - 1);
   return end;
 };
 
@@ -121,8 +121,8 @@ const rebuildUpcomingTimeline = async (upcomingRotations, startingEndDate, order
   }
 };
 
-const createFullRotationPlanForIntern = async (internId, units) => {
-  let cursor = new Date();
+const createFullRotationPlanForIntern = async (internId, units, internshipStartDate) => {
+  let cursor = startOfDay(internshipStartDate || new Date());
   const created = [];
 
   for (let i = 0; i < units.length; i += 1) {
@@ -141,14 +141,14 @@ const createFullRotationPlanForIntern = async (internId, units) => {
     });
 
     created.push(rotation);
-    cursor = new Date(endDate);
+    cursor = addDays(endDate, 1);
   }
 
   return created;
 };
 
 const syncInternRotationStates = async (internId) => {
-  const now = new Date();
+  const now = startOfDay(new Date());
   const rotations = await Rotation.find({ intern: internId }).sort({ startDate: 1 }).exec();
 
   let hasActive = false;
@@ -166,8 +166,8 @@ const syncInternRotationStates = async (internId) => {
       rotation.endDate = recalculateEndDate(rotation.startDate, safeDuration);
     }
 
-    const startDate = new Date(rotation.startDate);
-    const endDate = new Date(rotation.endDate);
+    const startDate = startOfDay(rotation.startDate);
+    const endDate = startOfDay(rotation.endDate);
 
     let nextStatus = rotation.status;
     if (rotation.status !== 'completed' && now > endDate) {
@@ -283,9 +283,9 @@ const buildScheduleTimeline = ({ intern, units, rotations }) => {
     const nextUnit = orderedUnits[i];
     const duration = getUnitDuration(nextUnit);
 
-    const startDate = new Date(previousEndDate);
+    const startDate = addDays(previousEndDate, 1);
     const endDate = new Date(startDate);
-    endDate.setDate(endDate.getDate() + duration);
+    endDate.setDate(endDate.getDate() + duration - 1);
 
     upcomingRotations.push({
       unit: nextUnit.name,
@@ -299,7 +299,7 @@ const buildScheduleTimeline = ({ intern, units, rotations }) => {
       duration_days: duration,
     });
 
-    previousEndDate = endDate;
+    previousEndDate = new Date(endDate);
   }
 
   console.log('CURRENT ROTATION:', currentRotation);
@@ -526,13 +526,14 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
 
     const units = await getOrderedUnits();
     if (units.length > 0) {
-      const plan = await createFullRotationPlanForIntern(intern._id, units);
+      const plan = await createFullRotationPlanForIntern(intern._id, units, intern.startDate);
       const firstRotation = plan[0];
       const firstUnit = units[0];
 
       intern.currentUnit = firstRotation?.unit || firstUnit._id;
       intern.rotationHistory = plan.map((rotation) => rotation._id);
       await intern.save();
+      await syncInternRotationStates(intern._id);
       console.log('ASSIGNED FULL ROTATION PLAN:', plan.map((rotation) => ({
         id: rotation._id.toString(),
         status: rotation.status,

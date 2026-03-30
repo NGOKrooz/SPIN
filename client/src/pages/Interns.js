@@ -372,6 +372,7 @@ export default function Interns() {
           onClose={handleExtensionClose}
           onSuccess={() => {
             invalidateInternLists();
+            queryClient.invalidateQueries({ queryKey: ['units'] });
             queryClient.invalidateQueries({ queryKey: ['intern', extendingIntern.id] });
             handleExtensionClose();
             setTimeout(() => {

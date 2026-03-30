@@ -295,6 +295,9 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
       exact: true,
       type: 'all'
     });
+
+    await queryClient.invalidateQueries({ queryKey: ['units'] });
+    await queryClient.refetchQueries({ queryKey: ['units'], type: 'all' });
     
     // Invalidate intern lists
     invalidateInternLists();
@@ -638,7 +641,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                       <div key={unit.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 border rounded-lg">
                         <div>
                           <h4 className="font-medium">{unit.name}</h4>
-                          <p className="text-sm text-gray-600">{rotationDurationDays} days</p>
+                          <p className="text-sm text-gray-600">{unit.duration_days || unit.duration || rotationDurationDays} days</p>
                         </div>
                         <div className="text-right">
                           <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getWorkloadColor(unit.workload)}`}>
@@ -684,6 +687,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                 type: 'all'
               });
               // Also invalidate rotations and intern lists
+              await queryClient.invalidateQueries({ queryKey: ['units'] });
               await queryClient.invalidateQueries({ queryKey: ['rotations', 'current'] });
               await queryClient.invalidateQueries({ 
                 predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === 'interns',
