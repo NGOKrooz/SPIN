@@ -298,6 +298,12 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
 
     await queryClient.invalidateQueries({ queryKey: ['units'] });
     await queryClient.refetchQueries({ queryKey: ['units'], type: 'all' });
+
+    await queryClient.invalidateQueries({ queryKey: ['rotations', 'current'] });
+    await queryClient.refetchQueries({ queryKey: ['rotations', 'current'], type: 'all' });
+
+    await queryClient.invalidateQueries({ queryKey: ['recentActivities'] });
+    await queryClient.refetchQueries({ queryKey: ['recentActivities'], type: 'all' });
     
     // Invalidate intern lists
     invalidateInternLists();

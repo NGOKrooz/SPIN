@@ -32,6 +32,12 @@ const startOfDay = (dateLike = new Date()) => {
   return value;
 };
 
+const addDays = (dateLike, days) => {
+  const value = new Date(dateLike);
+  value.setDate(value.getDate() + Number(days || 0));
+  return value;
+};
+
 const getInternSortDirection = (sortValue) => {
   const normalized = String(sortValue || 'newest').trim().toLowerCase();
   return normalized === 'oldest' || normalized === 'asc' ? 1 : -1;
@@ -591,66 +597,55 @@ router.post('/:id/extend', async (req, res) => {
   try {
     console.log(`Extending intern ${req.params.id} by payload`, req.body);
 
-    const intern = await Intern.findById(req.params.id).exec();
+    const internId = req.params.id;
+    if (!internId) {
+      return res.status(400).json({ error: 'Intern ID is required' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(internId)) {
+      return res.status(400).json({ error: 'Intern ID is required' });
+    }
+
+    if (req.body.days === undefined || req.body.days === null || req.body.days === '') {
+      return res.status(400).json({ error: 'Extension days is required' });
+    }
+
+    let days = req.body.days;
+    if (typeof days !== 'number') {
+      days = Number(days);
+    }
+
+    if (!Number.isFinite(days) || Number.isNaN(days) || days <= 0) {
+      return res.status(400).json({ error: 'Valid number of days is required' });
+    }
+    days = Math.floor(days);
+
+    const intern = await Intern.findById(internId).exec();
     if (!intern) return res.status(404).json({ error: 'Intern not found' });
-
-    const hasTargetTotal = req.body.extension_days !== undefined && req.body.extension_days !== null && req.body.extension_days !== '';
-    const hasAdjustment = req.body.adjustment_days !== undefined && req.body.adjustment_days !== null && req.body.adjustment_days !== '';
-    const hasDirectDays = req.body.days !== undefined && req.body.days !== null && req.body.days !== '';
-
-    let days = null;
-    let nextExtensionTotal = Number(intern.extensionDays || 0);
-
-    if (hasTargetTotal) {
-      const parsedTarget = Number(req.body.extension_days);
-      if (!Number.isFinite(parsedTarget) || parsedTarget < 0) {
-        return res.status(400).json({ error: 'Valid number of days is required' });
-      }
-      nextExtensionTotal = parsedTarget;
-      days = parsedTarget - Number(intern.extensionDays || 0);
-    } else if (hasAdjustment) {
-      const parsedAdjustment = Number(req.body.adjustment_days);
-      if (!Number.isFinite(parsedAdjustment)) {
-        return res.status(400).json({ error: 'Valid number of days is required' });
-      }
-      nextExtensionTotal = Number(intern.extensionDays || 0) + parsedAdjustment;
-      if (nextExtensionTotal < 0) {
-        return res.status(400).json({ error: 'Valid number of days is required' });
-      }
-      days = parsedAdjustment;
-    } else if (hasDirectDays) {
-      const parsedDays = Number(req.body.days);
-      if (!Number.isFinite(parsedDays) || parsedDays <= 0) {
-        return res.status(400).json({ error: 'Valid number of days is required' });
-      }
-      days = parsedDays;
-      nextExtensionTotal = Number(intern.extensionDays || 0) + parsedDays;
-    } else {
-      return res.status(400).json({ error: 'Valid number of days is required' });
-    }
-
-    if (!Number.isFinite(days)) {
-      return res.status(400).json({ error: 'Valid number of days is required' });
-    }
 
     await syncInternRotationStates(intern._id);
 
-    const rotation = await Rotation.findOne({
+    let rotation = await Rotation.findOne({
       intern: intern._id,
       status: 'active',
-    }).exec();
-
-    if (!rotation) {
-      return res.status(400).json({ error: 'No active rotation found for this intern' });
-    }
-
-    const upcomingRotations = await Rotation.find({
-      intern: intern._id,
-      status: 'upcoming',
     })
-      .sort({ startDate: 1 })
-      .populate('unit', 'duration durationDays order position')
       .exec();
+
+    const allRotations = await Rotation.find({ intern: intern._id })
+      .sort({ startDate: 1, createdAt: 1 })
+      .exec();
+
+    const lastRotation = allRotations[allRotations.length - 1] || null;
+
+    // Edge case: completed intern with no active rotation can extend the final unit only.
+    const completedAllRotations = allRotations.length > 0 && allRotations.every((row) => row.status === 'completed');
+    if (!rotation) {
+      if (completedAllRotations && lastRotation) {
+        rotation = lastRotation;
+      } else {
+        return res.status(400).json({ error: 'No active rotation found for this intern' });
+      }
+    }
 
     const nextDuration = Number(rotation.duration || DEFAULT_ROTATION_DURATION_DAYS) + days;
     if (!Number.isFinite(nextDuration) || nextDuration <= 0) {
@@ -662,18 +657,20 @@ router.post('/:id/extend', async (req, res) => {
     rotation.endDate = addDays(currentEndDate, days);
     await rotation.save();
 
-    const [reservedSequenceKeys, activeUnitLoadMap] = await Promise.all([
-      getReservedForwardSequenceKeys(intern._id),
-      getActiveUnitLoadMap(),
-    ]);
-    await rebuildInternFutureRotations({
-      internId: intern._id,
-      reservedSequenceKeys,
-      activeUnitLoadMap,
-      now: new Date(),
-    });
+    if (rotation.status === 'active') {
+      const [reservedSequenceKeys, activeUnitLoadMap] = await Promise.all([
+        getReservedForwardSequenceKeys(intern._id),
+        getActiveUnitLoadMap(),
+      ]);
+      await rebuildInternFutureRotations({
+        internId: intern._id,
+        reservedSequenceKeys,
+        activeUnitLoadMap,
+        now: new Date(),
+      });
+    }
 
-    intern.extensionDays = nextExtensionTotal;
+    intern.extensionDays = Number(intern.extensionDays || 0) + days;
     intern.totalExtensionDays = (intern.totalExtensionDays || 0) + Math.max(days, 0);
     intern.status = Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active';
     await intern.save();
@@ -684,7 +681,7 @@ router.post('/:id/extend', async (req, res) => {
 
     console.log(`Successfully extended ${intern.name}'s rotation by ${days} days`);
     await logActivityEventSafe({
-      type: days > 0 ? ACTIVITY_TYPES.INTERN_EXTENSION_ADDED : ACTIVITY_TYPES.INTERN_EXTENSION_REMOVED,
+      type: ACTIVITY_TYPES.INTERN_EXTENSION_ADDED,
       metadata: {
         internId: intern._id.toString(),
         internName: intern.name,
@@ -700,8 +697,8 @@ router.post('/:id/extend', async (req, res) => {
     const internView = await buildInternView(intern._id);
     res.json({ success: true, intern: internView });
   } catch (err) {
-    console.error('Error extending intern rotation:', err);
-    res.status(500).json({ success: false, error: 'Failed to extend intern rotation' });
+    console.error('EXTENSION ERROR:', err);
+    res.status(500).json({ success: false, error: 'Failed to extend intern' });
   }
 });
 

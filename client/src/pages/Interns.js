@@ -309,7 +309,7 @@ export default function Interns() {
                       >
                         <Edit className="h-4 w-4" />
                       </Button>
-                      {intern.status === 'Active' && (
+                      {String(intern.derivedStatus || intern.status || '').toLowerCase() !== 'inactive' && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -374,6 +374,9 @@ export default function Interns() {
             invalidateInternLists();
             queryClient.invalidateQueries({ queryKey: ['units'] });
             queryClient.invalidateQueries({ queryKey: ['intern', extendingIntern.id] });
+            queryClient.invalidateQueries({ queryKey: ['intern-schedule', extendingIntern.id] });
+            queryClient.invalidateQueries({ queryKey: ['rotations', 'current'] });
+            queryClient.invalidateQueries({ queryKey: ['recentActivities'] });
             handleExtensionClose();
             setTimeout(() => {
               queryClient.refetchQueries({
