@@ -1,11 +1,9 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
 import { 
   Users, 
   Building2, 
-  AlertTriangle,
-  UserCheck
+  AlertTriangle
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { api } from '../services/api';
@@ -49,8 +47,6 @@ export default function Dashboard() {
 
   const criticalUnits = units?.filter(unit => unit?.status === 'critical') || [];
   const warningUnits = units?.filter(unit => unit?.status === 'warning') || [];
-  const batchAInterns = interns?.filter(intern => intern?.batch === 'A') || [];
-  const batchBInterns = interns?.filter(intern => intern?.batch === 'B') || [];
 
   const stats = [
     {
@@ -69,17 +65,6 @@ export default function Dashboard() {
       color: 'text-green-600',
       bgColor: 'bg-green-100',
     },
-  ];
-
-  const quickActions = [
-    {
-      title: 'Add New Intern',
-      description: 'Register a new physiotherapy intern',
-      href: '/interns',
-      icon: UserCheck,
-      color: 'hospital',
-    },
-    // Manual assignment removed - feature is deprecated
   ];
 
   return (
@@ -165,68 +150,6 @@ export default function Dashboard() {
                 ))}
               </div>
             )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Quick Actions and Batch Distribution */}
-      <div className="grid grid-cols-1 gap-4 sm:gap-6 xl:grid-cols-2">
-      <Card>
-        <CardHeader>
-          <CardTitle>Quick Actions</CardTitle>
-          <CardDescription>
-            Common tasks and shortcuts for managing the internship program
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {quickActions.map((action) => (
-              <Link key={action.title} to={action.href}>
-                <div className="group relative overflow-hidden rounded-lg border border-gray-200 bg-white p-4 hover:shadow-md transition-shadow">
-                  <div className="flex items-center space-x-3">
-                    <div className={`rounded-lg p-2 ${action.color === 'hospital' ? 'hospital-gradient' : action.color === 'batchA' ? 'bg-batch-a' : action.color === 'batchB' ? 'bg-batch-b' : 'bg-gray-100'}`}>
-                      <action.icon className="h-5 w-5 text-white" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-sm font-medium text-gray-900 group-hover:text-blue-600">
-                        {action.title}
-                      </h3>
-                      <p className="text-xs text-gray-500">{action.description}</p>
-                    </div>
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <Users className="h-5 w-5" />
-              <span>Batch Distribution</span>
-            </CardTitle>
-            <CardDescription>
-              Current distribution of active interns by batch
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <div className="w-3 h-3 rounded-full bg-batch-a"></div>
-                  <span className="text-sm font-medium">Batch A</span>
-                </div>
-                <span className="text-lg font-bold">{batchAInterns.length}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <div className="w-3 h-3 rounded-full bg-batch-b"></div>
-                  <span className="text-sm font-medium">Batch B</span>
-                </div>
-                <span className="text-lg font-bold">{batchBInterns.length}</span>
-              </div>
-            </div>
           </CardContent>
         </Card>
       </div>

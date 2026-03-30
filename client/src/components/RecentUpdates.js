@@ -8,16 +8,25 @@ import {
   Building2, 
   ArrowRight,
   AlertCircle,
-  Trash2
+  RefreshCcw,
+  Trash2,
+  TimerReset,
+  PencilRuler
 } from 'lucide-react';
 import { api } from '../services/api';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDateTime, getRelativeTimeLabel } from '../lib/utils';
 
 const activityIcons = {
   unit_created: Building2,
   unit_deleted: Trash2,
   intern_created: UserPlus,
-  intern_moved: ArrowRight,
+  intern_deleted: Trash2,
+  intern_reassigned: RefreshCcw,
+  rotation_moved: ArrowRight,
+  intern_extension_added: TimerReset,
+  intern_extension_removed: TimerReset,
+  unit_updated: PencilRuler,
+  workload_updated: Building2,
   default: Clock,
 };
 
@@ -25,17 +34,32 @@ const activityColors = {
   unit_created: 'text-blue-600 bg-blue-50',
   unit_deleted: 'text-red-600 bg-red-50',
   intern_created: 'text-green-600 bg-green-50',
-  intern_moved: 'text-purple-600 bg-purple-50',
+  intern_deleted: 'text-red-600 bg-red-50',
+  intern_reassigned: 'text-purple-600 bg-purple-50',
+  rotation_moved: 'text-indigo-600 bg-indigo-50',
+  intern_extension_added: 'text-amber-700 bg-amber-50',
+  intern_extension_removed: 'text-orange-700 bg-orange-50',
+  unit_updated: 'text-sky-700 bg-sky-50',
+  workload_updated: 'text-emerald-700 bg-emerald-50',
   default: 'text-gray-600 bg-gray-50',
 };
 
 export default function RecentUpdates() {
   const queryClient = useQueryClient();
+  const [currentTime, setCurrentTime] = React.useState(() => Date.now());
   const { data, isLoading, error } = useQuery({
     queryKey: ['recentActivities'],
     queryFn: () => api.getRecentActivities(10),
     refetchInterval: 30000, // Refetch every 30 seconds
   });
+
+  React.useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 30000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   const activities = React.useMemo(() => {
     const source = Array.isArray(data)
@@ -44,18 +68,23 @@ export default function RecentUpdates() {
 
     return source
       .map((activity) => {
-        const action = activity?.action || activity?.type || 'activity';
-        const description = activity?.description || activity?.message || activity?.messageText || String(action).replace(/_/g, ' ');
+        const type = activity?.type || activity?.action || 'activity';
+        const description = activity?.message || activity?.description || activity?.messageText || String(type).replace(/_/g, ' ');
         const createdAt = activity?.created_at || activity?.createdAt || null;
 
         return {
-          id: activity?.id || activity?._id || `${String(action)}-${String(createdAt || '')}`,
-          action,
+          id: activity?.id || activity?._id || `${String(type)}-${String(createdAt || '')}`,
+          type,
           description,
-          created_at: createdAt,
+          createdAt,
         };
       })
-      .filter((activity) => Boolean(activity.id) && Boolean(activity.description));
+      .filter((activity) => Boolean(activity.id) && Boolean(activity.description))
+      .sort((left, right) => {
+        const leftTime = left.createdAt ? new Date(left.createdAt).getTime() : 0;
+        const rightTime = right.createdAt ? new Date(right.createdAt).getTime() : 0;
+        return rightTime - leftTime;
+      });
   }, [data]);
 
   if (isLoading) {
@@ -132,11 +161,14 @@ export default function RecentUpdates() {
         ) : (
           <div className="space-y-3 max-h-96 overflow-y-auto">
             {activities.map((activity) => {
-              const Icon = activityIcons[activity.action] || activityIcons.default;
-              const colorClass = activityColors[activity.action] || activityColors.default;
-              const timeAgo = activity.created_at 
-                ? formatDistanceToNow(new Date(activity.created_at), { addSuffix: true })
+              const Icon = activityIcons[activity.type] || activityIcons.default;
+              const colorClass = activityColors[activity.type] || activityColors.default;
+              const timeAgo = activity.createdAt
+                ? getRelativeTimeLabel(activity.createdAt, currentTime)
                 : 'Recently';
+              const fullDate = activity.createdAt
+                ? formatDateTime(activity.createdAt)
+                : '';
 
               return (
                 <div
@@ -148,7 +180,11 @@ export default function RecentUpdates() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-900 break-words">{activity.description}</p>
-                    <p className="text-xs text-gray-500 mt-1">{timeAgo}</p>
+                    <div className="mt-1 flex items-center gap-2 text-xs text-gray-500">
+                      <span>{timeAgo}</span>
+                      {fullDate ? <span className="text-gray-300">•</span> : null}
+                      {fullDate ? <span>{fullDate}</span> : null}
+                    </div>
                   </div>
                 </div>
               );

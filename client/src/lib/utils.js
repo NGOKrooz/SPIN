@@ -48,6 +48,56 @@ export function formatDateTime(date) {
   });
 }
 
+export function getRelativeTimeLabel(date, currentTime = Date.now()) {
+  if (!date) return 'Recently';
+
+  const parsedDate = parseDateInput(date);
+  if (!parsedDate || Number.isNaN(parsedDate.getTime())) {
+    return 'Recently';
+  }
+
+  const now = currentTime instanceof Date ? currentTime : new Date(currentTime);
+  const diffMs = now.getTime() - parsedDate.getTime();
+  const safeDiffMs = Math.max(0, diffMs);
+  const minuteMs = 60 * 1000;
+  const hourMs = 60 * minuteMs;
+  const dayMs = 24 * hourMs;
+
+  if (safeDiffMs < 45 * 1000) return 'Just now';
+  if (safeDiffMs < 90 * 1000) return '1 minute ago';
+  if (safeDiffMs < hourMs) {
+    const minutes = Math.floor(safeDiffMs / minuteMs);
+    return `${minutes} minutes ago`;
+  }
+  if (safeDiffMs < 2 * hourMs) return '1 hour ago';
+
+  const startOfNow = normalizeDate(now);
+  const startOfTarget = normalizeDate(parsedDate);
+  const calendarDayDiff = Math.floor((startOfNow.getTime() - startOfTarget.getTime()) / dayMs);
+
+  if (calendarDayDiff === 0) {
+    const hours = Math.floor(safeDiffMs / hourMs);
+    return `${hours} hours ago`;
+  }
+  if (calendarDayDiff === 1) return 'Yesterday';
+  if (calendarDayDiff < 7) {
+    return `${calendarDayDiff} days ago`;
+  }
+
+  const weeks = Math.floor(calendarDayDiff / 7);
+  if (weeks < 5) {
+    return `${weeks} ${weeks === 1 ? 'week' : 'weeks'} ago`;
+  }
+
+  const months = Math.floor(calendarDayDiff / 30);
+  if (months < 12) {
+    return `${months} ${months === 1 ? 'month' : 'months'} ago`;
+  }
+
+  const years = Math.floor(calendarDayDiff / 365);
+  return `${years} ${years === 1 ? 'year' : 'years'} ago`;
+}
+
 export function getBatchColor(batch) {
   return batch === 'A' ? 'bg-batch-a' : 'bg-batch-b';
 }

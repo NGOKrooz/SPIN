@@ -2,41 +2,109 @@ const express = require('express');
 
 const Activity = require('../models/Activity');
 const ActivityLog = require('../models/ActivityLog');
+const Intern = require('../models/Intern');
+const Rotation = require('../models/Rotation');
+const Unit = require('../models/Unit');
+const {
+  ACTIVITY_TYPES,
+  getRecentActivities,
+  logActivityEventSafe,
+} = require('../services/recentUpdatesService');
 
 const router = express.Router();
 
-function toDescription(activity) {
-  if (activity?.details?.message) return activity.details.message;
-  if (activity?.details?.intern || activity?.details?.unit || activity?.details?.newUnit) {
-    const internText = activity?.details?.intern ? `intern: ${activity.details.intern}` : null;
-    const unitText = activity?.details?.unit ? `unit: ${activity.details.unit}` : null;
-    const newUnitText = activity?.details?.newUnit ? `newUnit: ${activity.details.newUnit}` : null;
-    const daysText = Number.isFinite(Number(activity?.details?.days)) ? `days: ${activity.details.days}` : null;
-    const parts = [internText, unitText, newUnitText, daysText].filter(Boolean);
-    if (parts.length > 0) return parts.join(', ');
-  }
-  if (activity?.message) return activity.message;
-  if (activity?.description) return activity.description;
-  if (activity?.messageText) return activity.messageText;
+const DEFAULT_ROTATION_DURATION_DAYS = 20;
 
-  const action = activity?.action || activity?.type || 'activity';
-  const cleanedAction = String(action).replace(/_/g, ' ').trim();
-  return cleanedAction.length > 0
-    ? cleanedAction.charAt(0).toUpperCase() + cleanedAction.slice(1)
-    : 'Activity update';
+function recalculateEndDate(startDate, duration) {
+  const start = new Date(startDate);
+  const safeDuration = Number(duration);
+  const finalDuration = Number.isFinite(safeDuration) && safeDuration > 0
+    ? safeDuration
+    : DEFAULT_ROTATION_DURATION_DAYS;
+
+  const end = new Date(start);
+  end.setDate(end.getDate() + finalDuration);
+  return end;
 }
 
-function normalizeActivity(item) {
-  return {
-    id: item?._id?.toString?.() || item?.id || null,
-    action: item?.action || item?.type || 'activity',
-    details: item?.details || null,
-    description: toDescription(item),
-    created_at: item?.timestamp || item?.createdAt || item?.created_at || null,
-    createdAt: item?.timestamp || item?.createdAt || item?.created_at || null,
-    intern: item?.intern || item?.internId || null,
-    unit: item?.unit || item?.unitId || null,
-  };
+async function syncRotationMovementsForFeed() {
+  const now = new Date();
+  const interns = await Intern.find({})
+    .select('name currentUnit status extensionDays')
+    .populate('currentUnit', 'name')
+    .exec();
+
+  for (const intern of interns) {
+    const rotations = await Rotation.find({ intern: intern._id }).sort({ startDate: 1 }).exec();
+    if (rotations.length === 0) {
+      continue;
+    }
+
+    let hasActiveRotation = false;
+    for (const rotation of rotations) {
+      const duration = Number(rotation.duration);
+      const safeDuration = Number.isFinite(duration) && duration > 0
+        ? duration
+        : DEFAULT_ROTATION_DURATION_DAYS;
+
+      if (rotation.duration !== safeDuration) {
+        rotation.duration = safeDuration;
+      }
+
+      if (!rotation.endDate || Number.isNaN(new Date(rotation.endDate).getTime())) {
+        rotation.endDate = recalculateEndDate(rotation.startDate, safeDuration);
+      }
+
+      const startDate = new Date(rotation.startDate);
+      const endDate = new Date(rotation.endDate);
+
+      let nextStatus = rotation.status;
+      if (rotation.status !== 'completed' && now > endDate) {
+        nextStatus = 'completed';
+      } else if (rotation.status !== 'completed' && !hasActiveRotation && startDate <= now && now <= endDate) {
+        nextStatus = 'active';
+        hasActiveRotation = true;
+      } else if (rotation.status !== 'completed') {
+        nextStatus = 'upcoming';
+      }
+
+      if (rotation.status !== nextStatus) {
+        rotation.status = nextStatus;
+      }
+
+      await rotation.save();
+    }
+
+    const currentRotation = rotations.find((rotation) => rotation.status === 'active') || null;
+    const completedRotations = rotations.filter((rotation) => rotation.status === 'completed');
+    const previousUnitId = intern.currentUnit?._id?.toString?.() || intern.currentUnit?.toString?.() || null;
+    const nextUnitId = currentRotation?.unit?.toString?.() || null;
+    const nextStatus = rotations.length > 0 && completedRotations.length === rotations.length
+      ? 'completed'
+      : (Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active');
+
+    if (previousUnitId && nextUnitId && previousUnitId !== nextUnitId) {
+      const nextUnit = await Unit.findById(nextUnitId).select('name').exec();
+
+      await logActivityEventSafe({
+        type: ACTIVITY_TYPES.ROTATION_MOVED,
+        metadata: {
+          internId: intern._id.toString(),
+          internName: intern.name,
+          previousUnitId,
+          previousUnitName: intern.currentUnit?.name || 'Unknown unit',
+          nextUnitId,
+          nextUnitName: nextUnit?.name || 'Unknown unit',
+        },
+      });
+    }
+
+    if (intern.status !== nextStatus || String(previousUnitId || '') !== String(nextUnitId || '')) {
+      intern.status = nextStatus;
+      intern.currentUnit = currentRotation?.unit || null;
+      await intern.save();
+    }
+  }
 }
 
 // GET /api/activity/recent - Get recent activities
@@ -47,34 +115,10 @@ router.get('/recent', async (req, res) => {
       ? Math.min(limitRaw, 1000)
       : 10;
 
-    const [activityLogs, legacyActivities] = await Promise.all([
-      ActivityLog.find({})
-        .populate('intern')
-        .sort({ timestamp: -1, createdAt: -1 })
-        .limit(limit)
-        .exec(),
-      Activity.find({})
-        .populate('internId')
-        .populate('unitId')
-        .sort({ createdAt: -1 })
-        .limit(limit)
-        .exec(),
-    ]);
+    await syncRotationMovementsForFeed();
 
-    const merged = [...(activityLogs || []), ...(legacyActivities || [])]
-      .sort((a, b) => {
-        const aRawDate = a?.timestamp || a?.createdAt || a?.created_at;
-        const bRawDate = b?.timestamp || b?.createdAt || b?.created_at;
-        const aDate = aRawDate ? new Date(aRawDate).getTime() : 0;
-        const bDate = bRawDate ? new Date(bRawDate).getTime() : 0;
-        return bDate - aDate;
-      })
-      .slice(0, limit)
-      .map(normalizeActivity);
-
-    console.log('ACTIVITIES:', merged);
-
-    res.json(merged);
+    const activities = await getRecentActivities(limit);
+    res.json(activities);
   } catch (err) {
     console.error('Error fetching recent activities:', err);
     res.status(500).json({ error: 'Failed to fetch activities' });

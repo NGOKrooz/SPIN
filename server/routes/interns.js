@@ -6,7 +6,7 @@ const Intern = require('../models/Intern');
 const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
 const { ensureInternStatusIsCorrect } = require('../services/internService');
-const { logRecentUpdateSafe, logActivitySafe } = require('../services/recentUpdatesService');
+const { ACTIVITY_TYPES, logActivityEventSafe } = require('../services/recentUpdatesService');
 const { createExtensionReason } = require('../services/extensionService');
 const { createWorkloadHistory } = require('../services/workloadService');
 const { buildInternView, buildInternViews } = require('../services/internViewService');
@@ -454,12 +454,6 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
         id: rotation._id.toString(),
         status: rotation.status,
       })));
-
-      await logActivitySafe('ASSIGN_UNIT', {
-        intern: intern.name,
-        unit: firstUnit.name,
-        message: `Assigned ${intern.name} to ${firstUnit.name}`,
-      }, intern._id);
     }
 
     console.log('CREATED INTERN:', intern);
@@ -470,11 +464,13 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
       .exec();
     console.log('VERIFIED INTERN:', check);
 
-    await logActivitySafe('CREATE_INTERN', {
-      intern: intern.name,
-      message: `Created intern ${intern.name}`,
-    }, intern._id);
-    await logRecentUpdateSafe('Intern Created', `Created intern ${intern.name}`, intern._id);
+    await logActivityEventSafe({
+      type: ACTIVITY_TYPES.INTERN_CREATED,
+      metadata: {
+        internId: intern._id.toString(),
+        internName: intern.name,
+      },
+    });
     await updateBatchStats().catch(() => {});
 
     return res.status(201).json(mapInternWithUnits(check, units));
@@ -521,9 +517,16 @@ router.delete('/:id', async (req, res) => {
     const intern = await Intern.findById(req.params.id).exec();
     if (!intern) return res.status(404).json({ error: 'Intern not found' });
 
+    await logActivityEventSafe({
+      type: ACTIVITY_TYPES.INTERN_DELETED,
+      metadata: {
+        internId: intern._id.toString(),
+        internName: intern.name,
+      },
+    });
+
     await Rotation.deleteMany({ intern: intern._id }).exec();
     await intern.deleteOne();
-    await logRecentUpdateSafe('intern_deleted', `Deleted intern: ${intern.name}`);
 
     await updateBatchStats().catch(() => {});
 
@@ -558,11 +561,16 @@ router.post('/:id/reassign', async (req, res) => {
     const current = await Rotation.findOne({
       intern: intern._id,
       status: 'active',
-    }).exec();
+    })
+      .populate('unit', 'name')
+      .exec();
 
     if (!current) {
       return res.status(400).json({ error: 'No active rotation found for this intern' });
     }
+
+    const previousUnitId = current.unit?._id?.toString?.() || current.unit?.toString?.() || intern.currentUnit?.toString?.() || null;
+    const previousUnitName = current.unit?.name || 'Unknown unit';
 
     current.unit = unit._id;
     current.startDate = new Date();
@@ -589,12 +597,17 @@ router.post('/:id/reassign', async (req, res) => {
       console.warn('Failed to write workload history during reassignment:', workloadError.message);
     }
 
-    await logRecentUpdateSafe('Unit Reassigned', null, intern._id);
-    await logActivitySafe('REASSIGN', {
-      intern: intern.name,
-      newUnit: unit.name,
-      message: `Reassigned ${intern.name} to ${unit.name}`,
-    }, intern._id);
+    await logActivityEventSafe({
+      type: ACTIVITY_TYPES.INTERN_REASSIGNED,
+      metadata: {
+        internId: intern._id.toString(),
+        internName: intern.name,
+        previousUnitId,
+        previousUnitName,
+        nextUnitId: unit._id.toString(),
+        nextUnitName: unit.name,
+      },
+    });
 
     await updateBatchStats().catch(() => {});
 
@@ -650,12 +663,15 @@ router.post('/:id/extend', async (req, res) => {
     console.log('Created extension reason:', extensionLog);
 
     console.log(`Successfully extended ${intern.name}'s rotation by ${days} days`);
-    await logRecentUpdateSafe(days > 0 ? 'Extension Added' : 'Extension Removed', reasonText, intern._id);
-    await logActivitySafe('EXTENSION', {
-      intern: intern.name,
-      days,
-      message: `Extension update for ${intern.name}: ${days} days`,
-    }, intern._id);
+    await logActivityEventSafe({
+      type: days > 0 ? ACTIVITY_TYPES.INTERN_EXTENSION_ADDED : ACTIVITY_TYPES.INTERN_EXTENSION_REMOVED,
+      metadata: {
+        internId: intern._id.toString(),
+        internName: intern.name,
+        days,
+        reason: reasonText,
+      },
+    });
 
     await ensureInternStatusIsCorrect(intern._id);
 

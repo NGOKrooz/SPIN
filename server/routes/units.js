@@ -4,7 +4,7 @@ const { body, validationResult } = require('express-validator');
 const Unit = require('../models/Unit');
 const Rotation = require('../models/Rotation');
 const { createUnit, updateUnit, deleteUnit, calculateWorkload, isCritical } = require('../services/unitService');
-const { logRecentUpdateSafe } = require('../services/recentUpdatesService');
+const { ACTIVITY_TYPES, logActivityEventSafe, logRecentUpdateSafe } = require('../services/recentUpdatesService');
 const { buildInternViews } = require('../services/internViewService');
 const { updateBatchStats } = require('./dashboard');
 
@@ -27,6 +27,20 @@ const validateUnitPayload = [
   body('workload').optional().isIn(['Low', 'Medium', 'High']).withMessage('Workload must be Low, Medium, or High'),
   body('patientCount').optional().isInt({ min: 0 }).withMessage('Patient count must be a non-negative integer'),
 ];
+
+function areValuesEqual(left, right) {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
+function getComparableUnitValue(unit, field) {
+  if (!unit) return null;
+
+  if (field === 'durationDays') {
+    return unit.durationDays ?? unit.duration ?? null;
+  }
+
+  return unit[field] ?? null;
+}
 
 // GET /api/units - Get all units
 router.get('/', async (req, res) => {
@@ -124,7 +138,13 @@ router.post('/', normalizeUnitPayload, validateUnitPayload, async (req, res) => 
 
   try {
     const unit = await createUnit(req.body);
-    await logRecentUpdateSafe('unit_created', `Created unit: ${unit.name}`);
+    await logActivityEventSafe({
+      type: ACTIVITY_TYPES.UNIT_CREATED,
+      metadata: {
+        unitId: unit._id.toString(),
+        unitName: unit.name,
+      },
+    });
     await updateBatchStats().catch(() => {});
     res.status(201).json({ success: true, unit });
   } catch (err) {
@@ -147,10 +167,46 @@ router.put('/:id', normalizeUnitPayload, validateUnitPayload, async (req, res) =
   }
 
   try {
+    const previousUnit = await Unit.findById(req.params.id).exec();
+    if (!previousUnit) return res.status(404).json({ error: 'Unit not found' });
+
     const unit = await updateUnit(req.params.id, req.body);
     if (!unit) return res.status(404).json({ error: 'Unit not found' });
 
-    await logRecentUpdateSafe('unit_updated', `Updated unit: ${unit.name}`);
+    const trackedFields = ['name', 'durationDays', 'capacity', 'patientCount', 'description', 'order'];
+    for (const field of trackedFields) {
+      const oldValue = getComparableUnitValue(previousUnit, field);
+      const newValue = getComparableUnitValue(unit, field);
+
+      if (!areValuesEqual(oldValue, newValue)) {
+        await logActivityEventSafe({
+          type: ACTIVITY_TYPES.UNIT_UPDATED,
+          metadata: {
+            unitId: unit._id.toString(),
+            unitName: unit.name,
+            field,
+            oldValue,
+            newValue,
+          },
+        });
+      }
+    }
+
+    const previousWorkload = previousUnit.workload || calculateWorkload(previousUnit);
+    const nextWorkload = unit.workload || calculateWorkload(unit);
+    if (previousWorkload !== nextWorkload) {
+      await logActivityEventSafe({
+        type: ACTIVITY_TYPES.WORKLOAD_UPDATED,
+        metadata: {
+          unitId: unit._id.toString(),
+          unitName: unit.name,
+          field: 'workload',
+          oldValue: previousWorkload,
+          newValue: nextWorkload,
+        },
+      });
+    }
+
     await updateBatchStats().catch(() => {});
     res.json({ success: true, unit });
   } catch (err) {
@@ -166,7 +222,13 @@ router.delete('/:id', async (req, res) => {
     if (!unit) return res.status(404).json({ error: 'Unit not found' });
 
     await Rotation.deleteMany({ unit: unit._id }).exec();
-    await logRecentUpdateSafe('unit_deleted', `Deleted unit: ${unit.name}`);
+    await logActivityEventSafe({
+      type: ACTIVITY_TYPES.UNIT_DELETED,
+      metadata: {
+        unitId: unit._id.toString(),
+        unitName: unit.name,
+      },
+    });
     await updateBatchStats().catch(() => {});
     res.json({ success: true });
   } catch (err) {

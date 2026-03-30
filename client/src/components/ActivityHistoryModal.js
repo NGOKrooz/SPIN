@@ -1,69 +1,58 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { X, Clock, UserPlus, Calendar, ArrowRight, CheckCircle } from 'lucide-react';
+import { X, Clock, UserPlus, Calendar, ArrowRight, CheckCircle, Building2, Trash2, RefreshCcw, PencilRuler, TimerReset } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { api } from '../services/api';
-import { formatDistanceToNow, format } from 'date-fns';
+import { formatDateTime, getRelativeTimeLabel } from '../lib/utils';
 
 const activityIcons = {
-  extension: Calendar,
-  reassignment: ArrowRight,
-  unit_change: ArrowRight,
-  status_change: CheckCircle,
-  new_intern: UserPlus,
-  auto_advance: Clock,
-  rotation_update: Calendar,
+  intern_created: UserPlus,
+  intern_deleted: Trash2,
+  intern_extension_added: TimerReset,
+  intern_extension_removed: TimerReset,
+  intern_reassigned: RefreshCcw,
+  rotation_moved: ArrowRight,
+  unit_created: Building2,
+  unit_updated: PencilRuler,
+  workload_updated: Building2,
+  unit_deleted: Trash2,
+  default: Clock,
 };
 
 const activityColors = {
-  extension: 'text-blue-600 bg-blue-50',
-  reassignment: 'text-purple-600 bg-purple-50',
-  unit_change: 'text-indigo-600 bg-indigo-50',
-  status_change: 'text-green-600 bg-green-50',
-  new_intern: 'text-emerald-600 bg-emerald-50',
-  auto_advance: 'text-orange-600 bg-orange-50',
-  rotation_update: 'text-cyan-600 bg-cyan-50',
-};
-
-const formatActivityMessage = (activity) => {
-  const { activity_type, intern_name, unit_name, details } = activity;
-  
-  switch (activity_type) {
-    case 'extension':
-      // Use details if available (includes intern name and unit), otherwise construct message
-      if (details) {
-        return details;
-      }
-      return `${intern_name || 'An intern'}'s rotation${unit_name ? ` in ${unit_name}` : ''} was extended`;
-    case 'reassignment':
-      return `${intern_name || 'An intern'} was reassigned${unit_name ? ` to ${unit_name}` : ''}`;
-    case 'unit_change':
-      return `${intern_name || 'An intern'} moved${unit_name ? ` to ${unit_name}` : ' to a new unit'}`;
-    case 'status_change':
-      return `${intern_name || 'An intern'}'s status was updated`;
-    case 'new_intern':
-      // Always show intern name prominently
-      if (intern_name) {
-        return `${intern_name} was added${details ? ` - ${details}` : ''}`;
-      }
-      return details || 'A new intern was added';
-    case 'auto_advance':
-      return details || `${intern_name || 'An intern'} was auto-advanced to next unit`;
-    case 'rotation_update':
-      return details || `${intern_name || 'An intern'}'s rotation was updated`;
-    default:
-      return details || 'Activity occurred';
-  }
+  intern_created: 'text-emerald-600 bg-emerald-50',
+  intern_deleted: 'text-red-600 bg-red-50',
+  intern_extension_added: 'text-blue-600 bg-blue-50',
+  intern_extension_removed: 'text-orange-600 bg-orange-50',
+  intern_reassigned: 'text-purple-600 bg-purple-50',
+  rotation_moved: 'text-indigo-600 bg-indigo-50',
+  unit_created: 'text-sky-600 bg-sky-50',
+  unit_updated: 'text-cyan-600 bg-cyan-50',
+  workload_updated: 'text-green-600 bg-green-50',
+  unit_deleted: 'text-red-600 bg-red-50',
+  default: 'text-gray-600 bg-gray-50',
 };
 
 export default function ActivityHistoryModal({ onClose }) {
+  const [currentTime, setCurrentTime] = React.useState(() => Date.now());
   const { data, isLoading, error } = useQuery({
     queryKey: ['allActivities'],
     queryFn: () => api.getRecentActivities(1000), // Fetch a large number to get all activities
+    refetchInterval: 30000,
   });
 
-  const activities = data?.activities || [];
+  React.useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 30000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  const activities = Array.isArray(data)
+    ? data
+    : (Array.isArray(data?.data) ? data.data : []);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -98,14 +87,16 @@ export default function ActivityHistoryModal({ onClose }) {
           ) : (
             <div className="space-y-3">
               {activities.map((activity) => {
-                const Icon = activityIcons[activity.activity_type] || Clock;
-                const colorClass = activityColors[activity.activity_type] || 'text-gray-600 bg-gray-50';
-                const message = formatActivityMessage(activity);
-                const timeAgo = activity.created_at 
-                  ? formatDistanceToNow(new Date(activity.created_at), { addSuffix: true })
+                const activityType = activity.type || activity.action || 'activity';
+                const Icon = activityIcons[activityType] || activityIcons.default;
+                const colorClass = activityColors[activityType] || activityColors.default;
+                const message = activity.message || activity.description || 'Activity occurred';
+                const createdAt = activity.created_at || activity.createdAt || null;
+                const timeAgo = createdAt
+                  ? getRelativeTimeLabel(createdAt, currentTime)
                   : 'Recently';
-                const fullDate = activity.created_at
-                  ? format(new Date(activity.created_at), 'MMM d, yyyy h:mm a')
+                const fullDate = createdAt
+                  ? formatDateTime(createdAt)
                   : '';
 
                 return (
