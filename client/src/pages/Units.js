@@ -24,6 +24,20 @@ export default function Units() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  const invalidateUnitDependentQueries = React.useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['units'] });
+    queryClient.invalidateQueries({ queryKey: ['rotations'] });
+    queryClient.invalidateQueries({ queryKey: ['recentActivities'] });
+    queryClient.invalidateQueries({
+      predicate: (query) => Array.isArray(query.queryKey)
+        && (
+          query.queryKey[0] === 'interns'
+          || query.queryKey[0] === 'intern'
+          || query.queryKey[0] === 'intern-schedule'
+        ),
+    });
+  }, [queryClient]);
+
   const { data: units, isLoading } = useQuery({
     queryKey: ['units'],
     queryFn: api.getUnits,
@@ -49,8 +63,7 @@ export default function Units() {
 
     try {
       await api.deleteUnit(unit.id);
-      queryClient.invalidateQueries(['units']);
-      queryClient.invalidateQueries(['recentActivities']);
+      invalidateUnitDependentQueries();
       toast({
         title: 'Unit Deleted',
         description: `${unit.name} has been deleted successfully.`,
@@ -364,7 +377,7 @@ export default function Units() {
           units={units}
           onClose={() => setShowOrderEditor(false)}
           onSaved={() => {
-            queryClient.invalidateQueries({ queryKey: ['units'] });
+            invalidateUnitDependentQueries();
           }}
         />
       )}
@@ -375,7 +388,7 @@ export default function Units() {
           unit={editingUnit}
           onClose={handleFormClose}
           onSuccess={() => {
-            queryClient.invalidateQueries({ queryKey: ['units'] });
+            invalidateUnitDependentQueries();
             handleFormClose();
           }}
         />

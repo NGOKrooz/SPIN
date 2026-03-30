@@ -15,6 +15,17 @@ const { updateBatchStats } = require('./dashboard');
 const router = express.Router();
 
 const DEFAULT_ROTATION_DURATION_DAYS = 20;
+const DAY_IN_MS = 1000 * 60 * 60 * 24;
+
+const getInternSortDirection = (sortValue) => {
+  const normalized = String(sortValue || 'newest').trim().toLowerCase();
+  return normalized === 'oldest' || normalized === 'asc' ? 1 : -1;
+};
+
+const toValidDate = (value) => {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
 
 const getUnitDuration = (unitDoc) => {
   const raw = unitDoc?.duration ?? unitDoc?.durationDays ?? unitDoc?.duration_days;
@@ -276,16 +287,40 @@ const getOrderedUnits = async () => {
 
 const mapInternWithUnits = (internDoc, units) => {
   const intern = internDoc.toObject();
-  const currentUnitId = intern.currentUnit?._id?.toString() || null;
-  const currentIndex = currentUnitId
-    ? units.findIndex((unit) => unit._id.toString() === currentUnitId)
-    : -1;
-  const upcomingUnitDoc = currentIndex >= 0 ? (units[currentIndex + 1] || null) : null;
-  const remainingUnitDocs = currentIndex === -1 ? [] : units.slice(currentIndex + 1);
+  const rotations = Array.isArray(intern.rotationHistory) ? intern.rotationHistory : [];
+  const activeRotation = rotations.find((rotation) => rotation?.status === 'active') || null;
+  const currentUnitId = (
+    intern.currentUnit?._id?.toString()
+    || activeRotation?.unit?._id?.toString?.()
+    || activeRotation?.unit?.toString?.()
+    || null
+  );
+
+  const completedUnitIds = new Set(
+    rotations
+      .filter((rotation) => rotation?.status === 'completed')
+      .map((rotation) => (
+        rotation?.unit?._id?.toString?.()
+        || rotation?.unit?.toString?.()
+        || null
+      ))
+      .filter(Boolean)
+  );
+
+  const remainingUnitDocs = units.filter((unit) => {
+    const unitId = unit._id.toString();
+    if (currentUnitId && unitId === currentUnitId) return false;
+    return !completedUnitIds.has(unitId);
+  });
+
+  const upcomingUnitDoc = remainingUnitDocs[0] || null;
   const derivedStatus = intern.status || 'active';
 
-  console.log('CURRENT UNIT:', intern.currentUnit);
-  console.log('UPCOMING UNIT:', upcomingUnitDoc);
+  const internshipStart = toValidDate(intern.startDate || intern.start_date);
+  const today = new Date();
+  const internshipDays = internshipStart
+    ? Math.max(0, Math.floor((today - internshipStart) / DAY_IN_MS))
+    : 0;
 
   return {
     ...intern,
@@ -302,6 +337,7 @@ const mapInternWithUnits = (internDoc, units) => {
       name: unit.name,
       order: unit.order ?? unit.position ?? null,
     })),
+    internshipDays,
   };
 };
 
@@ -333,6 +369,7 @@ const validateIntern = [
 // GET /api/interns - List interns
 router.get('/', async (req, res) => {
   try {
+    const sortDirection = getInternSortDirection(req.query.sort);
     const units = await getOrderedUnits();
 
     const interns = await Intern.find()
@@ -342,10 +379,18 @@ router.get('/', async (req, res) => {
         path: 'rotationHistory',
         populate: { path: 'unit' }
       })
-      .sort({ createdAt: -1 })
+      .sort({ startDate: sortDirection, createdAt: sortDirection })
       .exec();
 
-    const withUnitProgress = interns.map((internDoc) => mapInternWithUnits(internDoc, units));
+    const withUnitProgress = interns
+      .map((internDoc) => mapInternWithUnits(internDoc, units))
+      .sort((left, right) => {
+        const leftDate = toValidDate(left.startDate || left.createdAt);
+        const rightDate = toValidDate(right.startDate || right.createdAt);
+        const leftTime = leftDate ? leftDate.getTime() : 0;
+        const rightTime = rightDate ? rightDate.getTime() : 0;
+        return sortDirection === 1 ? leftTime - rightTime : rightTime - leftTime;
+      });
 
     console.log('FETCHED INTERNS:', withUnitProgress);
     return res.json(withUnitProgress);
@@ -430,10 +475,15 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
     const { name, gender, startDate, phone = '', batch } = req.body;
     console.log('POST BODY:', req.body);
 
+    const parsedStartDate = toValidDate(startDate);
+    if (!parsedStartDate) {
+      return res.status(400).json({ error: 'Invalid start date' });
+    }
+
     const intern = await Intern.create({
       name,
       gender,
-      startDate,
+      startDate: parsedStartDate,
       phone,
       batch,
       status: 'active',
@@ -490,6 +540,14 @@ router.put('/:id', normalizeInternPayload, validateIntern, async (req, res) => {
   try {
     const intern = await Intern.findById(req.params.id).exec();
     if (!intern) return res.status(404).json({ error: 'Intern not found' });
+
+    if (req.body.startDate !== undefined) {
+      const parsedStartDate = toValidDate(req.body.startDate);
+      if (!parsedStartDate) {
+        return res.status(400).json({ error: 'Invalid start date' });
+      }
+      req.body.startDate = parsedStartDate;
+    }
 
     const updates = ['name', 'gender', 'batch', 'startDate', 'phone', 'status', 'extensionDays', 'totalExtensionDays'];
     updates.forEach(field => {

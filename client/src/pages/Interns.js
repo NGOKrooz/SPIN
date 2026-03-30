@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { Plus, Edit, Trash2, Calendar, Clock, Eye, User } from 'lucide-react';
+import { Plus, Edit, Trash2, Clock, Eye, User } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -13,10 +13,19 @@ import InternForm from '../components/InternForm';
 import ExtensionModal from '../components/ExtensionModal';
 import InternDashboard from '../components/InternDashboard';
 
+const DAY_IN_MS = 1000 * 60 * 60 * 24;
+
+const parseDateValue = (value) => {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 export default function Interns() {
   const [searchTerm, setSearchTerm] = useState('');
   const [batchFilter, setBatchFilter] = useState('');
   const [sortByDate, setSortByDate] = useState(() => localStorage.getItem('internsSortByDate') || 'newest');
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
   const [showForm, setShowForm] = useState(false);
   const [editingIntern, setEditingIntern] = useState(null);
   const [viewingIntern, setViewingIntern] = useState(null);
@@ -26,33 +35,20 @@ export default function Interns() {
 
   const { data: interns, isLoading, refetch } = useQuery({
     queryKey: ['interns', { sort: sortByDate }],
-    queryFn: () => {
-      console.log('🔵 FRONTEND: Fetching interns with sort:', sortByDate);
-      return api.getInterns({
-        sort: sortByDate,
-      }).then((data) => {
-        console.log('✅ FRONTEND: Fetched interns data:', data);
-        console.log('   Type:', Array.isArray(data) ? 'Array' : typeof data);
-        console.log('   Length:', Array.isArray(data) ? data.length : 'N/A');
-        if (Array.isArray(data) && data.length > 0) {
-          console.log('   First item structure:', Object.keys(data[0]));
-          console.log('   First item:', data[0]);
-        }
-        return data;
-      })
-    },
+    queryFn: () => api.getInterns({ sort: sortByDate }),
   });
+
+  React.useEffect(() => {
+    const timer = window.setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 60000);
+
+    return () => window.clearInterval(timer);
+  }, []);
 
   React.useEffect(() => {
     localStorage.setItem('internsSortByDate', sortByDate);
   }, [sortByDate]);
-
-  // Debug: Log when interns data changes
-  React.useEffect(() => {
-    console.log('📊 EFFECT: interns data changed');
-    console.log('   interns:', interns);
-    console.log('   isLoading:', isLoading);
-  }, [interns, isLoading]);
 
   const deleteMutation = useMutation({
     mutationFn: api.deleteIntern,
@@ -80,7 +76,6 @@ export default function Interns() {
 
   // Derive status on client: trust backend status, but force Extended when extension days exist
   const mapWithDerivedStatus = (list) => (list || []).map((i) => {
-    console.log('INTERN DATA:', i);
     const extensionDays = Number(i.extensionDays ?? i.extension_days) || 0;
 
     let derived = i.status || 'Active';
@@ -95,18 +90,31 @@ export default function Interns() {
       startDate: i.startDate || i.start_date,
       extensionDays,
       derivedStatus: derived,
+      internshipDays: i.internshipDays,
     };
   });
 
+  const getInternshipDays = useCallback((intern) => {
+    if (Number.isFinite(Number(intern?.internshipDays))) {
+      return Math.max(0, Number(intern.internshipDays));
+    }
+
+    const startDate = parseDateValue(intern?.startDate || intern?.start_date);
+    if (!startDate) return 0;
+
+    const now = new Date(currentTime);
+    if (now < startDate) return 0;
+
+    return Math.max(0, Math.floor((now.getTime() - startDate.getTime()) / DAY_IN_MS));
+  }, [currentTime]);
+
   const derivedInterns = mapWithDerivedStatus(interns);
-  console.log('📊 FRONTEND: Derived interns:', derivedInterns);
   
   const filteredInterns = (derivedInterns || []).filter((intern) => {
     const nameMatches = intern.name.toLowerCase().includes(searchTerm.toLowerCase());
     const batchMatches = !batchFilter || intern.batch === batchFilter;
     return nameMatches && batchMatches;
   });
-  console.log('🔎 FRONTEND: Filtered interns (search term: "' + searchTerm + '"):', filteredInterns.length, 'results');
 
   const handleDelete = (id, name) => {
     if (window.confirm(`Are you sure you want to delete ${name}?`)) {
@@ -261,11 +269,7 @@ export default function Interns() {
             </div>
           ) : (
             <div className="space-y-4">
-              {(() => {
-                console.log('🎨 FRONTEND: Rendering', filteredInterns.length, 'interns');
-                return filteredInterns.map((intern) => {
-                  console.log('   Rendering intern:', intern.id, intern.name);
-                  return (
+              {filteredInterns.map((intern) => (
                 <div key={intern.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow overflow-hidden">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex items-center space-x-4 min-w-0">
@@ -275,10 +279,7 @@ export default function Interns() {
                       <div className="min-w-0">
                         <h3 className="text-lg font-semibold text-gray-900">{intern.name}</h3>
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
-                          <span className="flex items-center space-x-1">
-                            <Calendar className="h-4 w-4" />
-                            <span>Started: {formatDate(intern.startDate)}</span>
-                          </span>
+                          <span>Current unit: {intern.currentUnit?.name || 'Not Assigned'}</span>
                         </div>
                         <div className="mt-1">
                           <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(intern.derivedStatus || intern.status)}`}>
@@ -329,33 +330,19 @@ export default function Interns() {
                     </div>
                   </div>
                   <div className="mt-3 pt-3 border-t border-gray-100">
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <span className="text-gray-500">Batch:</span>
-                        <span className="ml-2 font-medium">{intern.batch}</span>
-                      </div>
+                    <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
                       <div>
                         <span className="text-gray-500">Start date:</span>
                         <span className="ml-2 font-medium">{formatDate(intern.startDate)}</span>
                       </div>
                       <div>
-                        <span className="text-gray-500">Current unit:</span>
-                        <span className="ml-2 font-medium">{intern.currentUnit?.name || 'Not Assigned'}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">Upcoming unit:</span>
-                        <span className="ml-2 font-medium">{intern.upcomingUnit?.name || 'None'}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">Remaining units:</span>
-                        <span className="ml-2 font-medium">{Array.isArray(intern.remainingUnits) ? intern.remainingUnits.length : 0}</span>
+                        <span className="text-gray-500">Days in internship:</span>
+                        <span className="ml-2 font-medium">{getInternshipDays(intern)}</span>
                       </div>
                     </div>
                   </div>
                 </div>
-                  );
-                });
-              })()}
+              ))}
             </div>
           )}
         </CardContent>
@@ -366,24 +353,13 @@ export default function Interns() {
         <InternForm
           intern={editingIntern}
           onClose={() => {
-            console.log('🔵 INTERNS: Form closed');
             handleFormClose();
           }}
           onSuccess={async () => {
-            console.log('🔵 INTERNS: onSuccess callback triggered');
-            // Close modal first
             handleFormClose();
-            // Then invalidate and refetch to ensure fresh data
-            console.log('📤 INTERNS: Invalidating interns query');
             queryClient.invalidateQueries({ queryKey: ['interns'] });
-            // Use setTimeout to ensure modal closes before refetch
             setTimeout(() => {
-              console.log('🔄 INTERNS: Refetching interns');
-              refetch().then((result) => {
-                console.log('✅ INTERNS: Refetch complete, data:', result.data);
-              }).catch((err) => {
-                console.error('❌ INTERNS: Refetch failed:', err);
-              });
+              refetch().catch(() => {});
             }, 100);
           }}
         />

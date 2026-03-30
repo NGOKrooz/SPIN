@@ -18,6 +18,14 @@ function format(date) {
   });
 }
 
+const DAY_IN_MS = 1000 * 60 * 60 * 24;
+
+function parseDateValue(value) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   const queryClient = useQueryClient();
   const [showExtend, setShowExtend] = React.useState(false);
@@ -25,6 +33,15 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   const [activeRotation, setActiveRotation] = React.useState(null);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [internState, setInternState] = React.useState(intern);
+  const [currentTime, setCurrentTime] = React.useState(() => Date.now());
+
+  React.useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 60000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   const { data: internDetails } = useQuery({
     queryKey: ['intern', intern.id],
@@ -133,54 +150,40 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   }, [completedRotations.length, currentRotations.length, upcomingRotations.length]);
 
   const orderedUnits = React.useMemo(() => {
-    return [...(units || [])].sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+    return [...(units || [])].sort((a, b) => {
+      const leftOrder = Number(a.order ?? a.position ?? 0);
+      const rightOrder = Number(b.order ?? b.position ?? 0);
+      return leftOrder - rightOrder;
+    });
   }, [units]);
 
+  const completedUnitIds = React.useMemo(() => {
+    return new Set(
+      (completedRotations || [])
+        .map((rotation) => String(rotation.unit_id || rotation.unitId || rotation.unit?.id || ''))
+        .filter(Boolean)
+    );
+  }, [completedRotations]);
+
   const currentUnitId = React.useMemo(() => {
-    return currentIntern?.currentUnit?.id || currentIntern?.currentUnit?._id || null;
-  }, [currentIntern]);
-
-  const currentIndex = React.useMemo(() => {
-    if (!currentUnitId) return -1;
-    return orderedUnits.findIndex((u) => String(u.id || u._id) === String(currentUnitId));
-  }, [orderedUnits, currentUnitId]);
-
-  const upcomingUnit = React.useMemo(() => {
-    if (currentIndex < 0) return null;
-    return orderedUnits[currentIndex + 1] || null;
-  }, [orderedUnits, currentIndex]);
+    const currentRotation = currentRotations[0] || null;
+    return (
+      currentRotation?.unit_id
+      || currentRotation?.unitId
+      || currentIntern?.currentUnit?.id
+      || currentIntern?.currentUnit?._id
+      || null
+    );
+  }, [currentIntern, currentRotations]);
 
   const remainingUnits = React.useMemo(() => {
-    if (currentIndex < 0) return [];
-    return orderedUnits.slice(currentIndex + 1);
-  }, [orderedUnits, currentIndex]);
-
-  const progressFromCurrentRotation = React.useMemo(() => {
-    const rotation = currentRotations[0];
-    if (!rotation?.start_date) return null;
-
-    const startDate = normalizeDate(rotation.start_date);
-    const currentDate = normalizeDate(new Date());
-    const daysSpent = Math.max(0, Math.floor((currentDate - startDate) / (1000 * 60 * 60 * 24)));
-    const totalDays = rotation.start_date && rotation.end_date
-      ? Math.max(1, calculateDaysBetween(rotation.start_date, rotation.end_date))
-      : 20;
-
-    return `${daysSpent}/${totalDays}`;
-  }, [currentRotations]);
-
-  const dashboardProgress = schedulePayload?.progress || currentIntern?.dashboard?.progress || progressFromCurrentRotation;
-  const dashboardUpcomingStart = schedulePayload?.upcomingRotations?.[0]?.start_date || currentIntern?.dashboard?.upcomingStart || null;
-  const dashboardUpcomingEnd = schedulePayload?.upcomingRotations?.[0]?.end_date || currentIntern?.dashboard?.upcomingEnd || null;
-  const timelineCurrentUnit = schedulePayload?.currentUnit || currentIntern?.dashboard?.currentUnit || currentIntern?.currentUnit?.name || 'Not started';
-  const timelineCurrentStart = schedulePayload?.currentStart || null;
-  const timelineCurrentEnd = schedulePayload?.currentEnd || null;
-
-  React.useEffect(() => {
-    console.log('[InternDashboard] CURRENT UNIT:', currentIntern?.currentUnit || null);
-    console.log('[InternDashboard] ALL UNITS:', orderedUnits.map((u) => ({ id: u.id || u._id, name: u.name, order: u.order })));
-    console.log('[InternDashboard] CURRENT INDEX:', currentIndex);
-  }, [currentIntern?.currentUnit, orderedUnits, currentIndex]);
+    return orderedUnits.filter((unit) => {
+      const unitId = String(unit.id || unit._id || '');
+      if (!unitId) return false;
+      if (currentUnitId && unitId === String(currentUnitId)) return false;
+      return !completedUnitIds.has(unitId);
+    });
+  }, [orderedUnits, currentUnitId, completedUnitIds]);
 
   const getRotationDuration = React.useCallback((rotation) => {
     // NEVER use rotation.duration_days - backend doesn't update it after extension
@@ -217,11 +220,29 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
 
   // Calculate total days in internship (from start_date to today)
   const totalDaysInInternship = React.useMemo(() => {
-    if (!currentIntern?.start_date) return 0;
-    const startDate = normalizeDate(currentIntern.start_date);
-    const currentDate = normalizeDate(new Date());
-    return Math.max(0, Math.floor((currentDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
-  }, [currentIntern?.start_date]);
+    const startDate = parseDateValue(currentIntern?.startDate || currentIntern?.start_date);
+    if (!startDate) return 0;
+
+    const now = new Date(currentTime);
+    if (now < startDate) return 0;
+
+    let effectiveEndDate = now;
+    const normalizedStatus = String(derivedStatus || '').toLowerCase();
+
+    if (normalizedStatus === 'completed') {
+      const latestCompletedEnd = (completedRotations || [])
+        .map((rotation) => parseDateValue(rotation.end_date || rotation.endDate))
+        .filter(Boolean)
+        .sort((left, right) => right.getTime() - left.getTime())[0] || null;
+
+      if (latestCompletedEnd) {
+        effectiveEndDate = latestCompletedEnd;
+      }
+    }
+
+    if (effectiveEndDate < startDate) return 0;
+    return Math.max(0, Math.floor((effectiveEndDate.getTime() - startDate.getTime()) / DAY_IN_MS));
+  }, [currentIntern?.startDate, currentIntern?.start_date, currentTime, derivedStatus, completedRotations]);
 
   const invalidateInternLists = React.useCallback(() => {
     queryClient.invalidateQueries({
@@ -455,48 +476,6 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                 </CardContent>
               </Card>
             </div>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <MapPin className="h-5 w-5" />
-                  <span>Assignment Summary</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
-                  <div>
-                    <p className="text-gray-500">Current Unit</p>
-                    <p className="font-medium">{timelineCurrentUnit}</p>
-                    <p className="text-xs text-gray-500">
-                      {timelineCurrentStart && timelineCurrentEnd
-                        ? `${format(timelineCurrentStart)} - ${format(timelineCurrentEnd)}`
-                        : 'Not started'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500">Upcoming Unit</p>
-                    <p className="font-medium">{upcomingUnit?.name || 'None'}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500">Remaining Units</p>
-                    <p className="font-medium">{remainingUnits.length}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500">Current Progress</p>
-                    <p className="font-medium">{dashboardProgress || 'Not started'}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500">Upcoming Start</p>
-                    <p className="font-medium">{dashboardUpcomingStart ? formatDate(dashboardUpcomingStart) : 'None'}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500">Upcoming End</p>
-                    <p className="font-medium">{dashboardUpcomingEnd ? formatDate(dashboardUpcomingEnd) : 'None'}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
 
             {/* Current Units */}
             {currentRotations.length > 0 && (

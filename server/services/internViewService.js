@@ -108,15 +108,31 @@ const formatIntern = (intern, rotations = []) => {
 };
 
 const addUnitProgress = (internView, currentUnit, units = []) => {
-  const currentUnitId = currentUnit?._id?.toString?.() || currentUnit?.id || null;
-  const currentIndex = currentUnitId
-    ? units.findIndex((u) => u._id.toString() === currentUnitId)
-    : -1;
-
-  const upcomingUnitDoc = currentIndex >= 0 ? (units[currentIndex + 1] || null) : null;
-  const remainingUnitDocs = currentIndex >= 0 ? units.slice(currentIndex + 1) : [];
-
   const activeRotation = (internView.rotations || []).find((rotation) => rotation.status === 'active') || null;
+  const currentUnitId = (
+    currentUnit?._id?.toString?.()
+    || currentUnit?.id
+    || activeRotation?.unitId
+    || activeRotation?.unit_id
+    || null
+  );
+
+  const completedUnitIds = new Set(
+    (internView.completedUnits || [])
+      .map((rotation) => rotation.unitId || rotation.unit_id || null)
+      .filter(Boolean)
+      .map((value) => String(value))
+  );
+
+  const remainingUnitDocs = (units || []).filter((unit) => {
+    const unitId = unit?._id?.toString?.() || unit?.id?.toString?.() || null;
+    if (!unitId) return false;
+    if (currentUnitId && String(currentUnitId) === unitId) return false;
+    return !completedUnitIds.has(unitId);
+  });
+
+  const upcomingUnitDoc = remainingUnitDocs[0] || null;
+
   const activeStartDate = activeRotation?.startDate ? new Date(activeRotation.startDate) : null;
   const now = new Date();
   const daysSpent = activeStartDate ? Math.max(0, Math.floor((now - activeStartDate) / (1000 * 60 * 60 * 24))) : 0;
@@ -139,6 +155,11 @@ const addUnitProgress = (internView, currentUnit, units = []) => {
     upcomingEndDate.setDate(upcomingEndDate.getDate() + totalDays);
   }
 
+  const internshipStartDate = internView.startDate ? new Date(internView.startDate) : null;
+  const internshipDays = internshipStartDate && !Number.isNaN(internshipStartDate.getTime())
+    ? Math.max(0, Math.floor((now - internshipStartDate) / (1000 * 60 * 60 * 24)))
+    : 0;
+
   return {
     ...internView,
     upcomingUnit: upcomingUnitDoc ? {
@@ -158,6 +179,7 @@ const addUnitProgress = (internView, currentUnit, units = []) => {
       upcomingStart: upcomingStartDate ? upcomingStartDate.toISOString() : null,
       upcomingEnd: upcomingEndDate ? upcomingEndDate.toISOString() : null,
     },
+    internshipDays,
   };
 };
 
