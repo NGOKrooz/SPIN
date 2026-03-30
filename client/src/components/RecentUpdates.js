@@ -47,7 +47,7 @@ const activityColors = {
 export default function RecentUpdates() {
   const queryClient = useQueryClient();
   const [currentTime, setCurrentTime] = React.useState(() => Date.now());
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ['recentActivities'],
     queryFn: () => api.getRecentActivities(10),
     refetchInterval: 30000, // Refetch every 30 seconds
@@ -64,7 +64,9 @@ export default function RecentUpdates() {
   const activities = React.useMemo(() => {
     const source = Array.isArray(data)
       ? data
-      : (Array.isArray(data?.data) ? data.data : []);
+      : (Array.isArray(data?.activities)
+        ? data.activities
+        : (Array.isArray(data?.data) ? data.data : []));
 
     return source
       .map((activity) => {
@@ -106,8 +108,10 @@ export default function RecentUpdates() {
   }
 
   if (error) {
+    console.error(error);
+
     return (
-      <Card>
+      <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
         <CardHeader>
           <CardTitle className="flex items-center space-x-2">
             <AlertCircle className="h-5 w-5 text-red-600" />
@@ -115,8 +119,11 @@ export default function RecentUpdates() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-center py-4 text-sm text-gray-500">
-            Failed to load recent updates
+          <div className="space-y-3 text-center py-4 text-sm text-gray-500">
+            <p>Unable to load updates. Please retry.</p>
+            <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
+              {isFetching ? 'Retrying...' : 'Retry'}
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -136,7 +143,7 @@ export default function RecentUpdates() {
   };
 
   return (
-    <Card>
+    <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
@@ -156,7 +163,7 @@ export default function RecentUpdates() {
       <CardContent>
         {activities.length === 0 ? (
           <div className="text-center py-8 text-sm text-gray-500">
-            No recent updates
+            No recent activity yet
           </div>
         ) : (
           <div className="space-y-3 max-h-96 overflow-y-auto">

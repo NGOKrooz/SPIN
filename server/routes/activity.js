@@ -15,6 +15,15 @@ const router = express.Router();
 
 const DEFAULT_ROTATION_DURATION_DAYS = 20;
 
+function parseLimit(rawValue, fallback = 10, max = 1000) {
+  const parsed = Number(rawValue);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return Math.min(parsed, max);
+}
+
 function recalculateEndDate(startDate, duration) {
   const start = new Date(startDate);
   const safeDuration = Number(duration);
@@ -107,18 +116,30 @@ async function syncRotationMovementsForFeed() {
   }
 }
 
+async function fetchRecentActivities(limit) {
+  await syncRotationMovementsForFeed();
+  const activities = await getRecentActivities(limit);
+  return Array.isArray(activities) ? activities : [];
+}
+
+// GET /api/activity - Get recent activities (compatibility endpoint)
+router.get('/', async (req, res) => {
+  try {
+    const limit = parseLimit(req.query.limit, 10, 1000);
+    const activities = await fetchRecentActivities(limit);
+    res.status(200).json(activities);
+  } catch (err) {
+    console.error('Error fetching activities:', err);
+    res.status(500).json({ error: 'Failed to fetch activities' });
+  }
+});
+
 // GET /api/activity/recent - Get recent activities
 router.get('/recent', async (req, res) => {
   try {
-    const limitRaw = Number(req.query.limit);
-    const limit = Number.isFinite(limitRaw) && limitRaw > 0
-      ? Math.min(limitRaw, 1000)
-      : 10;
-
-    await syncRotationMovementsForFeed();
-
-    const activities = await getRecentActivities(limit);
-    res.json(activities);
+    const limit = parseLimit(req.query.limit, 10, 1000);
+    const activities = await fetchRecentActivities(limit);
+    res.status(200).json(activities);
   } catch (err) {
     console.error('Error fetching recent activities:', err);
     res.status(500).json({ error: 'Failed to fetch activities' });

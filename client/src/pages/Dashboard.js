@@ -68,7 +68,7 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto w-full max-w-[1200px] space-y-6 px-4 sm:px-6 lg:px-8">
       {/* Header */}
       <div className="space-y-4">
         <div className="rounded-2xl border border-gray-200 bg-white/70 p-5 shadow-sm backdrop-blur sm:p-6">
@@ -106,52 +106,79 @@ export default function Dashboard() {
       </div>
 
       {/* Recent Updates and Coverage */}
-      <div className="grid grid-cols-1 gap-4 sm:gap-6 xl:grid-cols-2">
-        <RecentUpdates />
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="space-y-6 lg:col-span-2">
+          <RecentUpdates />
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <AlertTriangle className="h-5 w-5" />
-              <span>Coverage Alerts</span>
-            </CardTitle>
-            <CardDescription>
-              Units requiring immediate attention
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {criticalUnits.length === 0 && warningUnits.length === 0 ? (
-              <div className="text-center py-4">
-                <div className="text-green-600 text-sm">All units have adequate coverage</div>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {criticalUnits.map((unit) => (
-                  <div key={unit.id} className="flex items-center justify-between p-2 bg-red-50 rounded-lg">
-                    <div className="flex-1">
-                      <span className="text-sm font-medium text-red-800">{unit.name}</span>
-                      <div className="text-xs text-red-600 mt-1">
-                        {unit.reason} • Batch A: {unit.byBatch.A}, Batch B: {unit.byBatch.B}
+          <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
+            <CardHeader>
+              <CardTitle className="flex items-center space-x-2">
+                <AlertTriangle className="h-5 w-5" />
+                <span>Coverage Alerts</span>
+              </CardTitle>
+              <CardDescription>
+                Units requiring immediate attention
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {criticalUnits.length === 0 && warningUnits.length === 0 ? (
+                <div className="text-center py-4">
+                  <div className="text-green-600 text-sm">All units have adequate coverage</div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {criticalUnits.map((unit) => (
+                    <div key={unit.id} className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium text-red-800 break-words">{unit.name}</span>
+                        <div className="text-xs text-red-600 mt-1 break-words">
+                          {unit.reason} • Batch A: {unit.byBatch.A}, Batch B: {unit.byBatch.B}
+                        </div>
                       </div>
+                      <span className="text-xs bg-red-200 text-red-800 px-2 py-1 rounded ml-2">Critical</span>
                     </div>
-                    <span className="text-xs bg-red-200 text-red-800 px-2 py-1 rounded">Critical</span>
-                  </div>
-                ))}
-                {warningUnits.map((unit) => (
-                  <div key={unit.id} className="flex items-center justify-between p-2 bg-yellow-50 rounded-lg">
-                    <div className="flex-1">
-                      <span className="text-sm font-medium text-yellow-800">{unit.name}</span>
-                      <div className="text-xs text-yellow-600 mt-1">
-                        {unit.reason} • Batch A: {unit.byBatch.A}, Batch B: {unit.byBatch.B}
+                  ))}
+                  {warningUnits.map((unit) => (
+                    <div key={unit.id} className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium text-yellow-800 break-words">{unit.name}</span>
+                        <div className="text-xs text-yellow-600 mt-1 break-words">
+                          {unit.reason} • Batch A: {unit.byBatch.A}, Batch B: {unit.byBatch.B}
+                        </div>
                       </div>
+                      <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded ml-2">Warning</span>
                     </div>
-                    <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded">Warning</span>
-                  </div>
-                ))}
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="space-y-6">
+          <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
+            <CardHeader>
+              <CardTitle>Operational Snapshot</CardTitle>
+              <CardDescription>Current dashboard health indicators</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
+                  <span className="text-sm text-gray-600">Critical Units</span>
+                  <span className="text-sm font-semibold text-red-700">{criticalUnits.length}</span>
+                </div>
+                <div className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
+                  <span className="text-sm text-gray-600">Warning Units</span>
+                  <span className="text-sm font-semibold text-yellow-700">{warningUnits.length}</span>
+                </div>
+                <div className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
+                  <span className="text-sm text-gray-600">Unassigned Interns</span>
+                  <span className="text-sm font-semibold text-gray-900">{unassignedInterns.length}</span>
+                </div>
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
       </div>
       {/* Removed Recent Rotations per requirements */}
     </div>
