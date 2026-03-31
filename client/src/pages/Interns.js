@@ -21,6 +21,23 @@ const parseDateValue = (value) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
+const calculateElapsedDays = (startDateValue, durationValue, currentTimeValue) => {
+  const startDate = parseDateValue(startDateValue);
+  if (!startDate) return 0;
+
+  const now = new Date(currentTimeValue);
+  if (now < startDate) return 0;
+
+  const elapsedDays = Math.floor((now.getTime() - startDate.getTime()) / DAY_IN_MS) + 1;
+  const duration = Number(durationValue);
+
+  if (Number.isFinite(duration) && duration > 0) {
+    return Math.max(0, Math.min(duration, elapsedDays));
+  }
+
+  return Math.max(0, elapsedDays);
+};
+
 export default function Interns() {
   const [searchTerm, setSearchTerm] = useState('');
   const [batchFilter, setBatchFilter] = useState('');
@@ -99,14 +116,15 @@ export default function Interns() {
       return Math.max(0, Number(intern.internshipDays));
     }
 
-    const startDate = parseDateValue(intern?.startDate || intern?.start_date);
-    if (!startDate) return 0;
-
-    const now = new Date(currentTime);
-    if (now < startDate) return 0;
-
-    return Math.max(0, Math.floor((now.getTime() - startDate.getTime()) / DAY_IN_MS));
+    const startDate = intern?.currentUnit?.startDate || intern?.currentUnit?.start_date;
+    const duration = intern?.currentUnit?.duration ?? intern?.currentUnit?.duration_days;
+    return calculateElapsedDays(startDate, duration, currentTime);
   }, [currentTime]);
+
+  const getCurrentUnitDuration = useCallback((intern) => {
+    const duration = Number(intern?.currentUnit?.duration ?? intern?.currentUnit?.duration_days);
+    return Number.isFinite(duration) && duration > 0 ? duration : null;
+  }, []);
 
   const derivedInterns = mapWithDerivedStatus(interns);
   
@@ -337,7 +355,10 @@ export default function Interns() {
                       </div>
                       <div>
                         <span className="text-gray-500">Days in internship:</span>
-                        <span className="ml-2 font-medium">{getInternshipDays(intern)}</span>
+                        <span className="ml-2 font-medium">
+                          {getInternshipDays(intern)}
+                          {getCurrentUnitDuration(intern) ? `/${getCurrentUnitDuration(intern)}` : ''}
+                        </span>
                       </div>
                     </div>
                   </div>

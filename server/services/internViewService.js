@@ -2,6 +2,32 @@ const Intern = require('../models/Intern');
 const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
 
+const DAY_IN_MS = 1000 * 60 * 60 * 24;
+
+const normalizeDay = (dateLike) => {
+  const value = new Date(dateLike);
+  if (Number.isNaN(value.getTime())) return null;
+  value.setHours(0, 0, 0, 0);
+  return value;
+};
+
+const calculateElapsedDays = (startDate, durationDays, todayDate = new Date()) => {
+  const start = normalizeDay(startDate);
+  const today = normalizeDay(todayDate);
+  if (!start || !today) return 0;
+
+  if (today < start) return 0;
+
+  const elapsedDays = Math.floor((today.getTime() - start.getTime()) / DAY_IN_MS) + 1;
+  const parsedDuration = Number(durationDays);
+
+  if (Number.isFinite(parsedDuration) && parsedDuration > 0) {
+    return Math.max(0, Math.min(parsedDuration, elapsedDays));
+  }
+
+  return Math.max(0, elapsedDays);
+};
+
 // Helper functions (extracted from interns.js for reuse)
 const toIsoString = (date) => {
   if (!date) return null;
@@ -77,7 +103,6 @@ const formatRotation = (rotation) => {
 };
 
 const formatIntern = (intern, rotations = []) => {
-  const today = new Date();
   const formattedRotations = (rotations || []).map(formatRotation);
 
   const currentRotation = formattedRotations.find(r => r.status === 'active');
@@ -86,10 +111,37 @@ const formatIntern = (intern, rotations = []) => {
 
   const startDate = intern.startDate || intern.start_date;
 
-  const currentUnit = currentRotation?.unit || (intern.currentUnit ? {
-    id: intern.currentUnit._id?.toString?.() || intern.currentUnit.toString(),
-    name: intern.currentUnit.name || null,
-  } : null);
+  const currentUnitDuration = Number(
+    currentRotation?.duration
+    || currentRotation?.unit?.duration
+    || currentRotation?.unit?.durationDays
+    || currentRotation?.unit?.duration_days
+    || 0
+  ) || null;
+  const currentUnitStartDate = currentRotation?.startDate || currentRotation?.start_date || null;
+  const currentUnitElapsedDays = calculateElapsedDays(currentUnitStartDate, currentUnitDuration);
+
+  const currentUnit = currentRotation?.unit
+    ? {
+      ...currentRotation.unit,
+      id: currentRotation.unit.id || currentRotation.unit._id || null,
+      startDate: currentUnitStartDate,
+      start_date: currentUnitStartDate,
+      duration: currentUnitDuration,
+      duration_days: currentUnitDuration,
+      elapsedDays: currentUnitElapsedDays,
+      elapsed_days: currentUnitElapsedDays,
+    }
+    : (intern.currentUnit ? {
+      id: intern.currentUnit._id?.toString?.() || intern.currentUnit.toString(),
+      name: intern.currentUnit.name || null,
+      startDate: null,
+      start_date: null,
+      duration: null,
+      duration_days: null,
+      elapsedDays: 0,
+      elapsed_days: 0,
+    } : null);
 
   return {
     id: intern._id?.toString(),
@@ -200,24 +252,31 @@ const addUnitProgress = (internView, currentUnit, units = []) => {
     );
   })();
 
-  // daysSpent: day 1 on start date, capped at totalDays
-  const daysSinceStart = activeStartDate
-    ? Math.floor((now.getTime() - activeStartDate.getTime()) / (1000 * 60 * 60 * 24))
-    : -1;
-  const daysSpent = activeStartDate ? Math.min(totalDays, daysSinceStart + 1) : 0;
+  // day 1 starts on startDate, then increments daily and caps at totalDays
+  const daysSpent = activeStartDate
+    ? calculateElapsedDays(activeStartDate, totalDays, now)
+    : 0;
   const currentUnitProgress = activeRotation ? `${daysSpent}/${totalDays}` : null;
 
   const nextUpcomingRotation = upcomingRotations[0] || null;
   const upcomingStartDate = nextUpcomingRotation?.startDate ? new Date(nextUpcomingRotation.startDate) : null;
   const upcomingEndDate = nextUpcomingRotation?.endDate ? new Date(nextUpcomingRotation.endDate) : null;
 
-  const internshipStartDate = internView.startDate ? new Date(internView.startDate) : null;
-  const internshipDays = internshipStartDate && !Number.isNaN(internshipStartDate.getTime())
-    ? Math.max(0, Math.floor((now - internshipStartDate) / (1000 * 60 * 60 * 24)))
+  const internshipDays = activeRotation
+    ? daysSpent
     : 0;
 
   return {
     ...internView,
+    currentUnit: internView.currentUnit ? {
+      ...internView.currentUnit,
+      startDate: activeRotation?.startDate || activeRotation?.start_date || internView.currentUnit.startDate || null,
+      start_date: activeRotation?.startDate || activeRotation?.start_date || internView.currentUnit.start_date || null,
+      duration: totalDays || internView.currentUnit.duration || internView.currentUnit.duration_days || null,
+      duration_days: totalDays || internView.currentUnit.duration_days || internView.currentUnit.duration || null,
+      elapsedDays: daysSpent,
+      elapsed_days: daysSpent,
+    } : null,
     upcomingUnit: upcomingUnitDoc ? {
       id: upcomingUnitDoc._id.toString(),
       name: upcomingUnitDoc.name,

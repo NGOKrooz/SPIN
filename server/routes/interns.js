@@ -48,6 +48,29 @@ const toValidDate = (value) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
+const normalizeDay = (dateLike) => {
+  const value = new Date(dateLike);
+  if (Number.isNaN(value.getTime())) return null;
+  value.setHours(0, 0, 0, 0);
+  return value;
+};
+
+const calculateElapsedDays = (startDate, durationDays, todayDate = new Date()) => {
+  const start = normalizeDay(startDate);
+  const today = normalizeDay(todayDate);
+  if (!start || !today) return 0;
+  if (today < start) return 0;
+
+  const elapsedDays = Math.floor((today.getTime() - start.getTime()) / DAY_IN_MS) + 1;
+  const parsedDuration = Number(durationDays);
+
+  if (Number.isFinite(parsedDuration) && parsedDuration > 0) {
+    return Math.max(0, Math.min(parsedDuration, elapsedDays));
+  }
+
+  return Math.max(0, elapsedDays);
+};
+
 const toComparableInternValue = (field, value) => {
   if (field === 'startDate') {
     const parsed = toValidDate(value);
@@ -259,18 +282,35 @@ const mapInternWithUnits = (internDoc, units) => {
 
   const upcomingUnitDoc = remainingUnitDocs[0] || null;
   const derivedStatus = intern.status || 'active';
+  const activeStartDate = activeRotation?.startDate || activeRotation?.start_date || null;
+  const activeDuration = Number(
+    activeRotation?.duration
+    || activeRotation?.duration_days
+    || activeRotation?.unit?.duration
+    || activeRotation?.unit?.durationDays
+    || activeRotation?.unit?.duration_days
+    || DEFAULT_ROTATION_DURATION_DAYS
+  );
+  const internshipDays = calculateElapsedDays(activeStartDate, activeDuration);
 
-  const internshipStart = toValidDate(intern.startDate || intern.start_date);
-  const today = new Date();
-  const internshipDays = internshipStart
-    ? Math.max(0, Math.floor((today - internshipStart) / DAY_IN_MS))
-    : 0;
+  const currentUnit = intern.currentUnit || null;
+  const currentUnitWithProgress = currentUnit
+    ? {
+      ...currentUnit,
+      startDate: activeStartDate,
+      start_date: activeStartDate,
+      duration: activeDuration,
+      duration_days: activeDuration,
+      elapsedDays: internshipDays,
+      elapsed_days: internshipDays,
+    }
+    : null;
 
   return {
     ...intern,
     batch: intern.batch || null,
     status: derivedStatus,
-    currentUnit: intern.currentUnit || null,
+    currentUnit: currentUnitWithProgress,
     upcomingUnit: upcomingUnitDoc ? {
       _id: upcomingUnitDoc._id,
       name: upcomingUnitDoc.name,
@@ -363,10 +403,9 @@ router.get('/:id/schedule', async (req, res) => {
 
     let progress = 'Not started';
     if (currentRotation) {
-      const now = new Date();
-      const currentStart = new Date(currentRotation.startDate);
-      const daysSpent = Math.max(0, Math.floor((now - currentStart) / (1000 * 60 * 60 * 24)));
-      progress = `${daysSpent}/${currentRotation.duration || DEFAULT_ROTATION_DURATION_DAYS}`;
+      const duration = Number(currentRotation.duration || DEFAULT_ROTATION_DURATION_DAYS);
+      const daysSpent = calculateElapsedDays(currentRotation.startDate, duration, new Date());
+      progress = `${daysSpent}/${duration}`;
     }
 
     const current = currentRotation ? formatRotationForSchedule(currentRotation) : null;
