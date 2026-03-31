@@ -18,6 +18,13 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
     notes: '',
   });
 
+  const [removeFormData, setRemoveFormData] = useState({
+    days: '',
+    reason: '',
+  });
+
+  const currentExtensionDays = Number(intern?.extensionDays ?? intern?.extension_days) || 0;
+
   const { toast } = useToast();
 
   // Fetch schedule for this intern
@@ -80,6 +87,24 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
     },
   });
 
+  const removeExtensionMutation = useMutation({
+    mutationFn: ({ id, data }) => api.removeExtension(id, data),
+    onSuccess: (result) => {
+      toast({
+        title: 'Success',
+        description: `Removed ${result?.removedDays ?? ''} extension day(s) successfully`,
+      });
+      onSuccess(result);
+    },
+    onError: (error) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to remove extension',
+        variant: 'destructive',
+      });
+    },
+  });
+
   const handleSubmit = (e) => {
     e.preventDefault();
 
@@ -121,6 +146,34 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
     extendMutation.mutate({ id: intern.id, data: submitData });
   };
 
+  const handleRemove = (e) => {
+    e.preventDefault();
+
+    if (removeFormData.days === '' || removeFormData.days === null || removeFormData.days === undefined) {
+      toast({
+        title: 'Error',
+        description: 'Please enter the number of days to remove',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const days = Number(removeFormData.days);
+    if (!Number.isFinite(days) || Number.isNaN(days) || days <= 0) {
+      toast({
+        title: 'Error',
+        description: 'Please enter a valid positive number of days',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    removeExtensionMutation.mutate({
+      id: intern.id,
+      data: { days, reason: removeFormData.reason || 'Extension removed' },
+    });
+  };
+
   const handleChange = (field, value) => {
     setFormData(prev => ({
       ...prev,
@@ -128,7 +181,15 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
     }));
   };
 
+  const handleRemoveChange = (field, value) => {
+    setRemoveFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
   const isLoading = extendMutation.isPending;
+  const isRemoving = removeExtensionMutation.isPending;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -211,6 +272,52 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
               </Button>
             </div>
           </form>
+
+          {/* Remove Extension section — only shown when intern has active extension days */}
+          {currentExtensionDays > 0 && (
+            <div className="mt-4 pt-4 border-t">
+              <p className="text-sm font-medium text-gray-700 mb-3">
+                Current Extension: <span className="text-yellow-600 font-bold">+{currentExtensionDays} days</span>
+              </p>
+              <form onSubmit={handleRemove} className="space-y-3">
+                <div>
+                  <Label htmlFor="remove-days">Days to Remove</Label>
+                  <Input
+                    id="remove-days"
+                    type="number"
+                    min="1"
+                    max={currentExtensionDays}
+                    value={removeFormData.days}
+                    onChange={(e) => handleRemoveChange('days', e.target.value)}
+                    placeholder={`1 – ${currentExtensionDays}`}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="remove-reason">Reason (Optional)</Label>
+                  <Select value={removeFormData.reason} onValueChange={(value) => handleRemoveChange('reason', value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select reason" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="error correction">Error Correction</SelectItem>
+                      <SelectItem value="early completion">Early Completion</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex justify-end">
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    disabled={isRemoving}
+                    className="text-red-600 border-red-300 hover:bg-red-50"
+                  >
+                    {isRemoving ? 'Removing...' : 'Remove Extension Days'}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

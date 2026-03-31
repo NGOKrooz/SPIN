@@ -44,12 +44,19 @@ const formatRotation = (rotation) => {
   const unitId = unit?._id?.toString() || unit?.id || null;
   const unitName = unit?.name || (rotation.unit_name || null);
 
+  const rotationDuration = rotation.duration != null ? Number(rotation.duration) : null;
+  const rotationBaseDuration = rotation.baseDuration != null ? Number(rotation.baseDuration) : null;
+  const rotationExtensionDays = rotation.extensionDays != null ? Number(rotation.extensionDays) : 0;
+
   return {
     id: rotation._id?.toString(),
     startDate: toIsoString(rotation.startDate || rotation.start_date),
     endDate: toIsoString(rotation.endDate || rotation.end_date),
     start_date: toIsoString(rotation.startDate || rotation.start_date),
     end_date: toIsoString(rotation.endDate || rotation.end_date),
+    duration: rotationDuration,
+    baseDuration: rotationBaseDuration,
+    extensionDays: rotationExtensionDays,
     status,
     unitId,
     unit_id: unitId,
@@ -171,14 +178,33 @@ const addUnitProgress = (internView, currentUnit, units = []) => {
   const upcomingUnitDoc = remainingUnitDocs[0] || null;
 
   const activeStartDate = activeRotation?.startDate ? new Date(activeRotation.startDate) : null;
+  if (activeStartDate) activeStartDate.setHours(0, 0, 0, 0);
   const now = new Date();
-  const daysSpent = activeStartDate ? Math.max(0, Math.floor((now - activeStartDate) / (1000 * 60 * 60 * 24))) : 0;
-  const totalDays = Number(
-    activeRotation?.unit?.duration ||
-    activeRotation?.unit?.durationDays ||
-    activeRotation?.unit?.duration_days ||
-    20
-  );
+  now.setHours(0, 0, 0, 0);
+
+  // Compute totalDays from actual rotation dates (includes any extension)
+  const totalDays = (() => {
+    const endDate = activeRotation?.endDate ? new Date(activeRotation.endDate) : null;
+    if (activeStartDate && endDate) {
+      endDate.setHours(0, 0, 0, 0);
+      const diff = Math.round((endDate.getTime() - activeStartDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      if (diff > 0) return diff;
+    }
+    // Fallback to rotation.duration (already includes extension)
+    if (activeRotation?.duration) return Number(activeRotation.duration);
+    return Number(
+      activeRotation?.unit?.duration ||
+      activeRotation?.unit?.durationDays ||
+      activeRotation?.unit?.duration_days ||
+      20
+    );
+  })();
+
+  // daysSpent: day 1 on start date, capped at totalDays
+  const daysSinceStart = activeStartDate
+    ? Math.floor((now.getTime() - activeStartDate.getTime()) / (1000 * 60 * 60 * 24))
+    : -1;
+  const daysSpent = activeStartDate ? Math.min(totalDays, daysSinceStart + 1) : 0;
   const currentUnitProgress = activeRotation ? `${daysSpent}/${totalDays}` : null;
 
   const nextUpcomingRotation = upcomingRotations[0] || null;

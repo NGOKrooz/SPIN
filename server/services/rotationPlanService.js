@@ -341,6 +341,8 @@ const buildInitialRotationPlanForIntern = async ({
       unit: unit._id,
       startDate: rotationStartDate,
       endDate: rotationEndDate,
+      baseDuration: duration,
+      extensionDays: 0,
       duration,
       status,
     });
@@ -459,12 +461,16 @@ const rebuildInternFutureRotations = async ({
 
   const createdUpcomingRotations = [];
   while (existingUpcomingRotations.length < desiredUpcomingUnits.length) {
+    const newUnitForCreate = desiredUpcomingUnits[existingUpcomingRotations.length];
+    const newUnitDuration = getUnitDuration(newUnitForCreate);
     const createdRotation = await Rotation.create({
       intern: intern._id,
-      unit: desiredUpcomingUnits[existingUpcomingRotations.length]._id,
+      unit: newUnitForCreate._id,
       startDate: startOfDay(intern.startDate || now),
       endDate: startOfDay(intern.startDate || now),
-      duration: getUnitDuration(desiredUpcomingUnits[existingUpcomingRotations.length]),
+      baseDuration: newUnitDuration,
+      extensionDays: 0,
+      duration: newUnitDuration,
       status: 'upcoming',
     });
     existingUpcomingRotations.push(createdRotation);
@@ -476,6 +482,8 @@ const rebuildInternFutureRotations = async ({
     const rotation = existingUpcomingRotations[index];
     const duration = getUnitDuration(unit);
     rotation.unit = unit._id;
+    rotation.baseDuration = duration;
+    rotation.extensionDays = 0;
     rotation.duration = duration;
     rotation.startDate = addDays(previousEndDate, 1);
     rotation.endDate = recalculateEndDate(rotation.startDate, duration);

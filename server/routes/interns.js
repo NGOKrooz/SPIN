@@ -629,9 +629,11 @@ router.post('/:id/extend', async (req, res) => {
       intern: intern._id,
       status: 'active',
     })
+      .populate('unit')
       .exec();
 
     const allRotations = await Rotation.find({ intern: intern._id })
+      .populate('unit')
       .sort({ startDate: 1, createdAt: 1 })
       .exec();
 
@@ -647,14 +649,23 @@ router.post('/:id/extend', async (req, res) => {
       }
     }
 
-    const nextDuration = Number(rotation.duration || DEFAULT_ROTATION_DURATION_DAYS) + days;
-    if (!Number.isFinite(nextDuration) || nextDuration <= 0) {
+    // Initialize baseDuration from unit if not yet set (backward compat for existing rotations)
+    if (!rotation.baseDuration) {
+      const unitBaseDuration = rotation.unit ? getUnitDuration(rotation.unit) : Number(rotation.duration || DEFAULT_ROTATION_DURATION_DAYS);
+      rotation.baseDuration = unitBaseDuration;
+      // If duration is already larger than unitBaseDuration, preserve existing extension
+      rotation.extensionDays = Math.max(0, Number(rotation.duration || DEFAULT_ROTATION_DURATION_DAYS) - unitBaseDuration);
+    }
+
+    rotation.extensionDays = Number(rotation.extensionDays || 0) + days;
+    const totalDuration = rotation.baseDuration + rotation.extensionDays;
+
+    if (!Number.isFinite(totalDuration) || totalDuration <= 0) {
       return res.status(400).json({ error: 'Extension results in invalid rotation duration' });
     }
 
-    rotation.duration = nextDuration;
-    const currentEndDate = rotation.endDate ? startOfDay(rotation.endDate) : recalculateEndDate(rotation.startDate, rotation.duration - days);
-    rotation.endDate = addDays(currentEndDate, days);
+    rotation.duration = totalDuration;
+    rotation.endDate = recalculateEndDate(rotation.startDate, totalDuration);
     await rotation.save();
 
     if (rotation.status === 'active') {
@@ -699,6 +710,108 @@ router.post('/:id/extend', async (req, res) => {
   } catch (err) {
     console.error('EXTENSION ERROR:', err);
     res.status(500).json({ success: false, error: 'Failed to extend intern' });
+  }
+});
+
+// POST /api/interns/:id/remove-extension - Remove (reduce) extension days from active rotation
+router.post('/:id/remove-extension', async (req, res) => {
+  try {
+    const internId = req.params.id;
+    if (!internId || !mongoose.Types.ObjectId.isValid(internId)) {
+      return res.status(400).json({ error: 'Intern ID is required' });
+    }
+
+    if (req.body.days === undefined || req.body.days === null || req.body.days === '') {
+      return res.status(400).json({ error: 'Days to remove is required' });
+    }
+
+    let days = typeof req.body.days !== 'number' ? Number(req.body.days) : req.body.days;
+    if (!Number.isFinite(days) || Number.isNaN(days) || days <= 0) {
+      return res.status(400).json({ error: 'Valid number of days is required' });
+    }
+    days = Math.floor(days);
+
+    const intern = await Intern.findById(internId).exec();
+    if (!intern) return res.status(404).json({ error: 'Intern not found' });
+
+    await syncInternRotationStates(intern._id);
+
+    let rotation = await Rotation.findOne({ intern: intern._id, status: 'active' })
+      .populate('unit')
+      .exec();
+
+    if (!rotation) {
+      const allRotations = await Rotation.find({ intern: intern._id })
+        .populate('unit')
+        .sort({ startDate: -1 })
+        .exec();
+      const lastRotation = allRotations[0] || null;
+      const completedAllRotations = allRotations.length > 0 && allRotations.every((row) => row.status === 'completed');
+      if (completedAllRotations && lastRotation) {
+        rotation = lastRotation;
+      } else {
+        return res.status(400).json({ error: 'No active rotation found for this intern' });
+      }
+    }
+
+    // Initialize baseDuration if not yet set (backward compat)
+    if (!rotation.baseDuration) {
+      const unitBaseDuration = rotation.unit ? getUnitDuration(rotation.unit) : Number(rotation.duration || DEFAULT_ROTATION_DURATION_DAYS);
+      rotation.baseDuration = unitBaseDuration;
+      rotation.extensionDays = Math.max(0, Number(rotation.duration || DEFAULT_ROTATION_DURATION_DAYS) - unitBaseDuration);
+    }
+
+    const currentExtensionDays = Number(rotation.extensionDays || 0);
+    const removeDays = Math.min(days, currentExtensionDays);
+
+    rotation.extensionDays = Math.max(0, currentExtensionDays - removeDays);
+    const totalDuration = rotation.baseDuration + rotation.extensionDays;
+
+    if (!Number.isFinite(totalDuration) || totalDuration <= 0) {
+      return res.status(400).json({ error: 'Removal results in invalid rotation duration' });
+    }
+
+    rotation.duration = totalDuration;
+    rotation.endDate = recalculateEndDate(rotation.startDate, totalDuration);
+    await rotation.save();
+
+    if (rotation.status === 'active') {
+      const [reservedSequenceKeys, activeUnitLoadMap] = await Promise.all([
+        getReservedForwardSequenceKeys(intern._id),
+        getActiveUnitLoadMap(),
+      ]);
+      await rebuildInternFutureRotations({
+        internId: intern._id,
+        reservedSequenceKeys,
+        activeUnitLoadMap,
+        now: new Date(),
+      });
+    }
+
+    const internExtensionDays = Number(intern.extensionDays || 0);
+    intern.extensionDays = Math.max(0, internExtensionDays - removeDays);
+    intern.status = Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active';
+    await intern.save();
+
+    const reasonText = req.body.reason || 'No reason provided';
+    await logActivityEventSafe({
+      type: ACTIVITY_TYPES.INTERN_EXTENSION_REMOVED,
+      metadata: {
+        internId: intern._id.toString(),
+        internName: intern.name,
+        days: removeDays,
+        reason: reasonText,
+      },
+    });
+
+    await ensureInternStatusIsCorrect(intern._id);
+    await updateBatchStats().catch(() => {});
+
+    const internView = await buildInternView(intern._id);
+    res.json({ success: true, removedDays: removeDays, intern: internView });
+  } catch (err) {
+    console.error('REMOVE EXTENSION ERROR:', err);
+    res.status(500).json({ success: false, error: 'Failed to remove extension' });
   }
 });
 
