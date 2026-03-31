@@ -50,6 +50,16 @@ const getOrderedUnits = async () => {
   return sortUnitsByOrder(units);
 };
 
+const getRoundRobinFirstUnit = async (orderedUnits = []) => {
+  if (orderedUnits.length === 0) return null;
+
+  // Count total interns to determine round-robin index
+  const totalInterns = await Intern.countDocuments({}).exec();
+  const firstUnitIndex = totalInterns % orderedUnits.length;
+
+  return orderedUnits[firstUnitIndex] || null;
+};
+
 const hashString = (value) => {
   const input = String(value || '');
   let hash = 0;
@@ -274,8 +284,10 @@ const buildInitialRotationPlanForIntern = async ({
   if (progress.allCompleted) {
     sequence = [...orderedUnits];
   } else if (!progress.hasStarted) {
-    const firstUnit = orderedUnits[0] || null;
-    const remainingUnits = orderedUnits.slice(1);
+    // ROUND-ROBIN FIRST UNIT: Assign based on total intern count
+    const firstUnit = await getRoundRobinFirstUnit(orderedUnits);
+    const remainingUnits = orderedUnits.filter((unit) => String(unit._id) !== String(firstUnit?._id));
+    
     const shuffledRemainingUnits = chooseUniqueUpcomingUnits({
       intern,
       anchorUnitId: firstUnit?._id?.toString?.() || null,
@@ -521,6 +533,7 @@ module.exports = {
   recalculateEndDate,
   sortUnitsByOrder,
   getOrderedUnits,
+  getRoundRobinFirstUnit,
   computeDeterministicProgress,
   getActiveUnitLoadMap,
   getReservedForwardSequenceKeys,
