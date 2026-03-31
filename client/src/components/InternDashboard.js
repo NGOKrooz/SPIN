@@ -43,6 +43,37 @@ function calculateElapsedDays(startDateValue, durationValue, currentTimeValue) {
   return Math.max(0, elapsedDays);
 }
 
+function getUnitEndDate(startDateValue, durationValue) {
+  const startDate = parseDateValue(startDateValue);
+  const duration = Number(durationValue);
+
+  if (!startDate || !Number.isFinite(duration) || duration <= 0) return null;
+
+  const endDate = new Date(startDate);
+  endDate.setDate(endDate.getDate() + duration - 1);
+  return endDate;
+}
+
+function getTotalDuration(rotation) {
+  const baseDuration = Number(rotation?.baseDuration ?? rotation?.base_duration);
+  const extensionDays = Number(rotation?.extensionDays ?? rotation?.extension_days ?? 0);
+
+  if (Number.isFinite(baseDuration) && baseDuration > 0) {
+    return Math.max(0, baseDuration + (Number.isFinite(extensionDays) ? extensionDays : 0));
+  }
+
+  const duration = Number(rotation?.duration_days ?? rotation?.duration);
+  if (Number.isFinite(duration) && duration > 0) {
+    return duration;
+  }
+
+  if (rotation?.start_date && rotation?.end_date) {
+    return calculateDaysBetween(rotation.start_date, rotation.end_date);
+  }
+
+  return 0;
+}
+
 export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   const queryClient = useQueryClient();
   const [showExtend, setShowExtend] = React.useState(false);
@@ -223,11 +254,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
       || currentIntern?.currentUnit?.startDate
       || currentIntern?.currentUnit?.start_date
       || null;
-    const duration = currentRotation?.duration_days
-      || currentRotation?.duration
-      || (currentRotation?.start_date && currentRotation?.end_date
-        ? calculateDaysBetween(currentRotation.start_date, currentRotation.end_date)
-        : null)
+    const duration = getTotalDuration(currentRotation)
       || currentIntern?.currentUnit?.duration
       || currentIntern?.currentUnit?.duration_days
       || null;
@@ -497,11 +524,18 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-medium text-blue-600">
-                            {calculateElapsedDays(
-                              rotation.start_date,
-                              rotation.duration_days || rotation.duration || getRotationDuration(rotation),
-                              currentTime
-                            )} days
+                            {(() => {
+                              const totalDuration = getTotalDuration(rotation);
+                              const elapsedDays = calculateElapsedDays(rotation.start_date, totalDuration, currentTime);
+                              const endDate = getUnitEndDate(rotation.start_date, totalDuration);
+                              const now = new Date(currentTime);
+                              const startDate = parseDateValue(rotation.start_date);
+                              const isCurrentUnit = startDate && endDate && now >= startDate && now <= endDate;
+
+                              return isCurrentUnit
+                                ? `${elapsedDays} / ${totalDuration}`
+                                : `${elapsedDays} days`;
+                            })()}
                           </p>
                         </div>
                       </div>

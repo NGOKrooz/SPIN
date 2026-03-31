@@ -38,6 +38,17 @@ const calculateElapsedDays = (startDateValue, durationValue, currentTimeValue) =
   return Math.max(0, elapsedDays);
 };
 
+const getUnitEndDate = (startDateValue, durationValue) => {
+  const startDate = parseDateValue(startDateValue);
+  const duration = Number(durationValue);
+
+  if (!startDate || !Number.isFinite(duration) || duration <= 0) return null;
+
+  const endDate = new Date(startDate);
+  endDate.setDate(endDate.getDate() + duration - 1);
+  return endDate;
+};
+
 export default function Interns() {
   const [searchTerm, setSearchTerm] = useState('');
   const [batchFilter, setBatchFilter] = useState('');
@@ -120,6 +131,23 @@ export default function Interns() {
     const duration = intern?.currentUnit?.duration ?? intern?.currentUnit?.duration_days;
     return calculateElapsedDays(startDate, duration, currentTime);
   }, [currentTime]);
+
+  const getInternshipDisplay = useCallback((intern) => {
+    const startDate = intern?.currentUnit?.startDate || intern?.currentUnit?.start_date;
+    const duration = Number(intern?.currentUnit?.duration ?? intern?.currentUnit?.duration_days);
+    const elapsedDays = getInternshipDays(intern);
+
+    if (!startDate || !Number.isFinite(duration) || duration <= 0) {
+      return `${elapsedDays} days`;
+    }
+
+    const now = new Date(currentTime);
+    const parsedStartDate = parseDateValue(startDate);
+    const parsedEndDate = getUnitEndDate(startDate, duration);
+    const isCurrentUnit = parsedStartDate && parsedEndDate && now >= parsedStartDate && now <= parsedEndDate;
+
+    return isCurrentUnit ? `${elapsedDays} / ${duration}` : `${elapsedDays} days`;
+  }, [currentTime, getInternshipDays]);
 
   const derivedInterns = mapWithDerivedStatus(interns);
   
@@ -342,9 +370,8 @@ export default function Interns() {
                       </Button>
                     </div>
                   </div>
-                  <div className="mt-3 pt-3 border-t border-gray-100 text-sm">
-                    <span className="text-gray-500">Days in internship:</span>
-                    <span className="ml-2 font-medium">{getInternshipDays(intern)} days</span>
+                  <div className="mt-3 pt-3 border-t border-gray-100 text-sm font-medium text-gray-900">
+                    {getInternshipDisplay(intern)}
                   </div>
                 </div>
               ))}
