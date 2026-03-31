@@ -7,7 +7,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { api } from '../services/api';
-import { formatDate, getStatusColor } from '../lib/utils';
+import { getStatusColor } from '../lib/utils';
 import { useToast } from '../hooks/use-toast';
 import InternForm from '../components/InternForm';
 import ExtensionModal from '../components/ExtensionModal';
@@ -120,11 +120,6 @@ export default function Interns() {
     const duration = intern?.currentUnit?.duration ?? intern?.currentUnit?.duration_days;
     return calculateElapsedDays(startDate, duration, currentTime);
   }, [currentTime]);
-
-  const getCurrentUnitDuration = useCallback((intern) => {
-    const duration = Number(intern?.currentUnit?.duration ?? intern?.currentUnit?.duration_days);
-    return Number.isFinite(duration) && duration > 0 ? duration : null;
-  }, []);
 
   const derivedInterns = mapWithDerivedStatus(interns);
   
@@ -347,20 +342,9 @@ export default function Interns() {
                       </Button>
                     </div>
                   </div>
-                  <div className="mt-3 pt-3 border-t border-gray-100">
-                    <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-                      <div>
-                        <span className="text-gray-500">Start date:</span>
-                        <span className="ml-2 font-medium">{formatDate(intern.startDate)}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">Days in internship:</span>
-                        <span className="ml-2 font-medium">
-                          {getInternshipDays(intern)}
-                          {getCurrentUnitDuration(intern) ? `/${getCurrentUnitDuration(intern)}` : ''}
-                        </span>
-                      </div>
-                    </div>
+                  <div className="mt-3 pt-3 border-t border-gray-100 text-sm">
+                    <span className="text-gray-500">Days in internship:</span>
+                    <span className="ml-2 font-medium">{getInternshipDays(intern)} days</span>
                   </div>
                 </div>
               ))}

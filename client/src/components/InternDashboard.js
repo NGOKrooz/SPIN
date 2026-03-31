@@ -26,6 +26,23 @@ function parseDateValue(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function calculateElapsedDays(startDateValue, durationValue, currentTimeValue) {
+  const startDate = parseDateValue(startDateValue);
+  if (!startDate) return 0;
+
+  const now = new Date(currentTimeValue);
+  if (now < startDate) return 0;
+
+  const elapsedDays = Math.floor((now.getTime() - startDate.getTime()) / DAY_IN_MS) + 1;
+  const duration = Number(durationValue);
+
+  if (Number.isFinite(duration) && duration > 0) {
+    return Math.max(0, Math.min(duration, elapsedDays));
+  }
+
+  return Math.max(0, elapsedDays);
+}
+
 export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   const queryClient = useQueryClient();
   const [showExtend, setShowExtend] = React.useState(false);
@@ -199,50 +216,24 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
     }
   }, []);
 
-  // Calculate total days completed in rotations (completed rotations only)
-  const totalDaysCompleted = completedRotations.reduce((total, rotation) => {
-    const days = getRotationDuration(rotation);
-    return total + days;
-  }, 0);
-
-  // Calculate days in current rotation (capped at rotation duration)
-  const currentUnitDays = currentRotations.reduce((total, rotation) => {
-    const startDate = normalizeDate(rotation.start_date);
-    const endDate = normalizeDate(rotation.end_date);
-    const currentDate = normalizeDate(new Date());
-    // Always calculate from actual dates to account for extensions
-    const rotationDuration = Math.max(0, Math.floor((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
-    const daysElapsed = Math.max(0, Math.floor((currentDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
-    // Cap days at rotation duration (prevents showing 3/2 days)
-    const daysInCurrentUnit = Math.min(daysElapsed, rotationDuration);
-    return total + daysInCurrentUnit;
-  }, 0);
-
-  // Calculate total days in internship (from start_date to today)
+  // Calculate days in the current unit from the unit's actual start date.
   const totalDaysInInternship = React.useMemo(() => {
-    const startDate = parseDateValue(currentIntern?.startDate || currentIntern?.start_date);
-    if (!startDate) return 0;
+    const currentRotation = currentRotations[0] || null;
+    const startDate = currentRotation?.start_date
+      || currentIntern?.currentUnit?.startDate
+      || currentIntern?.currentUnit?.start_date
+      || null;
+    const duration = currentRotation?.duration_days
+      || currentRotation?.duration
+      || (currentRotation?.start_date && currentRotation?.end_date
+        ? calculateDaysBetween(currentRotation.start_date, currentRotation.end_date)
+        : null)
+      || currentIntern?.currentUnit?.duration
+      || currentIntern?.currentUnit?.duration_days
+      || null;
 
-    const now = new Date(currentTime);
-    if (now < startDate) return 0;
-
-    let effectiveEndDate = now;
-    const normalizedStatus = String(derivedStatus || '').toLowerCase();
-
-    if (normalizedStatus === 'completed') {
-      const latestCompletedEnd = (completedRotations || [])
-        .map((rotation) => parseDateValue(rotation.end_date || rotation.endDate))
-        .filter(Boolean)
-        .sort((left, right) => right.getTime() - left.getTime())[0] || null;
-
-      if (latestCompletedEnd) {
-        effectiveEndDate = latestCompletedEnd;
-      }
-    }
-
-    if (effectiveEndDate < startDate) return 0;
-    return Math.max(0, Math.floor((effectiveEndDate.getTime() - startDate.getTime()) / DAY_IN_MS));
-  }, [currentIntern?.startDate, currentIntern?.start_date, currentTime, derivedStatus, completedRotations]);
+    return calculateElapsedDays(startDate, duration, currentTime);
+  }, [currentRotations, currentIntern?.currentUnit?.duration, currentIntern?.currentUnit?.duration_days, currentIntern?.currentUnit?.startDate, currentIntern?.currentUnit?.start_date, currentTime]);
 
   const invalidateInternLists = React.useCallback(() => {
     queryClient.invalidateQueries({
@@ -462,8 +453,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                     <Clock className="h-5 w-5 text-green-600" />
                     <div>
                       <p className="text-sm font-medium text-gray-600">Days in Internship</p>
-                      <p className="text-xl font-bold text-gray-900">{totalDaysInInternship}</p>
-                      <p className="text-xs text-gray-500 mt-1">Rotations: {totalDaysCompleted + currentUnitDays} days</p>
+                      <p className="text-xl font-bold text-gray-900">{totalDaysInInternship} days</p>
                     </div>
                   </div>
                 </CardContent>
@@ -507,17 +497,11 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-medium text-blue-600">
-                            {(() => {
-                              const startDate = normalizeDate(rotation.start_date);
-                              const currentDate = normalizeDate(new Date());
-                              // Always calculate from actual dates to account for extensions
-                              // Use calculateDaysBetween for consistent inclusive day calculation
-                              const totalDays = calculateDaysBetween(rotation.start_date, rotation.end_date);
-                              const daysElapsed = Math.max(0, Math.floor((currentDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
-                              // Cap at total days to prevent showing 3/2 days
-                              const cappedDays = Math.min(daysElapsed, totalDays);
-                              return `${cappedDays} / ${totalDays} days`;
-                            })()}
+                            {calculateElapsedDays(
+                              rotation.start_date,
+                              rotation.duration_days || rotation.duration || getRotationDuration(rotation),
+                              currentTime
+                            )} days
                           </p>
                         </div>
                       </div>
