@@ -71,6 +71,47 @@ const calculateElapsedDays = (startDate, durationDays, todayDate = new Date()) =
   return Math.max(0, elapsedDays);
 };
 
+const getPreservedRotationTimeline = (rotation, fallbackUnit = null) => {
+  const fallbackBaseDuration = getUnitDuration(fallbackUnit || rotation?.unit);
+  const rawBaseDuration = Number(rotation?.baseDuration);
+  const rawExtensionDays = Number(rotation?.extensionDays);
+  const rawTotalDuration = Number(rotation?.duration);
+
+  const baseDuration = Number.isFinite(rawBaseDuration) && rawBaseDuration > 0
+    ? rawBaseDuration
+    : fallbackBaseDuration;
+  const extensionDays = Number.isFinite(rawExtensionDays) && rawExtensionDays >= 0
+    ? rawExtensionDays
+    : 0;
+
+  // Prefer computing totalDuration from actual stored dates — mirrors addUnitProgress logic
+  // and is immune to a stale rotation.duration field in the database.
+  let totalDuration;
+  const rotStart = rotation?.startDate;
+  const rotEnd = rotation?.endDate;
+  if (rotStart && rotEnd) {
+    const startMs = startOfDay(rotStart).getTime();
+    const endMs = startOfDay(rotEnd).getTime();
+    const dateDiff = Math.round((endMs - startMs) / DAY_IN_MS) + 1;
+    if (dateDiff > 0) totalDuration = dateDiff;
+  }
+  if (!totalDuration) {
+    totalDuration = Number.isFinite(rawTotalDuration) && rawTotalDuration > 0
+      ? rawTotalDuration
+      : baseDuration + extensionDays;
+  }
+
+  if (totalDuration < baseDuration + extensionDays) {
+    totalDuration = baseDuration + extensionDays;
+  }
+
+  return {
+    baseDuration,
+    extensionDays: Math.max(0, totalDuration - baseDuration),
+    totalDuration,
+  };
+};
+
 const toComparableInternValue = (field, value) => {
   if (field === 'startDate') {
     const parsed = toValidDate(value);
@@ -291,7 +332,8 @@ const mapInternWithUnits = (internDoc, units) => {
     || activeRotation?.unit?.duration_days
     || DEFAULT_ROTATION_DURATION_DAYS
   );
-  const internshipDays = calculateElapsedDays(activeStartDate, activeDuration);
+  const currentUnitElapsedDays = calculateElapsedDays(activeStartDate, activeDuration);
+  const internshipDays = calculateElapsedDays(intern.startDate || intern.start_date, null);
 
   const currentUnit = intern.currentUnit || null;
   const currentUnitWithProgress = currentUnit
@@ -301,8 +343,8 @@ const mapInternWithUnits = (internDoc, units) => {
       start_date: activeStartDate,
       duration: activeDuration,
       duration_days: activeDuration,
-      elapsedDays: internshipDays,
-      elapsed_days: internshipDays,
+      elapsedDays: currentUnitElapsedDays,
+      elapsed_days: currentUnitElapsedDays,
     }
     : null;
 
@@ -680,29 +722,50 @@ router.post('/:id/reassign', async (req, res) => {
 
     const previousUnitId = current.unit?._id?.toString?.() || current.unit?.toString?.() || intern.currentUnit?.toString?.() || null;
     const previousUnitName = current.unit?.name || 'Unknown unit';
+    const preservedStartDate = toValidDate(current.startDate) || startOfDay(new Date());
 
-    const currentStart = current.startDate ? startOfDay(current.startDate) : startOfDay(new Date());
-    const today = startOfDay(new Date());
-    const daysInCurrentUnit = Math.max(0, Math.floor((today.getTime() - currentStart.getTime()) / DAY_IN_MS));
+    const { baseDuration, extensionDays, totalDuration } = getPreservedRotationTimeline(current, current.unit);
+    const daysInCurrentUnit = calculateElapsedDays(preservedStartDate, totalDuration, new Date());
 
     current.unit = selectedUnit._id;
-    current.duration = getUnitDuration(selectedUnit);
-    current.startDate = today;
-    current.endDate = recalculateEndDate(current.startDate, current.duration);
+    current.baseDuration = baseDuration;
+    current.extensionDays = extensionDays;
+    current.duration = totalDuration;
+    // Preserve current.startDate exactly — do NOT re-apply startOfDay() because
+    // that normalises to local midnight and shifts UTC-midnight dates by the server's
+    // UTC offset (e.g. UTC+1 moves 2026-03-31T00:00Z → 2026-03-30T23:00Z).
+    current.startDate = preservedStartDate;
+    current.endDate = recalculateEndDate(current.startDate, totalDuration);
+    current.status = 'active';
     await current.save();
 
-    const [reservedSequenceKeys, activeUnitLoadMap] = await Promise.all([
-      getReservedForwardSequenceKeys(intern._id),
-      getActiveUnitLoadMap(),
-    ]);
-    await rebuildInternFutureRotations({
-      internId: intern._id,
-      reservedSequenceKeys,
-      activeUnitLoadMap,
-      now: new Date(),
-    });
+    const selectedUpcomingRotation = upcomingRotations[selectedIndex] || null;
+    const remainingUpcomingRotations = upcomingRotations.filter((_, index) => index !== selectedIndex);
+
+    if (selectedUpcomingRotation) {
+      await selectedUpcomingRotation.deleteOne();
+    }
+
+    let previousEndDate = startOfDay(current.endDate);
+    for (const rotation of remainingUpcomingRotations) {
+      const preservedUpcomingTimeline = getPreservedRotationTimeline(rotation, rotation.unit);
+      rotation.baseDuration = preservedUpcomingTimeline.baseDuration;
+      rotation.extensionDays = preservedUpcomingTimeline.extensionDays;
+      rotation.duration = preservedUpcomingTimeline.totalDuration;
+      rotation.startDate = addDays(previousEndDate, 1);
+      rotation.endDate = recalculateEndDate(rotation.startDate, rotation.duration);
+      rotation.status = 'upcoming';
+      previousEndDate = startOfDay(rotation.endDate);
+      await rotation.save();
+    }
+
+    const rotationHistory = await Rotation.find({ intern: intern._id })
+      .sort({ startDate: 1, createdAt: 1 })
+      .select('_id')
+      .exec();
 
     intern.currentUnit = selectedUnit._id;
+    intern.rotationHistory = rotationHistory.map((rotation) => rotation._id);
     if (!intern.status || intern.status === 'completed') {
       intern.status = Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active';
     }

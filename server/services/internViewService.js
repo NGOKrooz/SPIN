@@ -262,9 +262,8 @@ const addUnitProgress = (internView, currentUnit, units = []) => {
   const upcomingStartDate = nextUpcomingRotation?.startDate ? new Date(nextUpcomingRotation.startDate) : null;
   const upcomingEndDate = nextUpcomingRotation?.endDate ? new Date(nextUpcomingRotation.endDate) : null;
 
-  const internshipDays = activeRotation
-    ? daysSpent
-    : 0;
+  const internshipStartDate = internView.startDate || internView.start_date || null;
+  const internshipDays = calculateElapsedDays(internshipStartDate, null, now);
 
   return {
     ...internView,

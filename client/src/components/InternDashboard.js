@@ -262,20 +262,11 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
     }
   }, []);
 
-  // Calculate days in the current unit from the unit's actual start date.
+  // Global internship days always come from the original internship start date.
   const totalDaysInInternship = React.useMemo(() => {
-    const currentRotation = currentRotations[0] || null;
-    const startDate = currentRotation?.start_date
-      || currentIntern?.currentUnit?.startDate
-      || currentIntern?.currentUnit?.start_date
-      || null;
-    const duration = getTotalDuration(currentRotation)
-      || currentIntern?.currentUnit?.duration
-      || currentIntern?.currentUnit?.duration_days
-      || null;
-
-    return calculateElapsedDays(startDate, duration, currentTime);
-  }, [currentRotations, currentIntern?.currentUnit?.duration, currentIntern?.currentUnit?.duration_days, currentIntern?.currentUnit?.startDate, currentIntern?.currentUnit?.start_date, currentTime]);
+    const internshipStartDate = currentIntern?.start_date || currentIntern?.startDate || null;
+    return calculateElapsedDays(internshipStartDate, null, currentTime);
+  }, [currentIntern?.startDate, currentIntern?.start_date, currentTime]);
 
   const invalidateInternLists = React.useCallback(() => {
     queryClient.invalidateQueries({

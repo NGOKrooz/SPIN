@@ -67,6 +67,21 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
 
   const showWarning = daysInCurrentRotation > 1;
 
+  const selectedUnit = React.useMemo(
+    () => availableUnits.find((unit) => String(unit.id) === String(selectedUnitId)) || null,
+    [availableUnits, selectedUnitId]
+  );
+
+  const preservedDuration = React.useMemo(() => {
+    const duration = Number(currentRotation?.duration_days || currentRotation?.duration || 0);
+    return Number.isFinite(duration) && duration > 0 ? duration : 0;
+  }, [currentRotation?.duration, currentRotation?.duration_days]);
+
+  const preservedEndDate = React.useMemo(() => {
+    if (!currentRotation?.start_date || preservedDuration <= 0) return '';
+    return format(addDays(parseISO(currentRotation.start_date), preservedDuration - 1), 'yyyy-MM-dd');
+  }, [currentRotation?.start_date, preservedDuration]);
+
   const reassignMutation = useMutation({
     mutationFn: ({ internId, unitId }) =>
       api.reassignIntern(internId, { unitId }),
@@ -100,7 +115,6 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
       return;
     }
 
-    const selectedUnit = availableUnits.find(unit => String(unit.id) === String(selectedUnitId));
     if (!selectedUnit) {
       toast({
         title: 'Error',
@@ -161,13 +175,14 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
               </Select>
             </div>
 
-            {selectedUnitId && (
+            {selectedUnit && (
               <div className="bg-blue-50 p-3 rounded-lg">
-                <div className="text-sm text-blue-800">
-                  <p><strong>Current:</strong> {currentRotation.unit_name} ({currentRotation.duration_days} days)</p>
-                  <p><strong>New:</strong> {availableUnits.find(u => u.id === selectedUnitId)?.name} ({availableUnits.find(u => u.id === selectedUnitId)?.duration_days} days)</p>
-                  <p><strong>Start Date:</strong> {currentRotation.start_date}</p>
-                  <p><strong>New End Date:</strong> {selectedUnitId ? format(addDays(parseISO(currentRotation.start_date), (availableUnits.find(u => u.id === selectedUnitId)?.duration_days || 0) - 1), 'yyyy-MM-dd') : ''}</p>
+                <div className="text-sm text-blue-800 space-y-1">
+                  <p><strong>Current:</strong> {currentRotation.unit_name} ({preservedDuration} days)</p>
+                  <p><strong>New:</strong> {selectedUnit.name} ({selectedUnit.duration_days} days nominal)</p>
+                  <p><strong>Preserved Start Date:</strong> {currentRotation.start_date}</p>
+                  <p><strong>Current Progress:</strong> {daysInCurrentRotation} / {preservedDuration} days</p>
+                  <p><strong>Preserved End Date:</strong> {preservedEndDate}</p>
                 </div>
               </div>
             )}
