@@ -74,6 +74,21 @@ function getTotalDuration(rotation) {
   return 0;
 }
 
+function getCurrentUnitProgressDisplay(rotation, currentTimeValue) {
+  const totalDuration = getTotalDuration(rotation);
+  if (!Number.isFinite(totalDuration) || totalDuration <= 0) return null;
+
+  const startDate = parseDateValue(rotation?.start_date);
+  const endDate = getUnitEndDate(rotation?.start_date, totalDuration);
+  const now = new Date(currentTimeValue);
+  const isCurrentUnit = startDate && endDate && now >= startDate && now <= endDate;
+
+  if (!isCurrentUnit) return null;
+
+  const elapsedDays = calculateElapsedDays(rotation.start_date, totalDuration, currentTimeValue);
+  return `${elapsedDays} / ${totalDuration} days`;
+}
+
 export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   const queryClient = useQueryClient();
   const [showExtend, setShowExtend] = React.useState(false);
@@ -514,32 +529,27 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {currentRotations.map((rotation) => (
-                      <div key={rotation.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 bg-blue-50 rounded-lg">
-                        <div>
-                          <h4 className="font-medium">{rotation.unit_name}</h4>
-                          <p className="text-sm text-gray-600">
-                            {formatDate(rotation.start_date)} - {formatDate(rotation.end_date)}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm font-medium text-blue-600">
-                            {(() => {
-                              const totalDuration = getTotalDuration(rotation);
-                              const elapsedDays = calculateElapsedDays(rotation.start_date, totalDuration, currentTime);
-                              const endDate = getUnitEndDate(rotation.start_date, totalDuration);
-                              const now = new Date(currentTime);
-                              const startDate = parseDateValue(rotation.start_date);
-                              const isCurrentUnit = startDate && endDate && now >= startDate && now <= endDate;
+                    {currentRotations.map((rotation) => {
+                      const progressDisplay = getCurrentUnitProgressDisplay(rotation, currentTime);
 
-                              return isCurrentUnit
-                                ? `${elapsedDays} / ${totalDuration}`
-                                : `${elapsedDays} days`;
-                            })()}
-                          </p>
+                      return (
+                        <div key={rotation.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 bg-blue-50 rounded-lg">
+                          <div>
+                            <h4 className="font-medium">{rotation.unit_name}</h4>
+                            <p className="text-sm text-gray-600">
+                              {formatDate(rotation.start_date)} - {formatDate(rotation.end_date)}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            {progressDisplay && (
+                              <p className="text-sm font-medium text-blue-600">
+                                {progressDisplay}
+                              </p>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </CardContent>
               </Card>

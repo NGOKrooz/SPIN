@@ -13,47 +13,10 @@ import InternForm from '../components/InternForm';
 import ExtensionModal from '../components/ExtensionModal';
 import InternDashboard from '../components/InternDashboard';
 
-const DAY_IN_MS = 1000 * 60 * 60 * 24;
-
-const parseDateValue = (value) => {
-  if (!value) return null;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-};
-
-const calculateElapsedDays = (startDateValue, durationValue, currentTimeValue) => {
-  const startDate = parseDateValue(startDateValue);
-  if (!startDate) return 0;
-
-  const now = new Date(currentTimeValue);
-  if (now < startDate) return 0;
-
-  const elapsedDays = Math.floor((now.getTime() - startDate.getTime()) / DAY_IN_MS) + 1;
-  const duration = Number(durationValue);
-
-  if (Number.isFinite(duration) && duration > 0) {
-    return Math.max(0, Math.min(duration, elapsedDays));
-  }
-
-  return Math.max(0, elapsedDays);
-};
-
-const getUnitEndDate = (startDateValue, durationValue) => {
-  const startDate = parseDateValue(startDateValue);
-  const duration = Number(durationValue);
-
-  if (!startDate || !Number.isFinite(duration) || duration <= 0) return null;
-
-  const endDate = new Date(startDate);
-  endDate.setDate(endDate.getDate() + duration - 1);
-  return endDate;
-};
-
 export default function Interns() {
   const [searchTerm, setSearchTerm] = useState('');
   const [batchFilter, setBatchFilter] = useState('');
   const [sortByDate, setSortByDate] = useState(() => localStorage.getItem('internsSortByDate') || 'newest');
-  const [currentTime, setCurrentTime] = useState(() => Date.now());
   const [showForm, setShowForm] = useState(false);
   const [editingIntern, setEditingIntern] = useState(null);
   const [viewingIntern, setViewingIntern] = useState(null);
@@ -65,14 +28,6 @@ export default function Interns() {
     queryKey: ['interns', { sort: sortByDate }],
     queryFn: () => api.getInterns({ sort: sortByDate }),
   });
-
-  React.useEffect(() => {
-    const timer = window.setInterval(() => {
-      setCurrentTime(Date.now());
-    }, 60000);
-
-    return () => window.clearInterval(timer);
-  }, []);
 
   React.useEffect(() => {
     localStorage.setItem('internsSortByDate', sortByDate);
@@ -121,33 +76,6 @@ export default function Interns() {
       internshipDays: i.internshipDays,
     };
   });
-
-  const getInternshipDays = useCallback((intern) => {
-    if (Number.isFinite(Number(intern?.internshipDays))) {
-      return Math.max(0, Number(intern.internshipDays));
-    }
-
-    const startDate = intern?.currentUnit?.startDate || intern?.currentUnit?.start_date;
-    const duration = intern?.currentUnit?.duration ?? intern?.currentUnit?.duration_days;
-    return calculateElapsedDays(startDate, duration, currentTime);
-  }, [currentTime]);
-
-  const getInternshipDisplay = useCallback((intern) => {
-    const startDate = intern?.currentUnit?.startDate || intern?.currentUnit?.start_date;
-    const duration = Number(intern?.currentUnit?.duration ?? intern?.currentUnit?.duration_days);
-    const elapsedDays = getInternshipDays(intern);
-
-    if (!startDate || !Number.isFinite(duration) || duration <= 0) {
-      return `${elapsedDays} days`;
-    }
-
-    const now = new Date(currentTime);
-    const parsedStartDate = parseDateValue(startDate);
-    const parsedEndDate = getUnitEndDate(startDate, duration);
-    const isCurrentUnit = parsedStartDate && parsedEndDate && now >= parsedStartDate && now <= parsedEndDate;
-
-    return isCurrentUnit ? `${elapsedDays} / ${duration}` : `${elapsedDays} days`;
-  }, [currentTime, getInternshipDays]);
 
   const derivedInterns = mapWithDerivedStatus(interns);
   
@@ -369,9 +297,6 @@ export default function Interns() {
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
-                  </div>
-                  <div className="mt-3 pt-3 border-t border-gray-100 text-sm font-medium text-gray-900">
-                    {getInternshipDisplay(intern)}
                   </div>
                 </div>
               ))}
