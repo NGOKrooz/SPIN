@@ -360,9 +360,12 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
       return res.status(400).json({ error: 'No units configured. Please add units before creating interns.' });
     }
 
-    const totalInterns = await Intern.countDocuments({}).exec();
-    const nextInternIndex = totalInterns % units.length;
-    console.log(`[POST /interns] totalInterns=${totalInterns}, nextInternIndex=${nextInternIndex}/${units.length} → unit: "${units[nextInternIndex]?.name}"`);
+    // Count only interns that already have a first unit assigned (rotationHistory populated).
+    // This excludes ghost interns where creation succeeded but rotation assignment failed,
+    // and hard-deleted interns are already gone from the collection.
+    const assignedInternCount = await Intern.countDocuments({ 'rotationHistory.0': { $exists: true } }).exec();
+    const nextInternIndex = assignedInternCount % units.length;
+    console.log(`[POST /interns] assignedInternCount=${assignedInternCount}, nextInternIndex=${nextInternIndex}/${units.length} → firstUnit: "${units[nextInternIndex]?.name}"`);
 
     const intern = await Intern.create({
       name,
