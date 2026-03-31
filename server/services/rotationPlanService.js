@@ -264,6 +264,7 @@ const getReservedForwardSequenceKeys = async (excludeInternId = null) => {
 const buildInitialRotationPlanForIntern = async ({
   intern,
   units,
+    nextInternIndex,
   reservedSequenceKeys,
   activeUnitLoadMap,
   now = new Date(),
@@ -285,7 +286,8 @@ const buildInitialRotationPlanForIntern = async ({
     sequence = [...orderedUnits];
   } else if (!progress.hasStarted) {
     // ROUND-ROBIN FIRST UNIT: Assign based on total intern count
-    const firstUnit = await getRoundRobinFirstUnit(orderedUnits);
+    const firstUnitIndex = nextInternIndex != null ? nextInternIndex : 0;
+    const firstUnit = orderedUnits[firstUnitIndex] || null;
     const remainingUnits = orderedUnits.filter((unit) => String(unit._id) !== String(firstUnit?._id));
     
     const shuffledRemainingUnits = chooseUniqueUpcomingUnits({
@@ -533,7 +535,6 @@ module.exports = {
   recalculateEndDate,
   sortUnitsByOrder,
   getOrderedUnits,
-  getRoundRobinFirstUnit,
   computeDeterministicProgress,
   getActiveUnitLoadMap,
   getReservedForwardSequenceKeys,

@@ -354,6 +354,15 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
       return res.status(400).json({ error: 'Invalid start date' });
     }
 
+    // Get units FIRST to calculate round-robin index BEFORE creating intern
+    const units = await getOrderedUnits();
+    let nextInternIndex = null;
+    if (units.length > 0) {
+      const totalInterns = await Intern.countDocuments({}).exec();
+      nextInternIndex = totalInterns % units.length;
+      console.log(`[POST /interns] totalInterns=${totalInterns}, nextInternIndex=${nextInternIndex}/${units.length}`);
+    }
+
     const intern = await Intern.create({
       name,
       gender,
@@ -365,7 +374,6 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
       totalExtensionDays: 0,
     });
 
-    const units = await getOrderedUnits();
     if (units.length > 0) {
       const [reservedSequenceKeys, activeUnitLoadMap] = await Promise.all([
         getReservedForwardSequenceKeys(intern._id),
@@ -374,6 +382,7 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
       const plan = await buildInitialRotationPlanForIntern({
         intern,
         units,
+          nextInternIndex,
         reservedSequenceKeys,
         activeUnitLoadMap,
         now: new Date(),
