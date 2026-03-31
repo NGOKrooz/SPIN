@@ -266,20 +266,17 @@ const buildInitialRotationPlanForIntern = async ({
 
   const startDate = startOfDay(intern.startDate || now);
   const today = startOfDay(now);
-  const progress = computeDeterministicProgress(startDate, orderedUnits, today);
   const orderSignature = orderedUnits.map((unit) => `${unit._id}:${getUnitOrderIndex(unit)}`).join('|');
 
   let sequence = [];
+  let progress = computeDeterministicProgress(startDate, orderedUnits, today);
   let currentIndex = -1;
 
-  if (progress.allCompleted) {
-    sequence = [...orderedUnits];
-  } else if (!progress.hasStarted) {
-    // ROUND-ROBIN FIRST UNIT: Assign based on total intern count
-    const firstUnitIndex = nextInternIndex != null ? nextInternIndex : 0;
-    const firstUnit = orderedUnits[firstUnitIndex] || null;
+  if (nextInternIndex != null) {
+    const firstUnitIndex = Number(nextInternIndex);
+    const firstUnit = orderedUnits[firstUnitIndex] || orderedUnits[0] || null;
     const remainingUnits = orderedUnits.filter((unit) => String(unit._id) !== String(firstUnit?._id));
-    
+
     const shuffledRemainingUnits = chooseUniqueUpcomingUnits({
       intern,
       anchorUnitId: firstUnit?._id?.toString?.() || null,
@@ -290,6 +287,10 @@ const buildInitialRotationPlanForIntern = async ({
     });
 
     sequence = [firstUnit, ...shuffledRemainingUnits].filter(Boolean);
+    progress = computeDeterministicProgress(startDate, sequence, today);
+    currentIndex = progress.currentIndex;
+  } else if (progress.allCompleted) {
+    sequence = [...orderedUnits];
   } else {
     const completedUnits = progress.completedUnits;
     const currentUnit = progress.currentUnit;
