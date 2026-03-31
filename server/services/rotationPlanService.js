@@ -50,16 +50,6 @@ const getOrderedUnits = async () => {
   return sortUnitsByOrder(units);
 };
 
-const getRoundRobinFirstUnit = async (orderedUnits = []) => {
-  if (orderedUnits.length === 0) return null;
-
-  // Count total interns to determine round-robin index
-  const totalInterns = await Intern.countDocuments({}).exec();
-  const firstUnitIndex = totalInterns % orderedUnits.length;
-
-  return orderedUnits[firstUnitIndex] || null;
-};
-
 const hashString = (value) => {
   const input = String(value || '');
   let hash = 0;
@@ -264,7 +254,7 @@ const getReservedForwardSequenceKeys = async (excludeInternId = null) => {
 const buildInitialRotationPlanForIntern = async ({
   intern,
   units,
-    nextInternIndex,
+  nextInternIndex,
   reservedSequenceKeys,
   activeUnitLoadMap,
   now = new Date(),

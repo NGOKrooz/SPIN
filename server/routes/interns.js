@@ -356,12 +356,13 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
 
     // Get units FIRST to calculate round-robin index BEFORE creating intern
     const units = await getOrderedUnits();
-    let nextInternIndex = null;
-    if (units.length > 0) {
-      const totalInterns = await Intern.countDocuments({}).exec();
-      nextInternIndex = totalInterns % units.length;
-      console.log(`[POST /interns] totalInterns=${totalInterns}, nextInternIndex=${nextInternIndex}/${units.length}`);
+    if (units.length === 0) {
+      return res.status(400).json({ error: 'No units configured. Please add units before creating interns.' });
     }
+
+    const totalInterns = await Intern.countDocuments({}).exec();
+    const nextInternIndex = totalInterns % units.length;
+    console.log(`[POST /interns] totalInterns=${totalInterns}, nextInternIndex=${nextInternIndex}/${units.length} → unit: "${units[nextInternIndex]?.name}"`);
 
     const intern = await Intern.create({
       name,
@@ -374,28 +375,23 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
       totalExtensionDays: 0,
     });
 
-    if (units.length > 0) {
-      const [reservedSequenceKeys, activeUnitLoadMap] = await Promise.all([
-        getReservedForwardSequenceKeys(intern._id),
-        getActiveUnitLoadMap(),
-      ]);
-      const plan = await buildInitialRotationPlanForIntern({
-        intern,
-        units,
-          nextInternIndex,
-        reservedSequenceKeys,
-        activeUnitLoadMap,
-        now: new Date(),
-      });
+    const [reservedSequenceKeys, activeUnitLoadMap] = await Promise.all([
+      getReservedForwardSequenceKeys(intern._id),
+      getActiveUnitLoadMap(),
+    ]);
+    const plan = await buildInitialRotationPlanForIntern({
+      intern,
+      units,
+      nextInternIndex,
+      reservedSequenceKeys,
+      activeUnitLoadMap,
+      now: new Date(),
+    });
 
-      intern.rotationHistory = plan.map((rotation) => rotation._id);
-      await intern.save();
-      await syncInternRotationStates(intern._id);
-      console.log('ASSIGNED FULL ROTATION PLAN:', plan.map((rotation) => ({
-        id: rotation._id.toString(),
-        status: rotation.status,
-      })));
-    }
+    intern.rotationHistory = plan.map((rotation) => rotation._id);
+    await intern.save();
+    await syncInternRotationStates(intern._id);
+    console.log(`[POST /interns] Assigned ${plan.length} rotations. First unit: "${units[nextInternIndex]?.name}" (index ${nextInternIndex})`);
 
     console.log('CREATED INTERN:', intern);
 
