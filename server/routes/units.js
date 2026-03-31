@@ -184,7 +184,59 @@ function getComparableUnitValue(unit, field) {
     return unit.durationDays ?? unit.duration ?? null;
   }
 
+  if (field === 'description') {
+    const value = unit.description;
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      return trimmed || null;
+    }
+    return value;
+  }
+
+  if (typeof unit[field] === 'string') {
+    return unit[field].trim();
+  }
+
   return unit[field] ?? null;
+}
+
+function toUnitDisplayValue(field, value) {
+  if (value === null || value === undefined || value === '') return 'none';
+  if (field === 'durationDays') {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return String(value);
+    return `${numeric} ${numeric === 1 ? 'day' : 'days'}`;
+  }
+
+  return String(value);
+}
+
+function buildUnitUpdateMessage(previousUnit, unit, changes) {
+  const oldName = previousUnit?.name || 'Unit';
+  const newName = unit?.name || oldName;
+  const nameChange = changes.find((change) => change.field === 'name') || null;
+  const durationChange = changes.find((change) => change.field === 'durationDays') || null;
+
+  if (changes.length === 1 && nameChange) {
+    return `${oldName} was renamed to ${newName}`;
+  }
+
+  if (changes.length === 1 && durationChange) {
+    return `${oldName} duration was updated from ${toUnitDisplayValue('durationDays', durationChange.oldValue)} to ${toUnitDisplayValue('durationDays', durationChange.newValue)}`;
+  }
+
+  const parts = changes.map((change) => {
+    if (change.field === 'name') {
+      return `name changed to ${newName}`;
+    }
+    if (change.field === 'durationDays') {
+      return `duration changed from ${toUnitDisplayValue('durationDays', change.oldValue)} to ${toUnitDisplayValue('durationDays', change.newValue)}`;
+    }
+    return `${change.label} changed from ${toUnitDisplayValue(change.field, change.oldValue)} to ${toUnitDisplayValue(change.field, change.newValue)}`;
+  });
+
+  return `${oldName} was updated: ${parts.join(', ')}`;
 }
 
 // GET /api/units - Get all units
@@ -349,21 +401,24 @@ router.put('/:id', normalizeUnitPayload, validateUnitPayload, async (req, res) =
 
     const durationChanged = !areValuesEqual(getComparableUnitValue(previousUnit, 'durationDays'), getComparableUnitValue(unit, 'durationDays'));
 
-    const trackedFields = ['name', 'durationDays', 'capacity', 'patientCount', 'description', 'order'];
-    for (const field of trackedFields) {
-      const oldValue = getComparableUnitValue(previousUnit, field);
-      const newValue = getComparableUnitValue(unit, field);
-
+    const trackedFields = [
+      { field: 'name', label: 'name' },
+      { field: 'durationDays', label: 'duration' },
+      { field: 'capacity', label: 'capacity' },
+      { field: 'patientCount', label: 'patient count' },
+      { field: 'description', label: 'description' },
+      { field: 'order', label: 'order' },
+    ];
+    const changes = [];
+    for (const item of trackedFields) {
+      const oldValue = getComparableUnitValue(previousUnit, item.field);
+      const newValue = getComparableUnitValue(unit, item.field);
       if (!areValuesEqual(oldValue, newValue)) {
-        await logActivityEventSafe({
-          type: ACTIVITY_TYPES.UNIT_UPDATED,
-          metadata: {
-            unitId: unit._id.toString(),
-            unitName: unit.name,
-            field,
-            oldValue,
-            newValue,
-          },
+        changes.push({
+          field: item.field,
+          label: item.label,
+          oldValue,
+          newValue,
         });
       }
     }
@@ -371,14 +426,23 @@ router.put('/:id', normalizeUnitPayload, validateUnitPayload, async (req, res) =
     const previousWorkload = previousUnit.workload || calculateWorkload(previousUnit);
     const nextWorkload = unit.workload || calculateWorkload(unit);
     if (previousWorkload !== nextWorkload) {
+      changes.push({
+        field: 'workload',
+        label: 'workload',
+        oldValue: previousWorkload,
+        newValue: nextWorkload,
+      });
+    }
+
+    if (changes.length > 0) {
+      const message = buildUnitUpdateMessage(previousUnit, unit, changes);
       await logActivityEventSafe({
-        type: ACTIVITY_TYPES.WORKLOAD_UPDATED,
+        type: ACTIVITY_TYPES.UNIT_UPDATE,
         metadata: {
           unitId: unit._id.toString(),
           unitName: unit.name,
-          field: 'workload',
-          oldValue: previousWorkload,
-          newValue: nextWorkload,
+          message,
+          changes,
         },
       });
     }

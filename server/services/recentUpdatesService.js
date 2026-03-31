@@ -2,12 +2,14 @@ const ActivityLog = require('../models/ActivityLog');
 
 const ACTIVITY_TYPES = Object.freeze({
   INTERN_CREATED: 'intern_created',
+  INTERN_UPDATE: 'intern_update',
   INTERN_DELETED: 'intern_deleted',
   INTERN_EXTENSION_ADDED: 'intern_extension_added',
   INTERN_EXTENSION_REMOVED: 'intern_extension_removed',
   INTERN_REASSIGNED: 'intern_reassigned',
   ROTATION_MOVED: 'rotation_moved',
   UNIT_CREATED: 'unit_created',
+  UNIT_UPDATE: 'unit_update',
   UNIT_UPDATED: 'unit_updated',
   WORKLOAD_UPDATED: 'workload_updated',
   UNIT_DELETED: 'unit_deleted',
@@ -123,12 +125,16 @@ function buildActivityMessage(type, metadata = {}, fallbackMessage = null) {
       return `${internName} moved from ${previousUnitName} to ${nextUnitName}`;
     case ACTIVITY_TYPES.UNIT_CREATED:
       return `New unit created: ${unitName}`;
+    case ACTIVITY_TYPES.UNIT_UPDATE:
+      return metadata.message || `Unit ${unitName} was updated`;
     case ACTIVITY_TYPES.UNIT_UPDATED:
       return `Unit ${unitName} was updated: ${formatFieldLabel(field)} changed from ${oldValue} to ${newValue}`;
     case ACTIVITY_TYPES.WORKLOAD_UPDATED:
       return `Unit ${unitName} workload updated from ${oldValue} to ${newValue}`;
     case ACTIVITY_TYPES.UNIT_DELETED:
       return `Deleted unit: ${unitName}`;
+    case ACTIVITY_TYPES.INTERN_UPDATE:
+      return metadata.message || `${internName} was updated`;
     default:
       return fallbackMessage || metadata.message || 'Activity update';
   }

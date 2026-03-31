@@ -48,6 +48,46 @@ const toValidDate = (value) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
+const toComparableInternValue = (field, value) => {
+  if (field === 'startDate') {
+    const parsed = toValidDate(value);
+    return parsed ? startOfDay(parsed).toISOString() : null;
+  }
+
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+
+  return value ?? null;
+};
+
+const buildInternUpdateMessage = (previousIntern, updatedIntern, changes) => {
+  const oldName = previousIntern?.name || 'Intern';
+  const newName = updatedIntern?.name || oldName;
+  const nameChange = changes.find((change) => change.field === 'name') || null;
+  const batchChange = changes.find((change) => change.field === 'batch') || null;
+
+  if (changes.length === 1 && nameChange) {
+    return `Intern name updated: ${oldName} -> ${newName}`;
+  }
+
+  if (changes.length === 1 && batchChange) {
+    return `${oldName} was moved from Batch ${batchChange.oldValue} to Batch ${batchChange.newValue}`;
+  }
+
+  const parts = changes.map((change) => {
+    if (change.field === 'name') {
+      return `name changed to ${newName}`;
+    }
+    if (change.field === 'batch') {
+      return `batch changed from Batch ${change.oldValue} to Batch ${change.newValue}`;
+    }
+    return `${change.label} changed from ${change.oldValue ?? 'none'} to ${change.newValue ?? 'none'}`;
+  });
+
+  return `${oldName} was updated: ${parts.join(', ')}`;
+};
+
 const formatRotationForSchedule = (rotation) => {
   const unitName = rotation?.unit?.name || 'Unknown Unit';
   const unitId = rotation?.unit?._id?.toString?.() || rotation?.unit?.toString?.() || null;
@@ -430,6 +470,7 @@ router.put('/:id', normalizeInternPayload, validateIntern, async (req, res) => {
   try {
     const intern = await Intern.findById(req.params.id).exec();
     if (!intern) return res.status(404).json({ error: 'Intern not found' });
+    const previousIntern = intern.toObject();
 
     if (req.body.startDate !== undefined) {
       const parsedStartDate = toValidDate(req.body.startDate);
@@ -448,6 +489,43 @@ router.put('/:id', normalizeInternPayload, validateIntern, async (req, res) => {
 
     await intern.save();
     await ensureInternStatusIsCorrect(intern._id);
+
+    const trackedFields = [
+      { field: 'name', label: 'name' },
+      { field: 'batch', label: 'batch' },
+      { field: 'gender', label: 'gender' },
+      { field: 'startDate', label: 'start date' },
+      { field: 'phone', label: 'phone' },
+      { field: 'status', label: 'status' },
+      { field: 'extensionDays', label: 'extension days' },
+      { field: 'totalExtensionDays', label: 'total extension days' },
+    ];
+    const changes = [];
+    for (const item of trackedFields) {
+      const oldValue = toComparableInternValue(item.field, previousIntern[item.field]);
+      const newValue = toComparableInternValue(item.field, intern[item.field]);
+      if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
+        changes.push({
+          field: item.field,
+          label: item.label,
+          oldValue,
+          newValue,
+        });
+      }
+    }
+
+    if (changes.length > 0) {
+      const message = buildInternUpdateMessage(previousIntern, intern, changes);
+      await logActivityEventSafe({
+        type: ACTIVITY_TYPES.INTERN_UPDATE,
+        metadata: {
+          internId: intern._id.toString(),
+          internName: intern.name,
+          message,
+          changes,
+        },
+      });
+    }
 
     await updateBatchStats().catch(() => {});
 

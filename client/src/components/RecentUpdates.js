@@ -17,6 +17,8 @@ import { api } from '../services/api';
 import { formatDateTime, getRelativeTimeLabel } from '../lib/utils';
 
 const activityIcons = {
+  unit_update: PencilRuler,
+  intern_update: PencilRuler,
   unit_created: Building2,
   unit_deleted: Trash2,
   intern_created: UserPlus,
@@ -31,6 +33,8 @@ const activityIcons = {
 };
 
 const activityColors = {
+  unit_update: 'text-sky-700 bg-sky-50',
+  intern_update: 'text-sky-700 bg-sky-50',
   unit_created: 'text-blue-600 bg-blue-50',
   unit_deleted: 'text-red-600 bg-red-50',
   intern_created: 'text-green-600 bg-green-50',
@@ -79,6 +83,7 @@ export default function RecentUpdates() {
           type,
           description,
           createdAt,
+          metadata: activity?.metadata || null,
         };
       })
       .filter((activity) => Boolean(activity.id) && Boolean(activity.description))
@@ -187,6 +192,18 @@ export default function RecentUpdates() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-900 break-words">{activity.description}</p>
+                    {Array.isArray(activity?.metadata?.changes) && activity.metadata.changes.length > 0 ? (
+                      <div className="mt-2 space-y-1">
+                        {activity.metadata.changes.map((change, index) => (
+                          <p key={`${activity.id}-change-${index}`} className="text-xs text-gray-700 break-words">
+                            <span className="text-gray-500">{change.label || change.field}:</span>{' '}
+                            <span className="text-gray-500">{String(change.oldValue ?? 'none')}</span>{' '}
+                            <span className="text-gray-400">→</span>{' '}
+                            <span className="font-semibold text-gray-900">{String(change.newValue ?? 'none')}</span>
+                          </p>
+                        ))}
+                      </div>
+                    ) : null}
                     <div className="mt-1 flex items-center gap-2 text-xs text-gray-500">
                       <span>{timeAgo}</span>
                       {fullDate ? <span className="text-gray-300">•</span> : null}
