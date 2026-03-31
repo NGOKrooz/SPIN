@@ -309,7 +309,12 @@ export default function Units() {
 
       {/* Units Grid */}
       <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-2 xl:grid-cols-3">
-        {filteredUnits.map((unit) => (
+        {filteredUnits.map((unit) => {
+          const assignedInterns = getUnitInterns(unit);
+          const currentInternCount = unit.current_interns ?? unit.currentInterns ?? assignedInterns.length;
+          const patientCount = getPatientCount(unit);
+
+          return (
           <Card key={unit.id} className="hover:shadow-lg transition-shadow">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
@@ -327,14 +332,7 @@ export default function Units() {
             <CardContent className="space-y-4">
               {/* Current Interns */}
               <div>
-              {(() => {
-                const assignedInterns = getUnitInterns(unit);
-                const currentInternCount = unit.current_interns ?? unit.currentInterns ?? assignedInterns.length;
-                const patientCount = getPatientCount(unit);
-
-                return (
-                  <>
-              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-2">
                   <h4 className="text-sm font-medium text-gray-700">Current Interns</h4>
                   <span className="text-sm text-gray-500">{currentInternCount}</span>
                 </div>
@@ -353,9 +351,6 @@ export default function Units() {
                 ) : (
                   <p className="text-sm text-gray-500">No interns assigned</p>
                 )}
-                  </>
-                );
-              })()}
               </div>
 
               {/* Patient Count Information */}
@@ -403,7 +398,7 @@ export default function Units() {
               </div>
             </CardContent>
           </Card>
-        ))}
+        );})}
       </div>
 
       {filteredUnits.length === 0 && (
