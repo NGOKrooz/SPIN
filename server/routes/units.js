@@ -4,6 +4,7 @@ const { body, validationResult } = require('express-validator');
 const Unit = require('../models/Unit');
 const Rotation = require('../models/Rotation');
 const { createUnit, updateUnit, deleteUnit, calculateWorkload, isCritical } = require('../services/unitService');
+const { getActivePatientCountMap, syncUnitPatientCounts } = require('../services/patientCountService');
 const { ACTIVITY_TYPES, logActivityEventSafe, logRecentUpdateSafe } = require('../services/recentUpdatesService');
 const { buildInternViews } = require('../services/internViewService');
 const {
@@ -119,6 +120,30 @@ const buildCurrentInternRecord = (rotationRow) => ({
   },
 });
 
+const toUnitResponse = (unit, unitRotations, patientCountMap) => {
+  const currentRotations = unitRotations.filter((rotation) => rotation.is_current);
+  const interns = currentRotations.map(buildCurrentInternRecord);
+  const internNames = interns
+    .map((intern) => intern.name ? `${intern.name}${intern.batch ? ` (${intern.batch})` : ''}` : null)
+    .filter(Boolean);
+  const patientCount = Number(patientCountMap.get(String(unit._id)) || 0);
+
+  return {
+    ...unit.toObject(),
+    duration_days: unit.durationDays || unit.duration || null,
+    duration: unit.duration || unit.durationDays || null,
+    currentInterns: interns.length,
+    current_interns: interns.length,
+    interns,
+    intern_names: internNames,
+    current_rotations: unitRotations,
+    patientCount,
+    patient_count: patientCount,
+    workload: calculateWorkload({ patientCount, capacity: unit.capacity }),
+    isCritical: isCritical({ patientCount, capacity: unit.capacity }),
+  };
+};
+
 async function getUnitAssignments(unitIds) {
   if (!Array.isArray(unitIds) || unitIds.length === 0) {
     return new Map();
@@ -212,6 +237,17 @@ function toUnitDisplayValue(field, value) {
   return String(value);
 }
 
+function buildUnitChange(field, label, oldValue, newValue) {
+  return {
+    field,
+    label,
+    oldValue,
+    newValue,
+    oldDisplayValue: toUnitDisplayValue(field, oldValue),
+    newDisplayValue: toUnitDisplayValue(field, newValue),
+  };
+}
+
 function buildUnitUpdateMessage(previousUnit, unit, changes) {
   const oldName = previousUnit?.name || 'Unit';
   const newName = unit?.name || oldName;
@@ -223,7 +259,7 @@ function buildUnitUpdateMessage(previousUnit, unit, changes) {
   }
 
   if (changes.length === 1 && durationChange) {
-    return `${oldName} duration was updated from ${toUnitDisplayValue('durationDays', durationChange.oldValue)} to ${toUnitDisplayValue('durationDays', durationChange.newValue)}`;
+    return `${oldName} duration was updated from ${durationChange.oldDisplayValue} to ${durationChange.newDisplayValue}`;
   }
 
   const parts = changes.map((change) => {
@@ -231,9 +267,9 @@ function buildUnitUpdateMessage(previousUnit, unit, changes) {
       return `name changed to ${newName}`;
     }
     if (change.field === 'durationDays') {
-      return `duration changed from ${toUnitDisplayValue('durationDays', change.oldValue)} to ${toUnitDisplayValue('durationDays', change.newValue)}`;
+      return `duration changed from ${change.oldDisplayValue} to ${change.newDisplayValue}`;
     }
-    return `${change.label} changed from ${toUnitDisplayValue(change.field, change.oldValue)} to ${toUnitDisplayValue(change.field, change.newValue)}`;
+    return `${change.label} changed from ${change.oldDisplayValue} to ${change.newDisplayValue}`;
   });
 
   return `${oldName} was updated: ${parts.join(', ')}`;
@@ -245,32 +281,15 @@ router.get('/', async (req, res) => {
     const units = await Unit.find({}).sort({ order: 1, name: 1 }).exec();
 
     const unitIds = units.map((unit) => unit._id);
+    const patientCountMap = await getActivePatientCountMap(unitIds);
+    await syncUnitPatientCounts(units);
     const rotationsByUnit = await getUnitAssignments(unitIds);
 
-    const result = units.map(unit => ({
-      ...(() => {
-        const unitObject = unit.toObject();
-        const unitRotations = rotationsByUnit.get(String(unit._id)) || [];
-        const currentRotations = unitRotations.filter((rotation) => rotation.is_current);
-        const interns = currentRotations.map(buildCurrentInternRecord);
-        const internNames = interns
-          .map((intern) => intern.name ? `${intern.name}${intern.batch ? ` (${intern.batch})` : ''}` : null)
-          .filter(Boolean);
-
-        return {
-          ...unitObject,
-          duration_days: unit.durationDays || unit.duration || null,
-          duration: unit.duration || unit.durationDays || null,
-          currentInterns: interns.length,
-          current_interns: interns.length,
-          interns,
-          intern_names: internNames,
-          current_rotations: unitRotations,
-        };
-      })(),
-      workload: calculateWorkload(unit),
-      isCritical: isCritical(unit),
-    }));
+    const result = units.map((unit) => toUnitResponse(
+      unit,
+      rotationsByUnit.get(String(unit._id)) || [],
+      patientCountMap,
+    ));
 
     res.json(result);
   } catch (err) {
@@ -324,6 +343,8 @@ router.get('/:id', async (req, res) => {
     const unit = await Unit.findById(req.params.id).exec();
     if (!unit) return res.status(404).json({ error: 'Unit not found' });
 
+    const patientCountMap = await getActivePatientCountMap([unit._id]);
+    await syncUnitPatientCounts([unit]);
     const rotationsByUnit = await getUnitAssignments([unit._id]);
     const unitRotations = rotationsByUnit.get(String(unit._id)) || [];
     const currentRotations = unitRotations.filter((rotation) => rotation.is_current);
@@ -331,19 +352,10 @@ router.get('/:id', async (req, res) => {
     const internIds = interns.map((intern) => intern.id).filter(Boolean);
     const detailedInterns = internIds.length > 0 ? await buildInternViews(internIds) : [];
 
+    const response = toUnitResponse(unit, unitRotations, patientCountMap);
     res.json({
-      ...unit.toObject(),
-      duration_days: unit.durationDays || unit.duration || null,
-      duration: unit.duration || unit.durationDays || null,
-      currentInterns: interns.length,
-      current_interns: interns.length,
-      intern_names: interns
-        .map((intern) => intern.name ? `${intern.name}${intern.batch ? ` (${intern.batch})` : ''}` : null)
-        .filter(Boolean),
-      interns: detailedInterns.length > 0 ? detailedInterns : interns,
-      current_rotations: unitRotations,
-      workload: calculateWorkload(unit),
-      isCritical: isCritical(unit),
+      ...response,
+      interns: detailedInterns.length > 0 ? detailedInterns : response.interns,
     });
   } catch (err) {
     console.error('Error fetching unit:', err);
@@ -414,24 +426,14 @@ router.put('/:id', normalizeUnitPayload, validateUnitPayload, async (req, res) =
       const oldValue = getComparableUnitValue(previousUnit, item.field);
       const newValue = getComparableUnitValue(unit, item.field);
       if (!areValuesEqual(oldValue, newValue)) {
-        changes.push({
-          field: item.field,
-          label: item.label,
-          oldValue,
-          newValue,
-        });
+        changes.push(buildUnitChange(item.field, item.label, oldValue, newValue));
       }
     }
 
     const previousWorkload = previousUnit.workload || calculateWorkload(previousUnit);
     const nextWorkload = unit.workload || calculateWorkload(unit);
     if (previousWorkload !== nextWorkload) {
-      changes.push({
-        field: 'workload',
-        label: 'workload',
-        oldValue: previousWorkload,
-        newValue: nextWorkload,
-      });
+      changes.push(buildUnitChange('workload', 'workload', previousWorkload, nextWorkload));
     }
 
     if (changes.length > 0) {
@@ -439,6 +441,7 @@ router.put('/:id', normalizeUnitPayload, validateUnitPayload, async (req, res) =
       await logActivityEventSafe({
         type: ACTIVITY_TYPES.UNIT_UPDATE,
         metadata: {
+          entityId: unit._id.toString(),
           unitId: unit._id.toString(),
           unitName: unit.name,
           message,

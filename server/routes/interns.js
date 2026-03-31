@@ -61,6 +61,36 @@ const toComparableInternValue = (field, value) => {
   return value ?? null;
 };
 
+const toInternDisplayValue = (field, value) => {
+  if (value === null || value === undefined || value === '') {
+    return 'none';
+  }
+
+  if (field === 'batch') {
+    return `Batch ${String(value).trim()}`;
+  }
+
+  if (field === 'startDate') {
+    const parsed = toValidDate(value);
+    return parsed ? startOfDay(parsed).toISOString().slice(0, 10) : 'none';
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? 'Yes' : 'No';
+  }
+
+  return String(value);
+};
+
+const buildInternChange = (field, label, oldValue, newValue) => ({
+  field,
+  label,
+  oldValue,
+  newValue,
+  oldDisplayValue: toInternDisplayValue(field, oldValue),
+  newDisplayValue: toInternDisplayValue(field, newValue),
+});
+
 const buildInternUpdateMessage = (previousIntern, updatedIntern, changes) => {
   const oldName = previousIntern?.name || 'Intern';
   const newName = updatedIntern?.name || oldName;
@@ -68,11 +98,11 @@ const buildInternUpdateMessage = (previousIntern, updatedIntern, changes) => {
   const batchChange = changes.find((change) => change.field === 'batch') || null;
 
   if (changes.length === 1 && nameChange) {
-    return `Intern name updated: ${oldName} -> ${newName}`;
+    return `Intern name updated: ${oldName} to ${newName}`;
   }
 
   if (changes.length === 1 && batchChange) {
-    return `${oldName} was moved from Batch ${batchChange.oldValue} to Batch ${batchChange.newValue}`;
+    return `${oldName} was moved from ${batchChange.oldDisplayValue} to ${batchChange.newDisplayValue}`;
   }
 
   const parts = changes.map((change) => {
@@ -80,9 +110,9 @@ const buildInternUpdateMessage = (previousIntern, updatedIntern, changes) => {
       return `name changed to ${newName}`;
     }
     if (change.field === 'batch') {
-      return `batch changed from Batch ${change.oldValue} to Batch ${change.newValue}`;
+      return `batch changed from ${change.oldDisplayValue} to ${change.newDisplayValue}`;
     }
-    return `${change.label} changed from ${change.oldValue ?? 'none'} to ${change.newValue ?? 'none'}`;
+    return `${change.label} changed from ${change.oldDisplayValue} to ${change.newDisplayValue}`;
   });
 
   return `${oldName} was updated: ${parts.join(', ')}`;
@@ -505,12 +535,7 @@ router.put('/:id', normalizeInternPayload, validateIntern, async (req, res) => {
       const oldValue = toComparableInternValue(item.field, previousIntern[item.field]);
       const newValue = toComparableInternValue(item.field, intern[item.field]);
       if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
-        changes.push({
-          field: item.field,
-          label: item.label,
-          oldValue,
-          newValue,
-        });
+        changes.push(buildInternChange(item.field, item.label, oldValue, newValue));
       }
     }
 
@@ -519,6 +544,7 @@ router.put('/:id', normalizeInternPayload, validateIntern, async (req, res) => {
       await logActivityEventSafe({
         type: ACTIVITY_TYPES.INTERN_UPDATE,
         metadata: {
+          entityId: intern._id.toString(),
           internId: intern._id.toString(),
           internName: intern.name,
           message,

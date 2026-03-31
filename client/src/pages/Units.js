@@ -80,6 +80,10 @@ export default function Units() {
     return matchesSearch && matchesWorkload && matchesCoverage;
   }) || [];
 
+  const getPatientCount = React.useCallback((unit) => {
+    return Number(unit?.patient_count ?? unit?.patientCount ?? 0);
+  }, []);
+
 
   const handleEdit = (unit) => {
     setEditingUnit(unit);
@@ -326,6 +330,7 @@ export default function Units() {
               {(() => {
                 const assignedInterns = getUnitInterns(unit);
                 const currentInternCount = unit.current_interns ?? unit.currentInterns ?? assignedInterns.length;
+                const patientCount = getPatientCount(unit);
 
                 return (
                   <>
@@ -356,14 +361,12 @@ export default function Units() {
               {/* Patient Count Information */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-sm font-medium text-gray-700">Patient Count</h4>
-                  <span className="text-sm font-medium text-blue-600">{unit.patient_count || 0} patients</span>
+                  <h4 className="text-sm font-medium text-gray-700">Patients</h4>
+                  <span className="text-sm font-medium text-blue-600">{patientCount}</span>
                 </div>
-                {(!unit.patient_count || unit.patient_count === 0) && (
-                  <p className="text-xs text-yellow-600 mt-1">
-                    ⚠️ No patient count set - edit unit to set patient count
-                  </p>
-                )}
+                <p className="text-xs text-gray-500 mt-1">
+                  Active patients currently assigned to this unit.
+                </p>
               </div>
 
               {/* Actions */}

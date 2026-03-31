@@ -100,6 +100,17 @@ function formatFieldValue(field, value) {
   return String(value);
 }
 
+function resolveEntityId(metadata = {}) {
+  return toId(
+    metadata.entityId
+    || metadata.unitId
+    || metadata.internId
+    || metadata.patientId
+    || metadata.rotationId
+    || null,
+  );
+}
+
 function buildActivityMessage(type, metadata = {}, fallbackMessage = null) {
   const internName = toName(metadata.internName || metadata.intern, 'An intern');
   const unitName = toName(metadata.unitName || metadata.unit, 'Unknown unit');
@@ -149,6 +160,7 @@ function normalizeActivity(item) {
   return {
     id: item?._id?.toString?.() || item?.id || null,
     type,
+    entityId: item?.entityId || resolveEntityId(metadata),
     action: type,
     message,
     description: message,
@@ -180,6 +192,7 @@ async function logActivityEvent({ type, metadata = {}, message = null, createdAt
 
   const activity = await ActivityLog.create({
     type: normalizedType,
+    entityId: resolveEntityId(resolvedMetadata),
     action: normalizedType,
     metadata: resolvedMetadata,
     details: resolvedMetadata,

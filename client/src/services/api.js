@@ -82,10 +82,17 @@ export const unitsAPI = {
   update: (id, data) => http.put(`/units/${id}`, data),
   delete: (id) => http.delete(`/units/${id}`),
   updateWorkload: (id, data) => http.post(`/units/${id}/workload`, data),
-  updatePatientCount: (id, data) => http.post(`/units/${id}/patient-count`, data),
   getWorkloadHistory: (id, limit = 12) => http.get(`/units/${id}/workload-history`, { params: { limit } }),
   getCompletedInterns: (id) => http.get(`/units/${id}/completed-interns`),
   updateOrder: (order) => http.put('/units/reorder', order),
+};
+
+export const patientsAPI = {
+  getAll: (params = {}) => http.get('/patients', { params }),
+  create: (data) => http.post('/patients', data),
+  update: (id, data) => http.put(`/patients/${id}`, data),
+  reassign: (id, data) => http.post(`/patients/${id}/reassign`, data),
+  delete: (id) => http.delete(`/patients/${id}`),
 };
 
   // Rotations API
@@ -148,11 +155,14 @@ export const api = {
   updateUnit: (id, data) => unitsAPI.update(id, data),
   deleteUnit: (id) => unitsAPI.delete(id),
   updateUnitWorkload: (id, data) => unitsAPI.updateWorkload(id, data),
-  updateUnitPatientCount: (id, data) => unitsAPI.updatePatientCount(id, data),
   updateUnitOrder: (order) => unitsAPI.updateOrder(order),
   getUnitWorkloadHistory: (id, limit) => unitsAPI.getWorkloadHistory(id, limit),
   getCompletedInterns: (id) => unitsAPI.getCompletedInterns(id),
-  testPatientCount: (id, data) => http.post(`/units/${id}/test-patient-count`, data),
+  getPatients: (params) => patientsAPI.getAll(params),
+  createPatient: (data) => patientsAPI.create(data),
+  updatePatient: (id, data) => patientsAPI.update(id, data),
+  reassignPatient: (id, data) => patientsAPI.reassign(id, data),
+  deletePatient: (id) => patientsAPI.delete(id),
   getUnitsSchema: () => http.get('/units/schema'),
 
   // Rotations

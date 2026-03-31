@@ -48,6 +48,14 @@ const activityColors = {
   default: 'text-gray-600 bg-gray-50',
 };
 
+function getChangeOldValue(change) {
+  return change?.oldDisplayValue ?? change?.oldValue ?? 'none';
+}
+
+function getChangeNewValue(change) {
+  return change?.newDisplayValue ?? change?.newValue ?? 'none';
+}
+
 export default function RecentUpdates() {
   const queryClient = useQueryClient();
   const [currentTime, setCurrentTime] = React.useState(() => Date.now());
@@ -197,9 +205,9 @@ export default function RecentUpdates() {
                         {activity.metadata.changes.map((change, index) => (
                           <p key={`${activity.id}-change-${index}`} className="text-xs text-gray-700 break-words">
                             <span className="text-gray-500">{change.label || change.field}:</span>{' '}
-                            <span className="text-gray-500">{String(change.oldValue ?? 'none')}</span>{' '}
+                            <span className="text-gray-500">{String(getChangeOldValue(change))}</span>{' '}
                             <span className="text-gray-400">→</span>{' '}
-                            <span className="font-semibold text-gray-900">{String(change.newValue ?? 'none')}</span>
+                            <span className="font-semibold text-gray-900">{String(getChangeNewValue(change))}</span>
                           </p>
                         ))}
                       </div>

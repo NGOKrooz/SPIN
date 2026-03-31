@@ -126,6 +126,7 @@ app.post('/api/auth/login', (req, res) => {
 // Routes - wrap in try-catch to prevent server crash if route loading fails
 try {
   app.use('/api/interns', require('./routes/interns'));
+  app.use('/api/patients', require('./routes/patients'));
   app.use('/api/units', require('./routes/units'));
   app.use('/api/rotations', require('./routes/rotations'));
   app.use('/api/activity', require('./routes/activity'));

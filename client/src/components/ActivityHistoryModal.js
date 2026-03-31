@@ -7,6 +7,8 @@ import { api } from '../services/api';
 import { formatDateTime, getRelativeTimeLabel } from '../lib/utils';
 
 const activityIcons = {
+  unit_update: PencilRuler,
+  intern_update: PencilRuler,
   intern_created: UserPlus,
   intern_deleted: Trash2,
   intern_extension_added: TimerReset,
@@ -21,6 +23,8 @@ const activityIcons = {
 };
 
 const activityColors = {
+  unit_update: 'text-cyan-600 bg-cyan-50',
+  intern_update: 'text-sky-700 bg-sky-50',
   intern_created: 'text-emerald-600 bg-emerald-50',
   intern_deleted: 'text-red-600 bg-red-50',
   intern_extension_added: 'text-blue-600 bg-blue-50',
@@ -33,6 +37,14 @@ const activityColors = {
   unit_deleted: 'text-red-600 bg-red-50',
   default: 'text-gray-600 bg-gray-50',
 };
+
+function getChangeOldValue(change) {
+  return change?.oldDisplayValue ?? change?.oldValue ?? 'none';
+}
+
+function getChangeNewValue(change) {
+  return change?.newDisplayValue ?? change?.newValue ?? 'none';
+}
 
 export default function ActivityHistoryModal({ onClose }) {
   const [currentTime, setCurrentTime] = React.useState(() => Date.now());
@@ -50,9 +62,19 @@ export default function ActivityHistoryModal({ onClose }) {
     return () => window.clearInterval(intervalId);
   }, []);
 
-  const activities = Array.isArray(data)
-    ? data
-    : (Array.isArray(data?.data) ? data.data : []);
+  const activities = React.useMemo(() => {
+    const source = Array.isArray(data)
+      ? data
+      : (Array.isArray(data?.data) ? data.data : []);
+
+    return source
+      .slice()
+      .sort((left, right) => {
+        const leftTime = left?.created_at || left?.createdAt ? new Date(left.created_at || left.createdAt).getTime() : 0;
+        const rightTime = right?.created_at || right?.createdAt ? new Date(right.created_at || right.createdAt).getTime() : 0;
+        return rightTime - leftTime;
+      });
+  }, [data]);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -108,7 +130,19 @@ export default function ActivityHistoryModal({ onClose }) {
                       <Icon className="h-4 w-4" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900">{message}</p>
+                      <p className="text-sm font-medium text-gray-900 break-words">{message}</p>
+                      {Array.isArray(activity?.metadata?.changes) && activity.metadata.changes.length > 0 ? (
+                        <div className="mt-2 space-y-1">
+                          {activity.metadata.changes.map((change, index) => (
+                            <p key={`${activity.id || activity._id || 'activity'}-change-${index}`} className="text-xs text-gray-700 break-words">
+                              <span className="text-gray-500">{change.label || change.field}:</span>{' '}
+                              <span className="text-gray-500">{String(getChangeOldValue(change))}</span>{' '}
+                              <span className="text-gray-400">→</span>{' '}
+                              <span className="font-semibold text-gray-900">{String(getChangeNewValue(change))}</span>
+                            </p>
+                          ))}
+                        </div>
+                      ) : null}
                       <div className="flex items-center space-x-2 mt-1">
                         <p className="text-xs text-gray-500">{timeAgo}</p>
                         {fullDate && (

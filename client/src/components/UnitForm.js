@@ -13,7 +13,6 @@ export default function UnitForm({ unit, onClose, onSuccess }) {
     name: '',
     duration_days: '',
     description: '',
-    patient_count: '',
   });
 
   const { toast } = useToast();
@@ -61,7 +60,6 @@ export default function UnitForm({ unit, onClose, onSuccess }) {
         name: unit.name || '',
         duration_days: unit.duration_days || '',
         description: unit.description || '',
-        patient_count: unit.patient_count || '',
       });
     }
   }, [unit]);
@@ -96,7 +94,6 @@ export default function UnitForm({ unit, onClose, onSuccess }) {
       unit_name: normalizedName,
       duration_days: parsedDuration,
       duration: parsedDuration,
-      patient_count: Number(formData.patient_count) || 0,
     };
 
     console.log('Submitting unit data:', submitData);
@@ -161,35 +158,17 @@ export default function UnitForm({ unit, onClose, onSuccess }) {
               />
             </div>
 
-            <div>
-              <Label htmlFor="patient_count">Patient count (WorkLoad)</Label>
-              <Input
-                id="patient_count"
-                type="number"
-                min="0"
-                value={formData.patient_count}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  console.log('Patient count changed:', value);
-                  handleChange('patient_count', value);
-                  // Auto-calculate workload based on patient count
-                  if (value !== '' && !isNaN(value)) {
-                    const count = parseInt(value);
-                    let workload;
-                    if (count <= 4) {
-                      workload = 'Low';
-                    } else if (count <= 8) {
-                      workload = 'Medium';
-                    } else {
-                      workload = 'High';
-                    }
-                    console.log('Auto-calculated workload:', workload);
-                    handleChange('workload', workload);
-                  }
-                }}
-                placeholder="Enter patient count"
-              />
-            </div>
+            {unit && (
+              <div>
+                <Label>Current Patient Count</Label>
+                <div className="mt-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+                  {unit.patient_count ?? unit.patientCount ?? 0} active patients
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  Patient count is calculated automatically from patients assigned to this unit.
+                </p>
+              </div>
+            )}
 
 
             <div>

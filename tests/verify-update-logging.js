@@ -81,8 +81,13 @@ const getLatestByType = async (type) => ActivityLog.findOne({ type }).sort({ cre
 
   const unitLog = await getLatestByType('unit_update');
   assert(unitLog, 'No unit_update log created');
-  assert(unitLog.message.includes('was updated') || unitLog.message.includes('was renamed'), 'Unit log message is not human readable');
+  assert(unitLog.message === `${originalUnit.name} was updated: name changed to ${updatedUnitName}, duration changed from ${originalUnit.durationDays} days to ${updatedDuration} days`, 'Unit multi-change message format is incorrect');
   assert(Array.isArray(unitLog.metadata?.changes) && unitLog.metadata.changes.length >= 1, 'Unit log metadata.changes missing');
+  assert(unitLog.entityId === String(unit._id), 'Unit log entityId missing or incorrect');
+  const unitNameChange = unitLog.metadata.changes.find((change) => change.field === 'name');
+  const unitDurationChange = unitLog.metadata.changes.find((change) => change.field === 'durationDays');
+  assert(unitNameChange?.oldDisplayValue === originalUnit.name && unitNameChange?.newDisplayValue === updatedUnitName, 'Unit name change display values are incorrect');
+  assert(unitDurationChange?.oldDisplayValue === `${originalUnit.durationDays} days` && unitDurationChange?.newDisplayValue === `${updatedDuration} days`, 'Unit duration change display values are incorrect');
 
   const unitNoopPayload = {
     name: updatedUnitName,
@@ -118,8 +123,13 @@ const getLatestByType = async (type) => ActivityLog.findOne({ type }).sort({ cre
 
   const internLog = await getLatestByType('intern_update');
   assert(internLog, 'No intern_update log created');
-  assert(internLog.message.includes('updated') || internLog.message.includes('moved'), 'Intern log message is not human readable');
+  assert(internLog.message === `${originalIntern.name} was updated: name changed to ${updatedInternName}, batch changed from Batch ${originalIntern.batch} to Batch ${updatedBatch}`, 'Intern multi-change message format is incorrect');
   assert(Array.isArray(internLog.metadata?.changes) && internLog.metadata.changes.length >= 1, 'Intern log metadata.changes missing');
+  assert(internLog.entityId === String(intern._id), 'Intern log entityId missing or incorrect');
+  const internNameChange = internLog.metadata.changes.find((change) => change.field === 'name');
+  const internBatchChange = internLog.metadata.changes.find((change) => change.field === 'batch');
+  assert(internNameChange?.oldDisplayValue === originalIntern.name && internNameChange?.newDisplayValue === updatedInternName, 'Intern name change display values are incorrect');
+  assert(internBatchChange?.oldDisplayValue === `Batch ${originalIntern.batch}` && internBatchChange?.newDisplayValue === `Batch ${updatedBatch}`, 'Intern batch change display values are incorrect');
 
   const afterInternUpdateCount = await ActivityLog.countDocuments({ type: 'intern_update' });
   assert(afterInternUpdateCount === beforeInternUpdateCount + 1, 'Intern update did not create exactly one intern_update log');
