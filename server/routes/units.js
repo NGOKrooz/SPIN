@@ -302,17 +302,59 @@ router.get('/', async (req, res) => {
 router.put('/reorder', async (req, res) => {
   const items = req.body;
   if (!Array.isArray(items)) {
-    return res.status(400).json({ error: 'Payload must be an array of { id, position } objects' });
+    return res.status(400).json({ error: 'Payload must be an array of { id, orderIndex } objects' });
   }
 
   try {
-    const updates = items.map(item => {
+    const normalizedItems = items.map((item) => {
       if (!item || !item.id) return null;
-      const nextOrder = Number.isInteger(item.order) ? item.order : (Number.isInteger(item.position) ? item.position : 0);
-      return Unit.findByIdAndUpdate(item.id, { order: nextOrder }).exec();
+
+      const requestedOrder = Number(
+        item.orderIndex
+        ?? item.order_index
+        ?? item.order
+        ?? item.position
+      );
+
+      return {
+        id: String(item.id),
+        requestedOrder,
+      };
     }).filter(Boolean);
 
-    await Promise.all(updates);
+    if (normalizedItems.length === 0) {
+      return res.status(400).json({ error: 'No valid units supplied for reorder' });
+    }
+
+    const uniqueIds = new Set(normalizedItems.map((item) => item.id));
+    if (uniqueIds.size !== normalizedItems.length) {
+      return res.status(400).json({ error: 'Duplicate unit IDs are not allowed' });
+    }
+
+    const invalidOrder = normalizedItems.some((item) => !Number.isInteger(item.requestedOrder) || item.requestedOrder < 1);
+    if (invalidOrder) {
+      return res.status(400).json({ error: 'Each unit must include a valid orderIndex starting at 1' });
+    }
+
+    const sortedByRequestedOrder = [...normalizedItems].sort((left, right) => left.requestedOrder - right.requestedOrder);
+    const reorderedItems = sortedByRequestedOrder.map((item, index) => ({
+      id: item.id,
+      orderIndex: index + 1,
+    }));
+
+    await Unit.bulkWrite(
+      reorderedItems.map((item) => ({
+        updateOne: {
+          filter: { _id: item.id },
+          update: {
+            $set: {
+              order: item.orderIndex,
+              position: item.orderIndex,
+            },
+          },
+        },
+      }))
+    );
 
     const internIds = await Rotation.distinct('intern').exec();
     const activeUnitLoadMap = await getActiveUnitLoadMap();
@@ -330,7 +372,7 @@ router.put('/reorder', async (req, res) => {
 
     await logRecentUpdateSafe('units_reordered', 'Updated unit ordering');
     await updateBatchStats().catch(() => {});
-    res.json({ success: true });
+    res.json({ success: true, order: reorderedItems });
   } catch (err) {
     console.error('Error reordering units:', err);
     res.status(500).json({ success: false, error: 'Failed to reorder units' });
