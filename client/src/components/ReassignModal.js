@@ -36,6 +36,8 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
       : scheduleRows.filter((rotation) => String(rotation.status || '').toLowerCase() === 'upcoming');
 
     const seen = new Set();
+    const currentUnitId = String(currentRotation?.unit_id || currentRotation?.unitId || currentRotation?.unit?.id || currentRotation?.unit?._id || '');
+
     return source
       .map((rotation) => {
         const unitId = String(rotation.unit_id || rotation.unitId || rotation.unit?.id || rotation.unit?._id || '');
@@ -43,6 +45,7 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
         const duration = Number(rotation.duration_days || rotation.duration || rotation.unit?.duration_days || rotation.unit?.durationDays || 0);
 
         if (!unitId || !unitName || seen.has(unitId)) return null;
+        if (currentUnitId && unitId === currentUnitId) return null;
         seen.add(unitId);
         return {
           id: unitId,
@@ -51,7 +54,7 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
         };
       })
       .filter(Boolean);
-  }, [scheduleRows, upcomingFromPayload]);
+  }, [scheduleRows, upcomingFromPayload, currentRotation?.unitId, currentRotation?.unit_id, currentRotation?.unit]);
 
   // Calculate days spent in current rotation
   const daysInCurrentRotation = React.useMemo(() => {

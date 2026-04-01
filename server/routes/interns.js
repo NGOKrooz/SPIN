@@ -834,6 +834,11 @@ router.post('/:id/reassign', async (req, res) => {
 
     const previousUnitId = current.unit?._id?.toString?.() || current.unit?.toString?.() || intern.currentUnit?.toString?.() || null;
     const previousUnitName = current.unit?.name || 'Unknown unit';
+    if (previousUnitId && String(previousUnitId) === String(unitId)) {
+      return res.status(400).json({
+        error: 'Cannot reassign to the current unit',
+      });
+    }
     const preservedStartDate = toValidDate(current.startDate) || startOfDay(new Date());
 
     const previousTimeline = getPreservedRotationTimeline(current, current.unit);
@@ -853,14 +858,18 @@ router.post('/:id/reassign', async (req, res) => {
     await current.save();
 
     const selectedUpcomingRotation = upcomingRotations[selectedIndex] || null;
-    const remainingUpcomingRotations = upcomingRotations.filter((_, index) => index !== selectedIndex);
-
-    if (selectedUpcomingRotation) {
-      await selectedUpcomingRotation.deleteOne();
+    const nextUpcomingRotations = [...upcomingRotations];
+    if (selectedUpcomingRotation && previousUnitId) {
+      selectedUpcomingRotation.unit = previousUnitId;
+      selectedUpcomingRotation.baseDuration = previousTimeline.baseDuration;
+      selectedUpcomingRotation.extensionDays = previousTimeline.extensionDays;
+      selectedUpcomingRotation.duration = previousTimeline.totalDuration;
+      selectedUpcomingRotation.status = 'upcoming';
+      nextUpcomingRotations[selectedIndex] = selectedUpcomingRotation;
     }
 
     let previousEndDate = startOfDay(current.endDate);
-    for (const rotation of remainingUpcomingRotations) {
+    for (const rotation of nextUpcomingRotations) {
       const preservedUpcomingTimeline = getPreservedRotationTimeline(rotation, rotation.unit);
       rotation.baseDuration = preservedUpcomingTimeline.baseDuration;
       rotation.extensionDays = preservedUpcomingTimeline.extensionDays;
