@@ -9,6 +9,8 @@
  */
 
 const {
+  getNextRotationStartDate,
+  getRotationWindow,
   pickNextUnitForAssignment,
   selectNextUnit,
   DEFAULT_CAPACITY,
@@ -46,6 +48,28 @@ function makeOccupancy(counts) {
   const m = new Map();
   Object.entries(counts).forEach(([k, v]) => m.set(k, v));
   return m;
+}
+
+function toLocalDateKey(value) {
+  const date = new Date(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function buildChainedTimeline(firstStartDate, durations) {
+  const timeline = [];
+  let previousEndDate = null;
+
+  for (const duration of durations) {
+    const startDate = getNextRotationStartDate(previousEndDate, firstStartDate);
+    const window = getRotationWindow(startDate, duration);
+    timeline.push(window);
+    previousEndDate = window.endDate;
+  }
+
+  return timeline;
 }
 
 // ─── TEST 1: Assignment – lowest-occupancy first ──────────────────────────────
@@ -277,6 +301,81 @@ section('TEST 10: Simultaneous completions redistribute across lowest-load units
 
   assert(maxLoad - minLoad <= 1, `Simultaneous completions stay balanced (max=${maxLoad}, min=${minLoad})`);
   assert(loads.filter((count) => count > 0).length >= 3, 'Assignments spread across multiple units instead of colliding into one');
+}
+
+// ─── TEST 11: Exact bug – next unit starts previous end + 1 day ─────────────
+section('TEST 11: Exact bug – March 30 end rolls to March 31 start');
+{
+  const nextStartDate = getNextRotationStartDate(new Date(2026, 2, 30), new Date(2026, 3, 1));
+  assert(toLocalDateKey(nextStartDate) === '2026-03-31', `Next unit starts on 2026-03-31, got ${toLocalDateKey(nextStartDate)}`);
+}
+
+// ─── TEST 12: Multi-unit progression has zero gaps ───────────────────────────
+section('TEST 12: Multi-unit progression has zero gaps');
+{
+  const timeline = buildChainedTimeline(new Date(2026, 2, 1), [10, 11, 12]);
+  assert(toLocalDateKey(timeline[0].endDate) === '2026-03-10', `Unit A ends on 2026-03-10, got ${toLocalDateKey(timeline[0].endDate)}`);
+  assert(toLocalDateKey(timeline[1].startDate) === '2026-03-11', `Unit B starts on 2026-03-11, got ${toLocalDateKey(timeline[1].startDate)}`);
+  assert(toLocalDateKey(timeline[1].endDate) === '2026-03-21', `Unit B ends on 2026-03-21, got ${toLocalDateKey(timeline[1].endDate)}`);
+  assert(toLocalDateKey(timeline[2].startDate) === '2026-03-22', `Unit C starts on 2026-03-22, got ${toLocalDateKey(timeline[2].startDate)}`);
+}
+
+// ─── TEST 13: Same-day transitions have no overlap and no skip ───────────────
+section('TEST 13: Same-day transitions have no overlap and no skip');
+{
+  const timeline = buildChainedTimeline('2026-04-01T00:00:00Z', [1, 1, 1]);
+  for (let index = 1; index < timeline.length; index += 1) {
+    const previous = timeline[index - 1];
+    const current = timeline[index];
+    const expectedStart = getNextRotationStartDate(previous.endDate, current.startDate);
+    assert(
+      toLocalDateKey(current.startDate) === toLocalDateKey(expectedStart),
+      `Unit ${index + 1} starts exactly after unit ${index} ends`
+    );
+  }
+}
+
+// ─── TEST 14: Backward start-date shift rebuilds a continuous chain ──────────
+section('TEST 14: Backward start-date shift rebuilds a continuous chain');
+{
+  const today = new Date('2026-04-01T00:00:00Z');
+  const durations = [30, 30, 21];
+  const rebuilt = buildChainedTimeline('2026-02-20T00:00:00Z', durations);
+
+  const activeRotation = rebuilt.find((window) => window.startDate <= today && window.endDate >= today);
+  assert(activeRotation !== undefined, 'A current unit exists after rebuilding from an earlier start date');
+
+  for (let index = 1; index < rebuilt.length; index += 1) {
+    const previous = rebuilt[index - 1];
+    const current = rebuilt[index];
+    const dayDelta = Math.round((current.startDate.getTime() - previous.endDate.getTime()) / (1000 * 60 * 60 * 24));
+    assert(dayDelta === 1, `Gap between rebuilt units ${index} and ${index + 1} is exactly 1 day step`);
+  }
+}
+
+// ─── TEST 15: Random stress – 50 edited timelines keep continuity ────────────
+section('TEST 15: Random stress – 50 edited timelines keep continuity');
+{
+  const baseStart = new Date('2026-01-01T00:00:00Z');
+  let continuityFailures = 0;
+
+  for (let internIndex = 0; internIndex < 50; internIndex += 1) {
+    const editedStart = new Date(baseStart);
+    editedStart.setDate(baseStart.getDate() - (internIndex % 17));
+    const durations = [21, 30, 21, 30, 21].map((duration, idx) => duration + ((internIndex + idx) % 2));
+    const timeline = buildChainedTimeline(editedStart, durations);
+
+    for (let index = 1; index < timeline.length; index += 1) {
+      const previous = timeline[index - 1];
+      const current = timeline[index];
+      const expectedStart = getNextRotationStartDate(previous.endDate, editedStart);
+      if (toLocalDateKey(current.startDate) !== toLocalDateKey(expectedStart)) {
+        continuityFailures += 1;
+      }
+    }
+  }
+
+  assert(continuityFailures === 0, `Randomized continuity stress produced zero gaps/overlaps (${continuityFailures} failures)`);
 }
 
 // ─── Summary ──────────────────────────────────────────────────────────────────

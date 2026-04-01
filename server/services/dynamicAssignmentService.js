@@ -25,6 +25,25 @@ const getUnitDuration = (unit) => {
   return Number.isFinite(d) && d > 0 ? d : DEFAULT_DURATION;
 };
 
+const getNextRotationStartDate = (previousEndDate = null, fallbackDate = new Date()) => {
+  if (previousEndDate) {
+    return startOfDay(addDays(previousEndDate, 1));
+  }
+  return startOfDay(fallbackDate);
+};
+
+const getRotationWindow = (startDateLike, durationLike) => {
+  const duration = Number(durationLike);
+  const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : DEFAULT_DURATION;
+  const startDate = startOfDay(startDateLike);
+  const endDate = startOfDay(addDays(startDate, safeDuration - 1));
+  return {
+    startDate,
+    endDate,
+    duration: safeDuration,
+  };
+};
+
 /**
  * Count active interns per unit based on live Rotation records.
  * Only counts rotations whose date range includes today.
@@ -179,8 +198,7 @@ async function assignFirstUnit(intern, allUnits) {
   }
 
   const duration = getUnitDuration(unit);
-  const startDate = startOfDay(intern.startDate || new Date());
-  const endDate = startOfDay(addDays(startDate, duration - 1));
+  const { startDate, endDate } = getRotationWindow(intern.startDate || new Date(), duration);
 
   const rotation = await Rotation.create({
     intern: intern._id,
@@ -212,9 +230,14 @@ async function assignNextUnit(internOrId, options = {}) {
     getCompletedUnitIds(intern._id),
   ]);
 
+  const today = startOfDay(now);
   let previousUnitId = intern.currentUnit?.toString?.() || null;
+  let previousEndDate = null;
   const currentRotation = await Rotation.findOne({ intern: intern._id, status: 'active' })
     .sort({ startDate: -1, createdAt: -1 })
+    .exec();
+  const latestRotation = currentRotation || await Rotation.findOne({ intern: intern._id })
+    .sort({ endDate: -1, startDate: -1, createdAt: -1 })
     .exec();
 
   if (currentRotation && completeCurrent) {
@@ -222,44 +245,77 @@ async function assignNextUnit(internOrId, options = {}) {
     await currentRotation.save();
 
     previousUnitId = currentRotation.unit?.toString?.() || previousUnitId;
+    previousEndDate = currentRotation.endDate ? startOfDay(currentRotation.endDate) : null;
     if (previousUnitId) {
       completedIds.add(previousUnitId);
       if (occupancy.has(previousUnitId)) {
         occupancy.set(previousUnitId, Math.max(0, occupancy.get(previousUnitId) - 1));
       }
     }
+  } else if (latestRotation) {
+    previousUnitId = latestRotation.unit?.toString?.() || previousUnitId;
+    previousEndDate = latestRotation.endDate ? startOfDay(latestRotation.endDate) : null;
   }
 
   await Rotation.deleteMany({ intern: intern._id, status: 'upcoming' }).exec();
 
-  const { unit, wasReset, usedOverflow } = pickNextUnitForAssignment(
-    allUnits,
-    occupancy,
-    completedIds,
-    previousUnitId
-  );
+  let rotation = null;
+  let unit = null;
+  let wasReset = false;
+  let usedOverflow = false;
+  let safetyCounter = Math.max(5, allUnits.length * 3);
 
-  if (!unit) {
-    intern.currentUnit = null;
-    intern.status = 'completed';
-    await intern.save();
-    return { rotation: null, unit: null, wasReset, usedOverflow };
+  while (safetyCounter > 0) {
+    safetyCounter -= 1;
+
+    const nextSelection = pickNextUnitForAssignment(
+      allUnits,
+      occupancy,
+      completedIds,
+      previousUnitId
+    );
+
+    unit = nextSelection.unit;
+    wasReset = wasReset || nextSelection.wasReset;
+    usedOverflow = usedOverflow || nextSelection.usedOverflow;
+
+    if (!unit) {
+      intern.currentUnit = null;
+      intern.status = 'completed';
+      await intern.save();
+      return { rotation: null, unit: null, wasReset, usedOverflow };
+    }
+
+    const duration = getUnitDuration(unit);
+    const startDate = getNextRotationStartDate(previousEndDate, intern.startDate || today);
+    const { endDate } = getRotationWindow(startDate, duration);
+    const rotationStatus = endDate < today ? 'completed' : 'active';
+
+    rotation = await Rotation.create({
+      intern: intern._id,
+      unit: unit._id,
+      startDate,
+      endDate,
+      baseDuration: duration,
+      extensionDays: 0,
+      duration,
+      status: rotationStatus,
+    });
+
+    previousUnitId = unit._id.toString();
+    previousEndDate = endDate;
+
+    if (rotationStatus === 'completed') {
+      completedIds.add(previousUnitId);
+      continue;
+    }
+
+    break;
   }
 
-  const duration = getUnitDuration(unit);
-  const startDate = startOfDay(now);
-  const endDate = startOfDay(addDays(startDate, duration - 1));
-
-  const rotation = await Rotation.create({
-    intern: intern._id,
-    unit: unit._id,
-    startDate,
-    endDate,
-    baseDuration: duration,
-    extensionDays: 0,
-    duration,
-    status: 'active',
-  });
+  if (!rotation || rotation.status !== 'active') {
+    throw new Error('Failed to build a continuous rotation timeline');
+  }
 
   const allRotations = await Rotation.find({ intern: intern._id })
     .sort({ startDate: 1, createdAt: 1 })
@@ -387,6 +443,8 @@ module.exports = {
   DEFAULT_DURATION,
   getUnitOccupancy,
   getCompletedUnitIds,
+  getNextRotationStartDate,
+  getRotationWindow,
   selectNextUnit,
   pickNextUnitForAssignment,
   assignFirstUnit,
