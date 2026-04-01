@@ -17,6 +17,7 @@ const {
 } = require('../services/rotationPlanService');
 const {
   assignFirstUnit,
+  ensureContinuousAssignment,
   getEligibleUnits,
   getCompletedUnitIds,
   getUnitOccupancy,
@@ -307,9 +308,10 @@ const formatRotationForSchedule = (rotation) => {
 
 const syncInternRotationStates = async (internId) => {
   const now = startOfDay(new Date());
-  const rotations = await Rotation.find({ intern: internId }).sort({ startDate: 1 }).exec();
+  const ensured = await ensureContinuousAssignment(internId, now);
+  const activeRotationId = ensured?.rotation?._id?.toString?.() || null;
+  const rotations = await Rotation.find({ intern: internId }).sort({ startDate: 1, createdAt: 1 }).exec();
 
-  let hasActive = false;
   for (const rotation of rotations) {
     const duration = Number(rotation.duration);
     const safeDuration = Number.isFinite(duration) && duration > 0
@@ -327,26 +329,21 @@ const syncInternRotationStates = async (internId) => {
     const startDate = startOfDay(rotation.startDate);
     const endDate = startOfDay(rotation.endDate);
 
-    let nextStatus = rotation.status;
-    if (rotation.status !== 'completed' && now > endDate) {
-      nextStatus = 'completed';
-    } else if (
-      rotation.status !== 'completed' &&
-      !hasActive &&
-      startDate <= now &&
-      now <= endDate
-    ) {
+    let nextStatus = 'completed';
+    if (activeRotationId && rotation._id.toString() === activeRotationId) {
       nextStatus = 'active';
-      hasActive = true;
-    } else if (rotation.status !== 'completed') {
+    } else if (startDate > now) {
       nextStatus = 'upcoming';
+    } else if (endDate < now) {
+      nextStatus = 'completed';
     }
 
     if (rotation.status !== nextStatus) {
       rotation.status = nextStatus;
+      await rotation.save();
+    } else if (rotation.isModified()) {
+      await rotation.save();
     }
-
-    await rotation.save();
   }
 
   const intern = await Intern.findById(internId).exec();
@@ -354,17 +351,15 @@ const syncInternRotationStates = async (internId) => {
     throw new Error('Intern not found');
   }
 
-  const current = rotations.find((rotation) => rotation.status === 'active') || null;
+  const current = rotations.find((rotation) => rotation._id.toString() === activeRotationId) || null;
   const upcoming = rotations.filter((rotation) => rotation.status === 'upcoming');
   const completed = rotations.filter((rotation) => rotation.status === 'completed');
 
   intern.currentUnit = current?.unit || null;
-  if (rotations.length > 0 && completed.length === rotations.length) {
-    intern.status = 'completed';
-  } else if (Number(intern.extensionDays || 0) > 0) {
-    intern.status = 'extended';
+  if (current) {
+    intern.status = Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active';
   } else {
-    intern.status = 'active';
+    intern.status = 'completed';
   }
   await intern.save();
 
@@ -500,6 +495,11 @@ const validateIntern = [
 router.get('/', async (req, res) => {
   try {
     const sortDirection = getInternSortDirection(req.query.sort);
+    const internIds = await Intern.find().select('_id').lean().exec();
+    await Promise.all(internIds.map(({ _id }) => syncInternRotationStates(_id).catch((error) => {
+      console.error('❌ Error syncing intern rotation state:', _id?.toString?.() || _id, error);
+    })));
+
     const units = await getOrderedUnits();
 
     const interns = await Intern.find()
@@ -589,6 +589,7 @@ router.get('/:id/schedule', async (req, res) => {
 // GET /api/interns/:id - Get a single intern
 router.get('/:id', async (req, res) => {
   try {
+    await syncInternRotationStates(req.params.id);
     const internView = await buildInternView(req.params.id);
     res.json(internView);
   } catch (err) {

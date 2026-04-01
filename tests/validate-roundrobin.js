@@ -9,6 +9,7 @@
  */
 
 const {
+  pickNextUnitForAssignment,
   selectNextUnit,
   DEFAULT_CAPACITY,
 } = require('../server/services/dynamicAssignmentService');
@@ -234,6 +235,48 @@ section('TEST 8: Stress – 50 interns × 2 waves across 10 units (capacity=5)')
     if (completed.length >= 2 && completed[0] === completed[1]) stayedSame++;
   }
   assert(stayedSame === 0, `No intern stayed in the same unit across two waves (${stayedSame} repeats)`);
+}
+
+// ─── TEST 9: No idle fallback when all units are full ────────────────────────
+section('TEST 9: No idle fallback uses overflow when all units are full');
+{
+  const units = makeUnits(3);
+  const occ = makeOccupancy({
+    '1': DEFAULT_CAPACITY,
+    '2': DEFAULT_CAPACITY,
+    '3': DEFAULT_CAPACITY,
+  });
+  const completed = new Set(['1', '2']);
+
+  const { unit, usedOverflow } = pickNextUnitForAssignment(units, occ, completed, '1', DEFAULT_CAPACITY);
+
+  assert(usedOverflow === true, 'Overflow fallback is used when capacity blocks every unit');
+  assert(unit !== null, 'An intern still receives a next unit instead of being left idle');
+  assert(String(unit._id) !== '1', 'Overflow fallback still excludes the current unit');
+}
+
+// ─── TEST 10: Simultaneous completions redistribute across low-load units ────
+section('TEST 10: Simultaneous completions redistribute across lowest-load units');
+{
+  const units = makeUnits(4);
+  const occupancy = makeOccupancy({ '1': 2, '2': 0, '3': 0, '4': 1 });
+  const currentUnits = ['1', '4', '1', '4'];
+
+  for (const previousUnit of currentUnits) {
+    occupancy.set(previousUnit, Math.max(0, (occupancy.get(previousUnit) || 0) - 1));
+    const { unit } = pickNextUnitForAssignment(units, occupancy, new Set(), previousUnit, DEFAULT_CAPACITY);
+    if (unit) {
+      const unitId = String(unit._id);
+      occupancy.set(unitId, (occupancy.get(unitId) || 0) + 1);
+    }
+  }
+
+  const loads = units.map((unit) => occupancy.get(String(unit._id)) || 0);
+  const maxLoad = Math.max(...loads);
+  const minLoad = Math.min(...loads);
+
+  assert(maxLoad - minLoad <= 1, `Simultaneous completions stay balanced (max=${maxLoad}, min=${minLoad})`);
+  assert(loads.filter((count) => count > 0).length >= 3, 'Assignments spread across multiple units instead of colliding into one');
 }
 
 // ─── Summary ──────────────────────────────────────────────────────────────────

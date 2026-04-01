@@ -221,45 +221,33 @@ async function ensureInternStatusIsCorrect(internId) {
   const intern = await Intern.findById(internId).exec();
   if (!intern) return;
 
-  const now = new Date();
+  const { ensureContinuousAssignment } = require('./dynamicAssignmentService');
+  await ensureContinuousAssignment(intern._id, new Date());
 
-  await Rotation.updateMany(
-    {
-      intern: intern._id,
-      status: 'active',
-      endDate: { $lt: now },
-    },
-    { $set: { status: 'completed' } }
-  ).exec();
-
-  const allRotations = await Rotation.find({ intern: intern._id }).sort({ startDate: 1 }).exec();
-
-  const totalRotations = allRotations.length;
-  const completedRotations = allRotations.filter((rotation) => rotation.status === 'completed').length;
+  const refreshedIntern = await Intern.findById(intern._id).exec();
+  if (!refreshedIntern) return;
 
   const activeRotation = await Rotation.findOne({
-    intern: intern._id,
+    intern: refreshedIntern._id,
     status: 'active',
   })
-    .sort({ startDate: -1 })
+    .sort({ startDate: -1, createdAt: -1 })
     .exec();
 
-  let newStatus = 'active';
-  if (totalRotations > 0 && completedRotations === totalRotations) {
-    newStatus = 'completed';
-  } else if (Number(intern.extensionDays || 0) > 0) {
-    newStatus = 'extended';
+  let newStatus = 'completed';
+  if (activeRotation) {
+    newStatus = Number(refreshedIntern.extensionDays || 0) > 0 ? 'extended' : 'active';
   }
 
-  const newCurrentUnit = activeRotation?.unit || intern.currentUnit || null;
+  const newCurrentUnit = activeRotation?.unit || null;
 
-  const statusChanged = intern.status !== newStatus;
-  const currentUnitChanged = String(intern.currentUnit || '') !== String(newCurrentUnit || '');
+  const statusChanged = refreshedIntern.status !== newStatus;
+  const currentUnitChanged = String(refreshedIntern.currentUnit || '') !== String(newCurrentUnit || '');
 
   if (statusChanged || currentUnitChanged) {
-    intern.status = newStatus;
-    intern.currentUnit = newCurrentUnit;
-    await intern.save();
+    refreshedIntern.status = newStatus;
+    refreshedIntern.currentUnit = newCurrentUnit;
+    await refreshedIntern.save();
   }
 }
 
