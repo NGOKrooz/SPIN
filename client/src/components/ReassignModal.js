@@ -82,6 +82,12 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
     return format(addDays(parseISO(currentRotation.start_date), preservedDuration - 1), 'yyyy-MM-dd');
   }, [currentRotation?.start_date, preservedDuration]);
 
+  const projectedDuration = Number(selectedUnit?.duration_days || 0);
+  const projectedEndDate = React.useMemo(() => {
+    if (!currentRotation?.start_date || !Number.isFinite(projectedDuration) || projectedDuration <= 0) return '';
+    return format(addDays(parseISO(currentRotation.start_date), projectedDuration - 1), 'yyyy-MM-dd');
+  }, [currentRotation?.start_date, projectedDuration]);
+
   const reassignMutation = useMutation({
     mutationFn: ({ internId, unitId }) =>
       api.reassignIntern(internId, { unitId }),
@@ -179,10 +185,11 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
               <div className="bg-blue-50 p-3 rounded-lg">
                 <div className="text-sm text-blue-800 space-y-1">
                   <p><strong>Current:</strong> {currentRotation.unit_name} ({preservedDuration} days)</p>
-                  <p><strong>New:</strong> {selectedUnit.name} ({selectedUnit.duration_days} days nominal)</p>
+                  <p><strong>New:</strong> {selectedUnit.name} ({projectedDuration} days)</p>
                   <p><strong>Preserved Start Date:</strong> {currentRotation.start_date}</p>
                   <p><strong>Current Progress:</strong> {daysInCurrentRotation} / {preservedDuration} days</p>
-                  <p><strong>Preserved End Date:</strong> {preservedEndDate}</p>
+                  <p><strong>Current End Date:</strong> {preservedEndDate}</p>
+                  <p><strong>Projected End Date After Reassign:</strong> {projectedEndDate}</p>
                 </div>
               </div>
             )}

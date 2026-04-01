@@ -724,18 +724,19 @@ router.post('/:id/reassign', async (req, res) => {
     const previousUnitName = current.unit?.name || 'Unknown unit';
     const preservedStartDate = toValidDate(current.startDate) || startOfDay(new Date());
 
-    const { baseDuration, extensionDays, totalDuration } = getPreservedRotationTimeline(current, current.unit);
-    const daysInCurrentUnit = calculateElapsedDays(preservedStartDate, totalDuration, new Date());
+    const previousTimeline = getPreservedRotationTimeline(current, current.unit);
+    const daysInCurrentUnit = calculateElapsedDays(preservedStartDate, previousTimeline.totalDuration, new Date());
+    const selectedUnitDuration = getUnitDuration(selectedUnit);
 
     current.unit = selectedUnit._id;
-    current.baseDuration = baseDuration;
-    current.extensionDays = extensionDays;
-    current.duration = totalDuration;
+    current.baseDuration = selectedUnitDuration;
+    current.extensionDays = 0;
+    current.duration = selectedUnitDuration;
     // Preserve current.startDate exactly — do NOT re-apply startOfDay() because
     // that normalises to local midnight and shifts UTC-midnight dates by the server's
     // UTC offset (e.g. UTC+1 moves 2026-03-31T00:00Z → 2026-03-30T23:00Z).
     current.startDate = preservedStartDate;
-    current.endDate = recalculateEndDate(current.startDate, totalDuration);
+    current.endDate = recalculateEndDate(current.startDate, selectedUnitDuration);
     current.status = 'active';
     await current.save();
 
