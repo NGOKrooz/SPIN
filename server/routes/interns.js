@@ -112,6 +112,107 @@ const getPreservedRotationTimeline = (rotation, fallbackUnit = null) => {
   };
 };
 
+const calculateInternshipDay = (startDate, todayDate = new Date()) => {
+  const start = normalizeDay(startDate);
+  const today = normalizeDay(todayDate);
+  if (!start || !today) return 0;
+  if (today < start) return 0;
+  return Math.floor((today.getTime() - start.getTime()) / DAY_IN_MS) + 1;
+};
+
+const recalculateInternTimelineFromStartDate = async (intern, newStartDate, todayDate = new Date()) => {
+  const rotations = await Rotation.find({ intern: intern._id })
+    .populate('unit', 'name durationDays duration order position')
+    .sort({ startDate: 1, createdAt: 1 })
+    .exec();
+
+  if (rotations.length === 0) {
+    intern.currentUnit = null;
+    await intern.save();
+    return;
+  }
+
+  const start = normalizeDay(newStartDate);
+  const today = normalizeDay(todayDate);
+  const daysInInternship = calculateInternshipDay(start, today);
+
+  const durations = rotations.map((rotation) => getUnitDuration(rotation.unit));
+
+  let currentIndex = -1;
+  let currentElapsedDays = 0;
+  let remainingDays = daysInInternship;
+
+  for (let index = 0; index < rotations.length; index += 1) {
+    const duration = durations[index];
+    if (remainingDays >= duration) {
+      remainingDays -= duration;
+      continue;
+    }
+
+    currentIndex = index;
+    // Exact-boundary case should move to next unit on Day 1.
+    currentElapsedDays = Math.max(1, remainingDays);
+    break;
+  }
+
+  const allCompleted = daysInInternship > 0 && currentIndex === -1;
+  const hasStarted = daysInInternship > 0;
+  let cursor = new Date(start);
+
+  for (let index = 0; index < rotations.length; index += 1) {
+    const rotation = rotations[index];
+    const duration = durations[index];
+
+    let rotationStartDate = new Date(cursor);
+    let rotationEndDate = recalculateEndDate(rotationStartDate, duration);
+    let status = 'upcoming';
+
+    if (!hasStarted) {
+      status = 'upcoming';
+    } else if (allCompleted) {
+      status = 'completed';
+    } else if (index < currentIndex) {
+      status = 'completed';
+    } else if (index === currentIndex) {
+      status = 'active';
+      rotationStartDate = addDays(today, -(currentElapsedDays - 1));
+      rotationEndDate = recalculateEndDate(rotationStartDate, duration);
+    } else {
+      status = 'upcoming';
+    }
+
+    rotation.startDate = rotationStartDate;
+    rotation.endDate = rotationEndDate;
+    rotation.baseDuration = duration;
+    rotation.duration = duration;
+    rotation.extensionDays = 0;
+    rotation.status = status;
+    await rotation.save();
+
+    cursor = addDays(rotationEndDate, 1);
+  }
+
+  if (allCompleted) {
+    intern.currentUnit = null;
+    intern.status = 'completed';
+  } else if (currentIndex >= 0) {
+    const activeRotation = rotations[currentIndex];
+    intern.currentUnit = activeRotation.unit?._id || activeRotation.unit;
+    intern.status = 'active';
+  } else {
+    intern.currentUnit = null;
+    intern.status = 'active';
+  }
+
+  const rotationHistory = await Rotation.find({ intern: intern._id })
+    .sort({ startDate: 1, createdAt: 1 })
+    .select('_id')
+    .exec();
+  intern.rotationHistory = rotationHistory.map((rotation) => rotation._id);
+
+  await intern.save();
+};
+
 const toComparableInternValue = (field, value) => {
   if (field === 'startDate') {
     const parsed = toValidDate(value);
@@ -591,6 +692,7 @@ router.put('/:id', normalizeInternPayload, validateIntern, async (req, res) => {
       req.body.startDate = parsedStartDate;
     }
 
+    const previousStartDate = toValidDate(intern.startDate);
     const updates = ['name', 'gender', 'batch', 'startDate', 'phone', 'status', 'extensionDays', 'totalExtensionDays'];
     updates.forEach(field => {
       if (req.body[field] !== undefined) {
@@ -599,6 +701,16 @@ router.put('/:id', normalizeInternPayload, validateIntern, async (req, res) => {
     });
 
     await intern.save();
+
+    const nextStartDate = toValidDate(intern.startDate);
+    const startDateChanged = previousStartDate && nextStartDate
+      ? startOfDay(previousStartDate).getTime() !== startOfDay(nextStartDate).getTime()
+      : Boolean(previousStartDate || nextStartDate);
+
+    if (startDateChanged && nextStartDate) {
+      await recalculateInternTimelineFromStartDate(intern, nextStartDate, new Date());
+    }
+
     await ensureInternStatusIsCorrect(intern._id);
 
     const trackedFields = [
