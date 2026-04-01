@@ -14,11 +14,14 @@ const {
   getUnitDuration,
   recalculateEndDate,
   getOrderedUnits,
-  getActiveUnitLoadMap,
-  getReservedForwardSequenceKeys,
-  buildInitialRotationPlanForIntern,
-  rebuildInternFutureRotations,
 } = require('../services/rotationPlanService');
+const {
+  assignFirstUnit,
+  getEligibleUnits,
+  getCompletedUnitIds,
+  getUnitOccupancy,
+  DEFAULT_CAPACITY,
+} = require('../services/dynamicAssignmentService');
 const { updateBatchStats } = require('./dashboard');
 
 const router = express.Router();
@@ -559,6 +562,9 @@ router.get('/:id/schedule', async (req, res) => {
 
     const internView = await buildInternView(req.params.id);
 
+    const currentUnitId = currentRotation?.unit?._id?.toString?.() || currentRotation?.unit?.toString?.() || null;
+    const eligibleUnits = await getEligibleUnits(req.params.id, currentUnitId);
+
     res.json({
       rotations: internView.rotations,
       current,
@@ -572,6 +578,7 @@ router.get('/:id/schedule', async (req, res) => {
       remaining: upcoming,
       remainingCount: upcoming.length,
       totalExtensionDays: Number(internDoc.totalExtensionDays || 0),
+      eligibleUnits,
     });
   } catch (err) {
     console.error('Error fetching intern schedule:', err);
@@ -606,18 +613,10 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
       return res.status(400).json({ error: 'Invalid start date' });
     }
 
-    // Get units FIRST to calculate round-robin index BEFORE creating intern
     const units = await getOrderedUnits();
     if (units.length === 0) {
       return res.status(400).json({ error: 'No units configured. Please add units before creating interns.' });
     }
-
-    // Count only interns that already have a first unit assigned (rotationHistory populated).
-    // This excludes ghost interns where creation succeeded but rotation assignment failed,
-    // and hard-deleted interns are already gone from the collection.
-    const assignedInternCount = await Intern.countDocuments({ 'rotationHistory.0': { $exists: true } }).exec();
-    const nextInternIndex = assignedInternCount % units.length;
-    console.log(`[POST /interns] assignedInternCount=${assignedInternCount}, nextInternIndex=${nextInternIndex}/${units.length} → firstUnit: "${units[nextInternIndex]?.name}"`);
 
     const intern = await Intern.create({
       name,
@@ -630,23 +629,15 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
       totalExtensionDays: 0,
     });
 
-    const [reservedSequenceKeys, activeUnitLoadMap] = await Promise.all([
-      getReservedForwardSequenceKeys(intern._id),
-      getActiveUnitLoadMap(),
-    ]);
-    const plan = await buildInitialRotationPlanForIntern({
-      intern,
-      units,
-      nextInternIndex,
-      reservedSequenceKeys,
-      activeUnitLoadMap,
-      now: new Date(),
-    });
+    // Dynamic assignment: pick unit with lowest occupancy (capacity = 5)
+    const { rotation, unit } = await assignFirstUnit(intern, units);
 
-    intern.rotationHistory = plan.map((rotation) => rotation._id);
+    intern.currentUnit = unit._id;
+    intern.rotationHistory = [rotation._id];
     await intern.save();
+
     await syncInternRotationStates(intern._id);
-    console.log(`[POST /interns] Assigned ${plan.length} rotations. First unit: "${units[nextInternIndex]?.name}" (index ${nextInternIndex})`);
+    console.log(`[POST /interns] Dynamically assigned first unit: "${unit.name}" for ${intern.name}`);
 
     console.log('CREATED INTERN:', intern);
 
@@ -814,72 +805,42 @@ router.post('/:id/reassign', async (req, res) => {
       return res.status(400).json({ error: 'No active rotation found for this intern' });
     }
 
-    const upcomingRotations = await Rotation.find({
-      intern: intern._id,
-      status: 'upcoming',
-    })
-      .sort({ startDate: 1 })
-      .populate('unit', 'name durationDays duration order position')
-      .exec();
-
-    const upcomingUnitIds = upcomingRotations
-      .map((rotation) => rotation?.unit?._id?.toString?.() || rotation?.unit?.toString?.() || null)
-      .filter(Boolean);
-    const selectedIndex = upcomingUnitIds.findIndex((value) => String(value) === String(unitId));
-    if (selectedIndex < 0) {
-      return res.status(400).json({
-        error: 'Selected unit must be one of the upcoming units only',
-      });
-    }
-
     const previousUnitId = current.unit?._id?.toString?.() || current.unit?.toString?.() || intern.currentUnit?.toString?.() || null;
     const previousUnitName = current.unit?.name || 'Unknown unit';
-    if (previousUnitId && String(previousUnitId) === String(unitId)) {
-      return res.status(400).json({
-        error: 'Cannot reassign to the current unit',
-      });
-    }
-    const preservedStartDate = toValidDate(current.startDate) || startOfDay(new Date());
 
+    if (previousUnitId && String(previousUnitId) === String(unitId)) {
+      return res.status(400).json({ error: 'Cannot reassign to the current unit' });
+    }
+
+    // Validate: selected unit must be eligible (not completed, not current, not at capacity)
+    const completedIds = await getCompletedUnitIds(intern._id);
+    if (completedIds.has(String(unitId))) {
+      return res.status(400).json({ error: 'Cannot reassign to a unit already completed by this intern' });
+    }
+    const occupancy = await getUnitOccupancy();
+    const currentOccupancy = occupancy.get(String(unitId)) || 0;
+    if (currentOccupancy >= DEFAULT_CAPACITY) {
+      return res.status(400).json({ error: `Unit "${selectedUnit.name}" is at full capacity (${DEFAULT_CAPACITY} interns)` });
+    }
+
+    const preservedStartDate = toValidDate(current.startDate) || startOfDay(new Date());
     const previousTimeline = getPreservedRotationTimeline(current, current.unit);
     const daysInCurrentUnit = calculateElapsedDays(preservedStartDate, previousTimeline.totalDuration, new Date());
     const selectedUnitDuration = getUnitDuration(selectedUnit);
 
+    // Update the active rotation to the new unit, preserving start date and duration slot
     current.unit = selectedUnit._id;
     current.baseDuration = selectedUnitDuration;
     current.extensionDays = 0;
     current.duration = selectedUnitDuration;
-    // Preserve current.startDate exactly — do NOT re-apply startOfDay() because
-    // that normalises to local midnight and shifts UTC-midnight dates by the server's
-    // UTC offset (e.g. UTC+1 moves 2026-03-31T00:00Z → 2026-03-30T23:00Z).
     current.startDate = preservedStartDate;
     current.endDate = recalculateEndDate(current.startDate, selectedUnitDuration);
     current.status = 'active';
     await current.save();
 
-    const selectedUpcomingRotation = upcomingRotations[selectedIndex] || null;
-    const nextUpcomingRotations = [...upcomingRotations];
-    if (selectedUpcomingRotation && previousUnitId) {
-      selectedUpcomingRotation.unit = previousUnitId;
-      selectedUpcomingRotation.baseDuration = previousTimeline.baseDuration;
-      selectedUpcomingRotation.extensionDays = previousTimeline.extensionDays;
-      selectedUpcomingRotation.duration = previousTimeline.totalDuration;
-      selectedUpcomingRotation.status = 'upcoming';
-      nextUpcomingRotations[selectedIndex] = selectedUpcomingRotation;
-    }
-
-    let previousEndDate = startOfDay(current.endDate);
-    for (const rotation of nextUpcomingRotations) {
-      const preservedUpcomingTimeline = getPreservedRotationTimeline(rotation, rotation.unit);
-      rotation.baseDuration = preservedUpcomingTimeline.baseDuration;
-      rotation.extensionDays = preservedUpcomingTimeline.extensionDays;
-      rotation.duration = preservedUpcomingTimeline.totalDuration;
-      rotation.startDate = addDays(previousEndDate, 1);
-      rotation.endDate = recalculateEndDate(rotation.startDate, rotation.duration);
-      rotation.status = 'upcoming';
-      previousEndDate = startOfDay(rotation.endDate);
-      await rotation.save();
-    }
+    // Delete all pre-generated upcoming rotations (there should be none in the new system,
+    // but clean up any legacy records that may exist)
+    await Rotation.deleteMany({ intern: intern._id, status: 'upcoming' }).exec();
 
     const rotationHistory = await Rotation.find({ intern: intern._id })
       .sort({ startDate: 1, createdAt: 1 })
@@ -1005,19 +966,9 @@ router.post('/:id/extend', async (req, res) => {
     await rotation.save();
 
     if (rotation.status === 'active') {
-      const [reservedSequenceKeys, activeUnitLoadMap] = await Promise.all([
-        getReservedForwardSequenceKeys(intern._id),
-        getActiveUnitLoadMap(),
-      ]);
-      await rebuildInternFutureRotations({
-        internId: intern._id,
-        reservedSequenceKeys,
-        activeUnitLoadMap,
-        now: new Date(),
-      });
+      // Dynamic system: no upcoming rotations to rebuild. Extension only affects
+      // this active rotation's endDate, which was already saved above.
     }
-
-    intern.extensionDays = Number(intern.extensionDays || 0) + days;
     intern.totalExtensionDays = (intern.totalExtensionDays || 0) + Math.max(days, 0);
     intern.status = Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active';
     await intern.save();
@@ -1112,16 +1063,8 @@ router.post('/:id/remove-extension', async (req, res) => {
     await rotation.save();
 
     if (rotation.status === 'active') {
-      const [reservedSequenceKeys, activeUnitLoadMap] = await Promise.all([
-        getReservedForwardSequenceKeys(intern._id),
-        getActiveUnitLoadMap(),
-      ]);
-      await rebuildInternFutureRotations({
-        internId: intern._id,
-        reservedSequenceKeys,
-        activeUnitLoadMap,
-        now: new Date(),
-      });
+      // Dynamic system: no upcoming rotations to rebuild. Extension removal only affects
+      // this active rotation's endDate, which was already saved above.
     }
 
     const internExtensionDays = Number(intern.extensionDays || 0);

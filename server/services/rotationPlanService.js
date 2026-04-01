@@ -528,7 +528,4 @@ module.exports = {
   getOrderedUnits,
   computeDeterministicProgress,
   getActiveUnitLoadMap,
-  getReservedForwardSequenceKeys,
-  buildInitialRotationPlanForIntern,
-  rebuildInternFutureRotations,
 };

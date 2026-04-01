@@ -24,37 +24,27 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
     Array.isArray(internSchedule) ? internSchedule : (internSchedule?.rotations || [])
   ), [internSchedule]);
 
-  const upcomingFromPayload = React.useMemo(() => (
-    Array.isArray(internSchedule?.upcoming)
-      ? internSchedule.upcoming
-      : (Array.isArray(internSchedule?.upcomingRotations) ? internSchedule.upcomingRotations : [])
-  ), [internSchedule]);
-
+  // Use eligible units from schedule API (dynamic assignment — not just upcoming rotations)
   const availableUnits = React.useMemo(() => {
-    const source = upcomingFromPayload.length > 0
-      ? upcomingFromPayload
-      : scheduleRows.filter((rotation) => String(rotation.status || '').toLowerCase() === 'upcoming');
+    const eligible = Array.isArray(internSchedule?.eligibleUnits)
+      ? internSchedule.eligibleUnits
+      : [];
 
-    const seen = new Set();
     const currentUnitId = String(currentRotation?.unit_id || currentRotation?.unitId || currentRotation?.unit?.id || currentRotation?.unit?._id || '');
+    const seen = new Set();
 
-    return source
-      .map((rotation) => {
-        const unitId = String(rotation.unit_id || rotation.unitId || rotation.unit?.id || rotation.unit?._id || '');
-        const unitName = rotation.unit_name || rotation.unitName || rotation.unit?.name || null;
-        const duration = Number(rotation.duration_days || rotation.duration || rotation.unit?.duration_days || rotation.unit?.durationDays || 0);
-
+    return eligible
+      .map((unit) => {
+        const unitId = String(unit.id || unit._id || '');
+        const unitName = unit.name || null;
+        const duration = Number(unit.duration_days || unit.durationDays || 0);
         if (!unitId || !unitName || seen.has(unitId)) return null;
         if (currentUnitId && unitId === currentUnitId) return null;
         seen.add(unitId);
-        return {
-          id: unitId,
-          name: unitName,
-          duration_days: duration,
-        };
+        return { id: unitId, name: unitName, duration_days: duration };
       })
       .filter(Boolean);
-  }, [scheduleRows, upcomingFromPayload, currentRotation?.unitId, currentRotation?.unit_id, currentRotation?.unit]);
+  }, [internSchedule?.eligibleUnits, currentRotation?.unitId, currentRotation?.unit_id, currentRotation?.unit]);
 
   // Calculate days spent in current rotation
   const daysInCurrentRotation = React.useMemo(() => {
@@ -180,6 +170,11 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
                       {unit.name} ({unit.duration_days} days)
                     </SelectItem>
                   ))}
+                  {availableUnits.length === 0 && (
+                    <SelectItem value="_none" disabled>
+                      No eligible units available
+                    </SelectItem>
+                  )}
                 </SelectContent>
               </Select>
             </div>

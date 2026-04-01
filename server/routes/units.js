@@ -9,8 +9,6 @@ const { ACTIVITY_TYPES, logActivityEventSafe, logRecentUpdateSafe } = require('.
 const { buildInternViews } = require('../services/internViewService');
 const {
   getActiveUnitLoadMap,
-  getReservedForwardSequenceKeys,
-  rebuildInternFutureRotations,
 } = require('../services/rotationPlanService');
 const { updateBatchStats } = require('./dashboard');
 
@@ -356,20 +354,7 @@ router.put('/reorder', async (req, res) => {
       }))
     );
 
-    const internIds = await Rotation.distinct('intern').exec();
-    const activeUnitLoadMap = await getActiveUnitLoadMap();
-    for (const internId of internIds) {
-      if (!internId) continue;
-      const reservedSequenceKeys = await getReservedForwardSequenceKeys(String(internId));
-
-      await rebuildInternFutureRotations({
-        internId,
-        reservedSequenceKeys,
-        activeUnitLoadMap,
-        now: new Date(),
-      });
-    }
-
+    // Dynamic system: no pre-generated upcoming rotations to rebuild after reorder.
     await logRecentUpdateSafe('units_reordered', 'Updated unit ordering');
     await updateBatchStats().catch(() => {});
     res.json({ success: true, order: reorderedItems });
@@ -493,20 +478,16 @@ router.put('/:id', normalizeUnitPayload, validateUnitPayload, async (req, res) =
     }
 
     if (durationChanged) {
-      const affectedRotations = await Rotation.find({ unit: unit._id, status: { $in: ['active', 'upcoming'] } })
-        .select('intern')
-        .exec();
-      const affectedInternIds = [...new Set(affectedRotations.map((rotation) => rotation.intern?.toString()).filter(Boolean))];
-      const activeUnitLoadMap = await getActiveUnitLoadMap();
-      for (const internId of affectedInternIds) {
-        const reservedSequenceKeys = await getReservedForwardSequenceKeys(internId);
-
-        await rebuildInternFutureRotations({
-          internId,
-          reservedSequenceKeys,
-          activeUnitLoadMap,
-          now: new Date(),
-        });
+      // Dynamic system: update baseDuration and endDate on active rotations for this unit.
+      const newDuration = getUnitDuration(unit);
+      const activeRotations = await Rotation.find({ unit: unit._id, status: 'active' }).exec();
+      for (const rot of activeRotations) {
+        if (!rot.extensionDays || rot.extensionDays === 0) {
+          rot.baseDuration = newDuration;
+          rot.duration = newDuration;
+          rot.endDate = recalculateEndDate(rot.startDate, newDuration);
+          await rot.save();
+        }
       }
     }
 

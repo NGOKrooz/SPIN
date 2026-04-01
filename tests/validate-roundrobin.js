@@ -1,122 +1,248 @@
 /* eslint-disable no-console */
 'use strict';
-const { sortUnitsByOrder, getUnitOrderIndex } = require('../server/services/rotationPlanService.js');
 
-const units = Array.from({ length: 14 }, (_, i) => ({
-  _id: String(i + 1), name: 'Unit ' + (i + 1), order: i + 1, durationDays: 20,
-}));
-const orderedUnits = sortUnitsByOrder(units);
+/**
+ * Dynamic Assignment Engine — Validation Tests
+ *
+ * Tests: selectNextUnit (pure) — no DB connection needed.
+ * Run: node tests/validate-roundrobin.js
+ */
 
-// ============================================================
-// TASK 8: 20 INTERN ROUND-ROBIN
-// ============================================================
-console.log('=== TASK 8: 20 INTERN ROUND-ROBIN (14 units) ===\n');
-const assignments = [];
-for (let n = 1; n <= 20; n++) {
-  const idx = (n - 1) % orderedUnits.length;
-  assignments.push({ n, idx, unit: orderedUnits[idx].name });
-  console.log(
-    '  Intern ' + String(n).padStart(2) +
-    ' | assignedCount=' + String(n - 1).padStart(2) +
-    ' | idx=' + String(idx).padStart(2) +
-    ' -> ' + orderedUnits[idx].name +
-    (n > 14 ? '  << WRAP' : '')
-  );
-}
+const {
+  selectNextUnit,
+  DEFAULT_CAPACITY,
+} = require('../server/services/dynamicAssignmentService');
 
-// ============================================================
-// SPEC TEST CASES
-// ============================================================
-console.log('\n=== SPEC TEST CASES ===');
-const cases = [
-  [1,  'Unit 1'],
-  [2,  'Unit 2'],
-  [14, 'Unit 14'],
-  [15, 'Unit 1'],
-  [16, 'Unit 2'],
-  [20, 'Unit 6'],
-];
-let allOk = true;
-for (const [n, expected] of cases) {
-  const got = assignments[n - 1].unit;
-  const pass = got === expected;
-  if (!pass) allOk = false;
-  console.log('  Intern ' + n + ' -> ' + got + (pass ? '  PASS' : '  FAIL (expected ' + expected + ')'));
-}
-console.log('\n  Overall:', allOk ? 'ALL PASSED' : 'SOME FAILED');
+// ─── Minimal assertion helpers ────────────────────────────────────────────────
+let passed = 0;
+let failed = 0;
 
-// ============================================================
-// TASK 5: RANDOMIZED UPCOMING UNITS
-// Verify via seeded hash that different interns get different sequences
-// ============================================================
-console.log('\n=== TASK 5: UPCOMING UNIT RANDOMIZATION ===');
-
-// Replicate the seeding logic from rotationPlanService (hashString + createSeededRandom)
-const hashString = (value) => {
-  const input = String(value || '');
-  let hash = 0;
-  for (let i = 0; i < input.length; i++) {
-    hash = ((hash << 5) - hash + input.charCodeAt(i)) | 0;
+function assert(condition, message) {
+  if (condition) {
+    console.log('  ✓ ' + message);
+    passed++;
+  } else {
+    console.error('  ✗ FAIL: ' + message);
+    failed++;
   }
-  return hash >>> 0;
-};
-const createSeededRandom = (seed) => {
-  let state = hashString(seed) || 1;
-  return () => {
-    state += 0x6D2B79F5;
-    let v = state;
-    v = Math.imul(v ^ (v >>> 15), v | 1);
-    v ^= v + Math.imul(v ^ (v >>> 7), v | 61);
-    return ((v ^ (v >>> 14)) >>> 0) / 4294967296;
-  };
-};
-const sig = orderedUnits.map(u => u._id + ':' + getUnitOrderIndex(u)).join('|');
-
-const seqs = [];
-for (let n = 1; n <= 5; n++) {
-  const idx = (n - 1) % orderedUnits.length;
-  const first = orderedUnits[idx];
-  const remaining = orderedUnits.filter(u => u._id !== first._id);
-  const startDate = '2026-01-' + String(n).padStart(2, '0');
-  const seed = ['intern' + n, new Date(startDate).toISOString(), sig, 0].join('|');
-  const rng = createSeededRandom(seed);
-  const shuffled = [...remaining].sort(() => rng() - 0.5);
-  seqs.push(shuffled.map(u => u.name).join(','));
-  console.log(
-    '  Intern ' + n + ': first=' + first.name +
-    '  upcoming[0..2]=[' + shuffled.slice(0, 3).map(u => u.name).join(', ') + ']'
-  );
 }
-const uniqueCount = new Set(seqs).size;
-console.log('\n  Unique sequences: ' + uniqueCount + '/' + seqs.length + (uniqueCount === seqs.length ? '  ALL UNIQUE' : '  HAS DUPLICATES'));
 
-// ============================================================
-// TASK 6: TIMELINE DATE ARITHMETIC
-// ============================================================
-console.log('\n=== TASK 6: TIMELINE DATE CHECK ===');
-let cursor = new Date('2026-01-01T00:00:00Z');
-for (let i = 0; i < 4; i++) {
-  const start = new Date(cursor);
-  const end = new Date(cursor);
-  end.setUTCDate(end.getUTCDate() + 19); // duration - 1
-  console.log(
-    '  Rotation ' + (i + 1) + ': ' +
-    start.toISOString().slice(0, 10) + ' -> ' + end.toISOString().slice(0, 10) + ' (20 days)'
-  );
-  cursor = new Date(end);
-  cursor.setUTCDate(cursor.getUTCDate() + 1); // next day
+function section(title) {
+  console.log('\n=== ' + title + ' ===');
 }
-const expected4Start = new Date('2026-01-01T00:00:00Z');
-expected4Start.setUTCDate(expected4Start.getUTCDate() + 80); // 4 * 20
-console.log('  Rotation 5 start should be 2026-03-22: ' + (expected4Start.toISOString().slice(0, 10) === '2026-03-22' ? 'PASS' : 'FAIL'));
 
-// ============================================================
-// TASK 7: COUNT QUERY EXPLANATION
-// ============================================================
-console.log('\n=== TASK 7: EDGE CASE SUMMARY ===');
-console.log("  Count query: Intern.countDocuments({ 'rotationHistory.0': { $exists: true } })");
-console.log('  => Counts only interns with at least one rotation assigned (first unit confirmed)');
-console.log('  => Ghost interns (create succeeded, rotation failed): EXCLUDED');
-console.log('  => Hard-deleted interns: EXCLUDED (removed from collection)');
-console.log('  => Completed interns: INCLUDED (still in DB, still count toward round-robin)');
-console.log('  Units reordered: rebuildInternFutureRotations keeps currentUnit fixed, reshuffles upcoming only');
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function makeUnits(n, capacity = DEFAULT_CAPACITY) {
+  return Array.from({ length: n }, (_, i) => ({
+    _id: String(i + 1),
+    name: 'Unit-' + (i + 1),
+    durationDays: 20,
+    capacity,
+  }));
+}
+
+function makeOccupancy(counts) {
+  const m = new Map();
+  Object.entries(counts).forEach(([k, v]) => m.set(k, v));
+  return m;
+}
+
+// ─── TEST 1: Assignment – lowest-occupancy first ──────────────────────────────
+section('TEST 1: Assignment – lowest-occupancy first');
+{
+  // 4 units with counts 3,1,2,4 → must always pick unit-2 (count=1)
+  const units = makeUnits(4);
+  const occ = makeOccupancy({ '1': 3, '2': 1, '3': 2, '4': 4 });
+  const completed = new Set();
+  let unit2Picks = 0;
+  const TRIALS = 100;
+  for (let i = 0; i < TRIALS; i++) {
+    const { unit } = selectNextUnit(units, occ, completed, null, DEFAULT_CAPACITY);
+    if (unit && String(unit._id) === '2') unit2Picks++;
+  }
+  // Lowest is count=1 (unit-2 only). All picks must be unit-2.
+  assert(unit2Picks === TRIALS, `All ${TRIALS} picks go to unit-2 (lowest count=1). Got ${unit2Picks}`);
+}
+
+// ─── TEST 2: Capacity – full unit never selected ──────────────────────────────
+section('TEST 2: Capacity – full unit excluded');
+{
+  const units = makeUnits(3);
+  // unit-1 at capacity, unit-2 has 2, unit-3 has 0
+  const occ = makeOccupancy({ '1': DEFAULT_CAPACITY, '2': 2, '3': 0 });
+  const completed = new Set();
+  let unit1Picks = 0;
+  const TRIALS = 200;
+  for (let i = 0; i < TRIALS; i++) {
+    const { unit } = selectNextUnit(units, occ, completed, null, DEFAULT_CAPACITY);
+    if (unit && String(unit._id) === '1') unit1Picks++;
+  }
+  assert(unit1Picks === 0, `Unit-1 (at capacity=${DEFAULT_CAPACITY}) never selected over ${TRIALS} picks`);
+}
+
+// ─── TEST 3: Current unit always excluded ─────────────────────────────────────
+section('TEST 3: Current unit excluded from selection');
+{
+  const units = makeUnits(3);
+  const occ = makeOccupancy({ '1': 0, '2': 0, '3': 0 });
+  const completed = new Set();
+  let currentPicks = 0;
+  const TRIALS = 200;
+  for (let i = 0; i < TRIALS; i++) {
+    const { unit } = selectNextUnit(units, occ, completed, '1', DEFAULT_CAPACITY);
+    if (unit && String(unit._id) === '1') currentPicks++;
+  }
+  assert(currentPicks === 0, `Current unit (id=1) never re-selected over ${TRIALS} picks`);
+}
+
+// ─── TEST 4: Completed units excluded until reset ─────────────────────────────
+section('TEST 4: Completed units excluded until reset');
+{
+  const units = makeUnits(4);
+  const occ = makeOccupancy({});
+  // units 1,2,3 completed → only unit-4 eligible
+  const completed = new Set(['1', '2', '3']);
+  let unit4Picks = 0;
+  const TRIALS = 100;
+  for (let i = 0; i < TRIALS; i++) {
+    const { unit } = selectNextUnit(units, occ, completed, null, DEFAULT_CAPACITY);
+    if (unit && String(unit._id) === '4') unit4Picks++;
+  }
+  assert(unit4Picks === TRIALS, `All ${TRIALS} picks go to unit-4 (only non-completed unit)`);
+}
+
+// ─── TEST 5: Rotation reset – all completed triggers full reset ───────────────
+section('TEST 5: Rotation reset when all units completed');
+{
+  const units = makeUnits(3);
+  const occ = makeOccupancy({});
+  // All 3 completed AND current unit is unit-1 → after reset, units 2 & 3 available
+  const allCompleted = new Set(['1', '2', '3']);
+  const { unit, wasReset } = selectNextUnit(units, occ, allCompleted, '1', DEFAULT_CAPACITY);
+  assert(wasReset === true, 'wasReset flag is true when completedIds covers all units');
+  assert(unit !== null, 'A unit is still returned after reset');
+  assert(String(unit._id) !== '1', 'Current unit (id=1) still excluded after reset');
+}
+
+// ─── TEST 6: Returns null only when every unit is full ───────────────────────
+section('TEST 6: Returns null only when all units are at capacity');
+{
+  const units = makeUnits(3);
+  const occ = makeOccupancy({
+    '1': DEFAULT_CAPACITY,
+    '2': DEFAULT_CAPACITY,
+    '3': DEFAULT_CAPACITY,
+  });
+  const completed = new Set();
+  const { unit } = selectNextUnit(units, occ, completed, null, DEFAULT_CAPACITY);
+  assert(unit === null, `unit is null when all ${units.length} units are at capacity`);
+}
+
+// ─── TEST 7: Load Balance – 15 interns, 8 units, capacity=5 ──────────────────
+section('TEST 7: Load balance – 15 interns across 8 units (capacity=5)');
+{
+  const NUM_UNITS = 8;
+  const CAPACITY = 5;
+  const NUM_INTERNS = 15;
+  const units = makeUnits(NUM_UNITS, CAPACITY);
+  const occupancy = makeOccupancy({});
+  const assignments = Array(NUM_INTERNS).fill(null);
+
+  for (let i = 0; i < NUM_INTERNS; i++) {
+    const { unit } = selectNextUnit(units, occupancy, new Set(), null, CAPACITY);
+    if (unit) {
+      const uid = String(unit._id);
+      assignments[i] = uid;
+      occupancy.set(uid, (occupancy.get(uid) || 0) + 1);
+    }
+  }
+
+  const assigned = assignments.filter(Boolean).length;
+  assert(assigned === NUM_INTERNS, `All ${NUM_INTERNS} interns received a unit`);
+
+  let maxLoad = 0;
+  let minLoad = Infinity;
+  for (const count of occupancy.values()) {
+    if (count > maxLoad) maxLoad = count;
+    if (count < minLoad) minLoad = count;
+  }
+  assert(maxLoad <= CAPACITY, `No unit exceeded capacity ${CAPACITY} (max=${maxLoad})`);
+
+  const spread = maxLoad - minLoad;
+  assert(spread <= 2, `Load spread ≤ 2 (max=${maxLoad}, min=${minLoad}, spread=${spread})`);
+}
+
+// ─── TEST 8: Stress – 50 interns, 10 units, capacity=5, two rotation waves ───
+section('TEST 8: Stress – 50 interns × 2 waves across 10 units (capacity=5)');
+{
+  const NUM_UNITS = 10;
+  const CAPACITY = 5;
+  const NUM_INTERNS = 50;
+  const units = makeUnits(NUM_UNITS, CAPACITY);
+  const occupancy = makeOccupancy({});
+
+  // Track each intern's completed set and current unit
+  const completedSets = Array.from({ length: NUM_INTERNS }, () => new Set());
+  const currentUnits = Array(NUM_INTERNS).fill(null);
+
+  // Wave 1: assign first unit to each intern sequentially
+  let nullCount = 0;
+  for (let i = 0; i < NUM_INTERNS; i++) {
+    const { unit } = selectNextUnit(units, occupancy, completedSets[i], null, CAPACITY);
+    if (unit) {
+      const uid = String(unit._id);
+      currentUnits[i] = uid;
+      completedSets[i].add(uid);
+      occupancy.set(uid, (occupancy.get(uid) || 0) + 1);
+    } else {
+      nullCount++;
+    }
+  }
+
+  let overCapacityWave1 = 0;
+  for (const count of occupancy.values()) {
+    if (count > CAPACITY) overCapacityWave1++;
+  }
+  assert(nullCount === 0, `All ${NUM_INTERNS} interns assigned in wave 1 (0 nulls)`);
+  assert(overCapacityWave1 === 0, 'No unit exceeded capacity after wave 1');
+
+  // Wave 2: rotate all interns to their next unit
+  for (let i = 0; i < NUM_INTERNS; i++) {
+    const prev = currentUnits[i];
+    // Intern leaves previous unit
+    if (prev) occupancy.set(prev, Math.max(0, (occupancy.get(prev) || 0) - 1));
+    const { unit } = selectNextUnit(units, occupancy, completedSets[i], prev, CAPACITY);
+    if (unit) {
+      const uid = String(unit._id);
+      currentUnits[i] = uid;
+      completedSets[i].add(uid);
+      occupancy.set(uid, (occupancy.get(uid) || 0) + 1);
+    }
+  }
+
+  let overCapacityWave2 = 0;
+  for (const count of occupancy.values()) {
+    if (count > CAPACITY) overCapacityWave2++;
+  }
+  assert(overCapacityWave2 === 0, 'No unit exceeded capacity after wave 2');
+
+  // No intern stayed in the same unit across waves
+  let stayedSame = 0;
+  // (currentUnits now has wave-2 assignments; completedSets has 2 entries each)
+  for (let i = 0; i < NUM_INTERNS; i++) {
+    const completed = [...completedSets[i]];
+    if (completed.length >= 2 && completed[0] === completed[1]) stayedSame++;
+  }
+  assert(stayedSame === 0, `No intern stayed in the same unit across two waves (${stayedSame} repeats)`);
+}
+
+// ─── Summary ──────────────────────────────────────────────────────────────────
+console.log('\n' + '─'.repeat(50));
+console.log(`Results: ${passed} passed, ${failed} failed`);
+if (failed > 0) {
+  console.error('SOME TESTS FAILED');
+  process.exit(1);
+} else {
+  console.log('ALL TESTS PASSED');
+}
+

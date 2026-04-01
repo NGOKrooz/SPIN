@@ -385,14 +385,6 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
               }}>Export CSV</Button>
               <Button variant="outline" onClick={() => {
                 try {
-                  const upcomingRows = upcomingRotations.map(r => `
-                    <tr>
-                      <td>${r.unit_name}</td>
-                      <td>${r.start_date ? formatDate(r.start_date) : 'Pending'}</td>
-                      <td>${r.start_date && r.end_date ? `${calculateDaysBetween(r.start_date, r.end_date)} days` : `${r.duration_days || rotationDurationDays} days`}</td>
-                    </tr>
-                  `).join('');
-
                   const completedRows = completedRotations.map(r => `
                     <tr>
                       <td>${r.unit_name}</td>
@@ -411,20 +403,8 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
 
                   const html = `
                     <h2>${currentIntern?.name}</h2>
-                    <h3>1. Upcoming Units</h3>
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Unit Name</th>
-                          <th>Start Date</th>
-                          <th>Duration</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        ${upcomingRows || '<tr><td colspan="3">No upcoming units</td></tr>'}
-                      </tbody>
-                    </table>
-                    <h3>2. Completed Units</h3>
+                    <p><em>Next unit will be assigned automatically based on availability and load balance.</em></p>
+                    <h3>1. Completed Units</h3>
                     <table>
                       <thead>
                         <tr>
@@ -438,7 +418,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                         ${completedRows || '<tr><td colspan="4">No completed units</td></tr>'}
                       </tbody>
                     </table>
-                    <h3>3. Remaining Units</h3>
+                    <h3>2. Remaining Units (Eligible)</h3>
                     <table>
                       <thead>
                         <tr>
@@ -546,13 +526,13 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
               </Card>
             )}
 
-            {/* Upcoming Rotations */}
+            {/* Next Assignment */}
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle className="flex items-center space-x-2">
                     <Calendar className="h-5 w-5" />
-                    <span>Upcoming Rotations ({upcomingRotations.length})</span>
+                    <span>Next Assignment</span>
                   </CardTitle>
                   <Button
                     variant="outline"
@@ -563,52 +543,27 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                       e.stopPropagation();
                       setIsRefreshing(true);
                       try {
-                        console.log('[InternDashboard] Refreshing rotations...');
-                        // Invalidate and refetch schedule - this will trigger auto-advance on server
                         await queryClient.invalidateQueries({ queryKey: ['intern-schedule', intern.id] });
                         await queryClient.refetchQueries({ queryKey: ['intern-schedule', intern.id] });
-                        console.log('[InternDashboard] Rotations refreshed successfully');
                       } catch (error) {
-                        console.error('[InternDashboard] Error refreshing rotations:', error);
-                        alert('Error refreshing rotations. Check console for details.');
+                        console.error('[InternDashboard] Error refreshing schedule:', error);
+                        alert('Error refreshing schedule. Check console for details.');
                       } finally {
                         setIsRefreshing(false);
                       }
                     }}
                   >
-                    {isRefreshing ? 'Refreshing...' : 'Refresh Rotations'}
+                    {isRefreshing ? 'Refreshing...' : 'Refresh'}
                   </Button>
                 </div>
               </CardHeader>
               <CardContent>
-                {upcomingRotations.length > 0 ? (
-                  <div className="space-y-2">
-                    {upcomingRotations.map((rotation) => (
-                      <div key={rotation.id || `upcoming-${rotation.unit_id}`} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 bg-yellow-50 rounded-lg">
-                        <div>
-                          <h4 className="font-medium">{rotation.unit_name || rotation.unit}</h4>
-                          <p className="text-sm text-gray-600">
-                            {rotation.start_date && rotation.end_date
-                              ? `${format(rotation.start_date)} - ${format(rotation.end_date)}`
-                              : 'Pending scheduling'}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm font-medium text-yellow-600">
-                            {rotation.start_date && rotation.end_date
-                              ? `${rotation.duration_days || rotation.duration || getRotationDuration(rotation)} days`
-                              : `${rotation.duration_days || rotation.duration || rotationDurationDays} days`}
-                          </p>
-                          <span className="text-xs text-gray-500">
-                            {(rotation.workload || 'N/A')} workload
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-center py-4 text-gray-500">No upcoming rotations scheduled</p>
-                )}
+                <p className="text-center py-4 text-gray-500">
+                  ✦ Next unit will be assigned automatically based on availability
+                </p>
+                <p className="text-xs text-center text-gray-400">
+                  Units are assigned dynamically to ensure balanced distribution
+                </p>
               </CardContent>
             </Card>
 

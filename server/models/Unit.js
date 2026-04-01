@@ -4,7 +4,7 @@ const UnitSchema = new mongoose.Schema({
   name: { type: String, required: true, unique: true },
   order: { type: Number, required: true },
   durationDays: { type: Number, default: 20 },
-  capacity: { type: Number, default: 0 },
+  capacity: { type: Number, default: 5 },
   patientCount: { type: Number, default: 0 },
   workload: { type: String, default: 'Low' },
   description: { type: String, default: null },
