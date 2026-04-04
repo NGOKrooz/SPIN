@@ -87,18 +87,6 @@
   @apply bg-batch-b text-white;
 }
 
-.workload-low {
-  @apply bg-workload-low text-white;
-}
-
-.workload-medium {
-  @apply bg-workload-medium text-white;
-}
-
-.workload-high {
-  @apply bg-workload-high text-white;
-}
-
 .coverage-good {
   @apply bg-coverage-good text-white;
 }

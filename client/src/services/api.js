@@ -81,8 +81,6 @@ export const unitsAPI = {
   create: (data) => http.post('/units', data),
   update: (id, data) => http.put(`/units/${id}`, data),
   delete: (id) => http.delete(`/units/${id}`),
-  updateWorkload: (id, data) => http.post(`/units/${id}/workload`, data),
-  getWorkloadHistory: (id, limit = 12) => http.get(`/units/${id}/workload-history`, { params: { limit } }),
   getCompletedInterns: (id) => http.get(`/units/${id}/completed-interns`),
   updateOrder: (order) => http.put('/units/reorder', order),
 };
@@ -154,9 +152,7 @@ export const api = {
   createUnit: (data) => unitsAPI.create(data),
   updateUnit: (id, data) => unitsAPI.update(id, data),
   deleteUnit: (id) => unitsAPI.delete(id),
-  updateUnitWorkload: (id, data) => unitsAPI.updateWorkload(id, data),
   updateUnitOrder: (order) => unitsAPI.updateOrder(order),
-  getUnitWorkloadHistory: (id, limit) => unitsAPI.getWorkloadHistory(id, limit),
   getCompletedInterns: (id) => unitsAPI.getCompletedInterns(id),
   getPatients: (params) => patientsAPI.getAll(params),
   createPatient: (data) => patientsAPI.create(data),

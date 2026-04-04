@@ -8,7 +8,6 @@ const Unit = require('../models/Unit');
 const { ensureInternStatusIsCorrect } = require('../services/internService');
 const { ACTIVITY_TYPES, logActivityEventSafe } = require('../services/recentUpdatesService');
 const { createExtensionReason } = require('../services/extensionService');
-const { createWorkloadHistory } = require('../services/workloadService');
 const { buildInternView, buildInternViews } = require('../services/internViewService');
 const {
   getUnitDuration,
@@ -860,12 +859,6 @@ router.post('/:id/reassign', async (req, res) => {
 
     console.log(`Successfully reassigned ${intern.name} to ${selectedUnit.name}`);
 
-    try {
-      const recordedWorkload = await createWorkloadHistory(intern._id, selectedUnit._id, 0);
-      console.log('Workload history on reassign:', recordedWorkload);
-    } catch (workloadError) {
-      console.warn('Failed to write workload history during reassignment:', workloadError.message);
-    }
 
     await logActivityEventSafe({
       type: ACTIVITY_TYPES.INTERN_REASSIGNED,

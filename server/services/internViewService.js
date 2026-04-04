@@ -212,7 +212,6 @@ const addUnitProgress = (internView, currentUnit, units = []) => {
       durationDays: unitFromRotation?.durationDays || unitFromRotation?.duration_days || fallbackUnit?.durationDays || fallbackUnit?.duration || fallbackUnit?.duration_days || null,
       duration: unitFromRotation?.duration || fallbackUnit?.duration || fallbackUnit?.durationDays || fallbackUnit?.duration_days || null,
       order: fallbackUnit?.order ?? fallbackUnit?.position ?? null,
-      workload: fallbackUnit?.workload || null,
     };
 
     remainingUnitDocs.push(mergedUnit);
@@ -289,7 +288,6 @@ const addUnitProgress = (internView, currentUnit, units = []) => {
       order: u.order ?? u.position ?? null,
       duration: u.durationDays ?? u.duration ?? null,
       duration_days: u.durationDays ?? u.duration ?? null,
-      workload: u.workload || null,
     })),
     dashboard: {
       currentUnit: internView.currentUnit?.name || null,

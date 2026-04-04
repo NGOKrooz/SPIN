@@ -75,7 +75,6 @@ const getLatestByType = async (type) => ActivityLog.findOne({ type }).sort({ cre
       capacity: originalUnit.capacity,
       patientCount: originalUnit.patientCount,
       description: originalUnit.description,
-      workload: unit.workload || 'Low',
     }),
   });
 
@@ -95,7 +94,6 @@ const getLatestByType = async (type) => ActivityLog.findOne({ type }).sort({ cre
     capacity: originalUnit.capacity,
     patientCount: originalUnit.patientCount,
     description: originalUnit.description,
-    workload: unit.workload || 'Low',
   };
 
   const beforeNoopUpdatedAt = unitLog.createdAt?.toISOString?.() || String(unitLog.createdAt);
@@ -154,7 +152,6 @@ const getLatestByType = async (type) => ActivityLog.findOne({ type }).sort({ cre
       capacity: originalUnit.capacity,
       patientCount: originalUnit.patientCount,
       description: originalUnit.description,
-      workload: unit.workload || 'Low',
     }),
   });
 

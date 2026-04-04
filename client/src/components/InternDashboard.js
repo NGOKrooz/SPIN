@@ -5,7 +5,7 @@ import ExtensionModal from './ExtensionModal';
 import ReassignModal from './ReassignModal';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
-import { exportToCSV, openPrintableWindow, formatDate, getBatchColor, getStatusColor, getWorkloadColor, normalizeDate, calculateDaysBetween } from '../lib/utils';
+import { exportToCSV, openPrintableWindow, formatDate, getBatchColor, getStatusColor, normalizeDate, calculateDaysBetween } from '../lib/utils';
 import { previewNextUnitForIntern } from '../lib/predictivePlanning';
 import { api } from '../services/api';
 
@@ -639,9 +639,6 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                           <p className="text-sm font-medium text-green-600">
                             {getRotationDuration(rotation)} days completed
                           </p>
-                          <span className="text-xs text-gray-500">
-                            {rotation.workload} workload
-                          </span>
                         </div>
                       </div>
                     ))}
@@ -671,11 +668,6 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                         <div>
                           <h4 className="font-medium">{unit.name}</h4>
                           <p className="text-sm text-gray-600">{unit.duration_days || unit.duration || rotationDurationDays} days</p>
-                        </div>
-                        <div className="text-right">
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getWorkloadColor(unit.workload)}`}>
-                            {unit.workload}
-                          </span>
                         </div>
                       </div>
                     ))}

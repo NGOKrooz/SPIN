@@ -7,7 +7,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { api } from '../services/api';
-import { formatDate, getBatchColor, getWorkloadColor } from '../lib/utils';
+import { formatDate, getBatchColor } from '../lib/utils';
 import { useToast } from '../hooks/use-toast';
 import { addDays, format, parseISO } from 'date-fns';
 
@@ -261,9 +261,6 @@ export default function ManualAssignment() {
                         <SelectItem key={unit.id} value={unit.id.toString()}>
                           <div className="flex items-center justify-between w-full">
                             <span>{unit.name}</span>
-                            <span className={`ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium text-white ${getWorkloadColor(unit.workload)}`}>
-                              {unit.workload}
-                            </span>
                           </div>
                         </SelectItem>
                       ))
@@ -389,12 +386,6 @@ export default function ManualAssignment() {
                     <div className="flex items-center space-x-2">
                       <span className="text-gray-500">Duration:</span>
                       <span className="font-medium">{selectedUnit.duration_days} days</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <span className="text-gray-500">Workload:</span>
-                      <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium text-white ${getWorkloadColor(selectedUnit.workload)}`}>
-                        {selectedUnit.workload}
-                      </span>
                     </div>
                   </div>
                 </div>

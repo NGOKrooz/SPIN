@@ -115,6 +115,41 @@ export default function Dashboard() {
         <div className="space-y-6 lg:col-span-2">
           <RecentUpdates />
 
+            <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
+              <CardHeader>
+                <CardTitle>Upcoming Movements (Next 7 Days)</CardTitle>
+                <CardDescription>Preview-only movement board based on global batch-balanced assignment</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {upcomingMovements.length === 0 ? (
+                  <div className="text-sm text-gray-500">No movements expected in the next 7 days.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                      <thead>
+                        <tr className="border-b text-left text-gray-500">
+                          <th className="py-2 pr-4">Intern</th>
+                          <th className="py-2 pr-4">From</th>
+                          <th className="py-2 pr-4">To</th>
+                          <th className="py-2">Move Date</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {upcomingMovements.map((movement) => (
+                          <tr key={`${movement.internId || movement.internName}-${movement.moveDateLabel}`} className="border-b last:border-b-0">
+                            <td className="py-2 pr-4 font-medium text-gray-900">{movement.internName}</td>
+                            <td className="py-2 pr-4 text-gray-700">{movement.fromUnit}</td>
+                            <td className="py-2 pr-4 text-gray-700">{movement.toUnit}</td>
+                            <td className="py-2 text-gray-600">{movement.moveDateLabel}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
           <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
@@ -154,41 +189,6 @@ export default function Dashboard() {
                       <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded ml-2">Warning</span>
                     </div>
                   ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
-            <CardHeader>
-              <CardTitle>Upcoming Movements (Next 7 Days)</CardTitle>
-              <CardDescription>Preview-only movement board based on predictive unit need</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {upcomingMovements.length === 0 ? (
-                <div className="text-sm text-gray-500">No movements expected in the next 7 days.</div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="border-b text-left text-gray-500">
-                        <th className="py-2 pr-4">Intern</th>
-                        <th className="py-2 pr-4">From</th>
-                        <th className="py-2 pr-4">To</th>
-                        <th className="py-2">Move Date</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {upcomingMovements.map((movement) => (
-                        <tr key={`${movement.internId || movement.internName}-${movement.moveDateLabel}`} className="border-b last:border-b-0">
-                          <td className="py-2 pr-4 font-medium text-gray-900">{movement.internName}</td>
-                          <td className="py-2 pr-4 text-gray-700">{movement.fromUnit}</td>
-                          <td className="py-2 pr-4 text-gray-700">{movement.toUnit}</td>
-                          <td className="py-2 text-gray-600">{movement.moveDateLabel}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
                 </div>
               )}
             </CardContent>

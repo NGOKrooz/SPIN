@@ -2,7 +2,6 @@ const mongoose = require('mongoose');
 
 const Patient = require('../models/Patient');
 const Unit = require('../models/Unit');
-const { calculateWorkload } = require('./unitService');
 
 function normalizeUnitIds(unitIds = []) {
   return [...new Set((Array.isArray(unitIds) ? unitIds : [unitIds])
@@ -66,16 +65,14 @@ async function syncUnitPatientCounts(unitsOrUnitIds = []) {
   for (const unit of units) {
     const unitId = unit._id.toString();
     const patientCount = Number(countMap.get(unitId) || 0);
-    const workload = calculateWorkload({ patientCount, capacity: unit.capacity });
 
-    if (Number(unit.patientCount || 0) !== patientCount || String(unit.workload || '') !== workload) {
+      if (Number(unit.patientCount || 0) !== patientCount) {
       operations.push({
         updateOne: {
           filter: { _id: unit._id },
           update: {
             $set: {
               patientCount,
-              workload,
               updatedAt: new Date(),
             },
           },

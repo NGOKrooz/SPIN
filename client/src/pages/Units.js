@@ -7,7 +7,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { api } from '../services/api';
-import { getWorkloadColor, getBatchColor } from '../lib/utils';
+import { getBatchColor } from '../lib/utils';
 import { useToast } from '../hooks/use-toast';
 import UnitForm from '../components/UnitForm';
 import UnitViewModal from '../components/UnitViewModal';
@@ -15,7 +15,6 @@ import UnitOrderModal from '../components/UnitOrderModal';
 
 export default function Units() {
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterWorkload, setFilterWorkload] = useState('ALL');
   const [filterCoverage, setFilterCoverage] = useState('ALL');
   const [showForm, setShowForm] = useState(false);
   const [editingUnit, setEditingUnit] = useState(null);
@@ -75,9 +74,8 @@ export default function Units() {
 
   const filteredUnits = units?.filter(unit => {
     const matchesSearch = unit.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesWorkload = filterWorkload === 'ALL' || unit.workload === filterWorkload;
     const matchesCoverage = filterCoverage === 'ALL' || unit.coverage_status === filterCoverage;
-    return matchesSearch && matchesWorkload && matchesCoverage;
+      return matchesSearch && matchesCoverage;
   }) || [];
 
   const getPatientCount = React.useCallback((unit) => {
@@ -137,12 +135,6 @@ export default function Units() {
     );
   }
 
-  const workloadStats = {
-    low: units?.filter(u => u.workload === 'Low').length || 0,
-    medium: units?.filter(u => u.workload === 'Medium').length || 0,
-    high: units?.filter(u => u.workload === 'High').length || 0,
-  };
-
   const coverageStats = {
     good: units?.filter(u => u.coverage_status === 'good').length || 0,
     warning: units?.filter(u => u.coverage_status === 'warning').length || 0,
@@ -155,7 +147,7 @@ export default function Units() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Units</h1>
-          <p className="text-sm sm:text-base text-gray-600">Manage hospital units and their workload</p>
+            <p className="text-sm sm:text-base text-gray-600">Manage hospital units and coverage</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 sm:space-x-2">
           <Button onClick={() => setShowForm(true)} className="hospital-gradient w-full sm:w-auto">
@@ -194,20 +186,6 @@ export default function Units() {
               />
             </div>
             <div>
-              <Label htmlFor="workload">Workload</Label>
-              <Select value={filterWorkload} onValueChange={setFilterWorkload}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All workloads" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All workloads</SelectItem>
-                  <SelectItem value="Low">Low</SelectItem>
-                  <SelectItem value="Medium">Medium</SelectItem>
-                  <SelectItem value="High">High</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
               <Label htmlFor="coverage">Coverage</Label>
               <Select value={filterCoverage} onValueChange={setFilterCoverage}>
                 <SelectTrigger>
@@ -226,7 +204,6 @@ export default function Units() {
                 variant="outline" 
                 onClick={() => {
                   setSearchTerm('');
-                  setFilterWorkload('ALL');
                   setFilterCoverage('ALL');
                 }}
               >
@@ -238,7 +215,7 @@ export default function Units() {
       </Card>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-6">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center space-x-2">
@@ -246,39 +223,6 @@ export default function Units() {
               <div>
                 <p className="text-sm font-medium text-gray-600">Total Units</p>
                 <p className="text-2xl font-bold text-gray-900">{units?.length || 0}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 rounded-full bg-workload-low"></div>
-              <div>
-                <p className="text-sm font-medium text-gray-600">Low Workload</p>
-                <p className="text-2xl font-bold text-gray-900">{workloadStats.low}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 rounded-full bg-workload-medium"></div>
-              <div>
-                <p className="text-sm font-medium text-gray-600">Medium Workload</p>
-                <p className="text-2xl font-bold text-gray-900">{workloadStats.medium}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 rounded-full bg-workload-high"></div>
-              <div>
-                <p className="text-sm font-medium text-gray-600">High Workload</p>
-                <p className="text-2xl font-bold text-gray-900">{workloadStats.high}</p>
               </div>
             </div>
           </CardContent>
@@ -319,11 +263,6 @@ export default function Units() {
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-lg break-words pr-2">{unit.name}</CardTitle>
-                <div className="flex items-center space-x-2">
-                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getWorkloadColor(unit.workload)}`}>
-                    {unit.workload}
-                  </span>
-                </div>
               </div>
               <CardDescription>
                 Duration: {unit.duration_days} days

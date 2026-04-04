@@ -92,7 +92,6 @@ function buildInternSchedule({ internId, rotations = [], orderedUnits = [], now 
         unit_id: unit.id,
         unit_name: unit.name,
         duration_days: unit.duration_days,
-        workload: unit.workload,
         position: unit.position,
         start_date: existingUpcoming?.start_date ?? null,
         end_date: existingUpcoming?.end_date ?? null,

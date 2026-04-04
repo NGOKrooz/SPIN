@@ -7,6 +7,8 @@ const Unit = require('../models/Unit');
 const DEFAULT_CAPACITY = 5;
 const DEFAULT_DURATION = 20;
 const LEAVING_SOON_DAYS = 5;
+const MOVEMENT_WINDOW_DAYS = 7;
+const RECENT_INCOMING_DAYS = 7;
 
 const startOfDay = (d = new Date()) => {
   const v = new Date(d);
@@ -91,17 +93,37 @@ async function getUnitInternsLeavingSoon(windowDays = LEAVING_SOON_DAYS) {
   return counts;
 }
 
+async function getRecentIncomingCounts(windowDays = RECENT_INCOMING_DAYS, todayRef = new Date()) {
+  const today = startOfDay(todayRef);
+  const minDate = startOfDay(addDays(today, -windowDays));
+  const rows = await Rotation.find({
+    startDate: { $gte: minDate, $lte: today },
+  })
+    .select('unit')
+    .exec();
+
+  const counts = new Map();
+  for (const row of rows) {
+    const uid = row.unit?.toString?.() || null;
+    if (!uid) continue;
+    counts.set(uid, (counts.get(uid) || 0) + 1);
+  }
+  return counts;
+}
+
 const getUnitLoad = (loadMap, unitId) => loadMap.get(String(unitId)) || 0;
 
-const buildEffectiveLoadMap = (allUnits, occupancy, leavingSoon) => {
-  const effectiveLoad = new Map();
+const buildTrueLoadMap = (allUnits, occupancy, leavingSoon, incomingBatch = new Map(), recentIncoming = new Map()) => {
+  const trueLoad = new Map();
   for (const unit of allUnits) {
     const unitId = String(unit._id);
     const currentInterns = occupancy.get(unitId) || 0;
     const internsLeavingSoon = leavingSoon.get(unitId) || 0;
-    effectiveLoad.set(unitId, Math.max(0, currentInterns - internsLeavingSoon));
+    const batchIncoming = incomingBatch.get(unitId) || 0;
+    const recent = recentIncoming.get(unitId) || 0;
+    trueLoad.set(unitId, currentInterns - internsLeavingSoon + batchIncoming + recent);
   }
-  return effectiveLoad;
+  return trueLoad;
 };
 
 /**
@@ -134,13 +156,13 @@ async function getCompletedUnitIds(internId) {
  * @param {number}       capacity      max per unit (default 5)
  * @returns {{ unit: Object|null, wasReset: boolean }}
  */
-function selectNextUnit(allUnits, effectiveLoad, completedIds, currentUnitId = null, capacity = DEFAULT_CAPACITY) {
+function selectNextUnit(allUnits, trueLoad, completedIds, currentUnitId = null, capacity = DEFAULT_CAPACITY) {
   const buildPool = (ignoreCompleted) =>
     allUnits.filter((u) => {
       const id = String(u._id);
       if (currentUnitId && id === String(currentUnitId)) return false;
       if (!ignoreCompleted && completedIds.has(id)) return false;
-      return getUnitLoad(effectiveLoad, id) < capacity;
+      return getUnitLoad(trueLoad, id) < capacity;
     });
 
   let pool = buildPool(false);
@@ -154,12 +176,12 @@ function selectNextUnit(allUnits, effectiveLoad, completedIds, currentUnitId = n
   if (pool.length === 0) return { unit: null, wasReset };
 
   // Sort ascending by predictive effective load
-  pool.sort((a, b) => getUnitLoad(effectiveLoad, a._id) - getUnitLoad(effectiveLoad, b._id));
+  pool.sort((a, b) => getUnitLoad(trueLoad, a._id) - getUnitLoad(trueLoad, b._id));
 
   // Soft randomisation: pick among top-3 lowest-occupancy candidates
-  const lowestCount = getUnitLoad(effectiveLoad, pool[0]._id);
+  const lowestCount = getUnitLoad(trueLoad, pool[0]._id);
   const candidates = pool
-    .filter((u) => getUnitLoad(effectiveLoad, u._id) === lowestCount)
+    .filter((u) => getUnitLoad(trueLoad, u._id) === lowestCount)
     .slice(0, 3);
   const unit = candidates[Math.floor(Math.random() * candidates.length)];
 
@@ -168,7 +190,7 @@ function selectNextUnit(allUnits, effectiveLoad, completedIds, currentUnitId = n
 
 const buildEligibleUnitPool = (
   allUnits,
-  effectiveLoad,
+  trueLoad,
   completedIds,
   currentUnitId = null,
   capacity = DEFAULT_CAPACITY,
@@ -177,33 +199,33 @@ const buildEligibleUnitPool = (
   const unitId = String(unit._id);
   if (currentUnitId && unitId === String(currentUnitId)) return false;
   if (!ignoreCompleted && completedIds.has(unitId)) return false;
-  if (!ignoreCapacity && getUnitLoad(effectiveLoad, unitId) >= capacity) return false;
+  if (!ignoreCapacity && getUnitLoad(trueLoad, unitId) >= capacity) return false;
   return true;
 });
 
-const sortUnitsByEffectiveLoad = (pool, effectiveLoad) => [...pool]
-  .sort((left, right) => getUnitLoad(effectiveLoad, left._id) - getUnitLoad(effectiveLoad, right._id));
+const sortUnitsByEffectiveLoad = (pool, trueLoad) => [...pool]
+  .sort((left, right) => getUnitLoad(trueLoad, left._id) - getUnitLoad(trueLoad, right._id));
 
 function pickNextUnitForAssignment(
   allUnits,
-  effectiveLoad,
+  trueLoad,
   completedIds,
   currentUnitId = null,
   capacity = DEFAULT_CAPACITY
 ) {
-  const primary = selectNextUnit(allUnits, effectiveLoad, completedIds, currentUnitId, capacity);
+  const primary = selectNextUnit(allUnits, trueLoad, completedIds, currentUnitId, capacity);
   if (primary.unit) {
     return { ...primary, usedOverflow: false };
   }
 
   let wasReset = false;
-  let overflowPool = buildEligibleUnitPool(allUnits, effectiveLoad, completedIds, currentUnitId, capacity, {
+  let overflowPool = buildEligibleUnitPool(allUnits, trueLoad, completedIds, currentUnitId, capacity, {
     ignoreCompleted: false,
     ignoreCapacity: true,
   });
 
   if (overflowPool.length === 0) {
-    overflowPool = buildEligibleUnitPool(allUnits, effectiveLoad, completedIds, currentUnitId, capacity, {
+    overflowPool = buildEligibleUnitPool(allUnits, trueLoad, completedIds, currentUnitId, capacity, {
       ignoreCompleted: true,
       ignoreCapacity: true,
     });
@@ -214,12 +236,106 @@ function pickNextUnitForAssignment(
     return { unit: null, wasReset, usedOverflow: true };
   }
 
-  const sorted = sortUnitsByEffectiveLoad(overflowPool, effectiveLoad);
-  const lowestCount = getUnitLoad(effectiveLoad, sorted[0]._id);
-  const candidates = sorted.filter((unit) => getUnitLoad(effectiveLoad, unit._id) === lowestCount);
+  const sorted = sortUnitsByEffectiveLoad(overflowPool, trueLoad);
+  const lowestCount = getUnitLoad(trueLoad, sorted[0]._id);
+  const candidates = sorted.filter((unit) => getUnitLoad(trueLoad, unit._id) === lowestCount);
   const unit = candidates[Math.floor(Math.random() * candidates.length)];
 
   return { unit, wasReset, usedOverflow: true };
+}
+
+async function buildGlobalBatchPlan(allUnits, options = {}) {
+  const today = startOfDay(options.now || new Date());
+  const movementMaxDate = startOfDay(addDays(today, MOVEMENT_WINDOW_DAYS));
+
+  const activeRotations = await Rotation.find({ status: 'active' })
+    .select('intern unit startDate endDate')
+    .exec();
+
+  const occupancy = new Map();
+  const leavingSoon = new Map();
+  const moving = [];
+
+  for (const row of activeRotations) {
+    const unitId = row.unit?.toString?.() || null;
+    if (!unitId) continue;
+
+    occupancy.set(unitId, (occupancy.get(unitId) || 0) + 1);
+
+    const end = row.endDate ? startOfDay(row.endDate) : null;
+    if (!end) continue;
+
+    if (end >= today && end <= startOfDay(addDays(today, LEAVING_SOON_DAYS))) {
+      leavingSoon.set(unitId, (leavingSoon.get(unitId) || 0) + 1);
+    }
+
+    if (end >= today && end <= movementMaxDate) {
+      moving.push({
+        internId: row.intern?.toString?.() || null,
+        currentUnitId: unitId,
+        moveDate: end,
+      });
+    }
+  }
+
+  const recentIncoming = await getRecentIncomingCounts(RECENT_INCOMING_DAYS, today);
+  const incomingBatch = new Map();
+  const trueLoad = buildTrueLoadMap(allUnits, occupancy, leavingSoon, incomingBatch, recentIncoming);
+
+  const movingInternIds = moving.map((item) => item.internId).filter(Boolean);
+  const completedRows = movingInternIds.length > 0
+    ? await Rotation.find({
+      intern: { $in: movingInternIds },
+      status: 'completed',
+    }).select('intern unit').exec()
+    : [];
+
+  const completedByIntern = new Map();
+  for (const row of completedRows) {
+    const internId = row.intern?.toString?.() || null;
+    const unitId = row.unit?.toString?.() || null;
+    if (!internId || !unitId) continue;
+    if (!completedByIntern.has(internId)) completedByIntern.set(internId, new Set());
+    completedByIntern.get(internId).add(unitId);
+  }
+
+  moving.sort((left, right) => left.moveDate.getTime() - right.moveDate.getTime());
+  const plan = new Map();
+
+  for (const item of moving) {
+    if (!item.internId) continue;
+    const completedIds = completedByIntern.get(item.internId) || new Set();
+    let pool = buildEligibleUnitPool(allUnits, trueLoad, completedIds, item.currentUnitId, DEFAULT_CAPACITY, {
+      ignoreCompleted: false,
+      ignoreCapacity: true,
+    });
+
+    if (pool.length === 0) {
+      pool = buildEligibleUnitPool(allUnits, trueLoad, completedIds, item.currentUnitId, DEFAULT_CAPACITY, {
+        ignoreCompleted: true,
+        ignoreCapacity: true,
+      });
+    }
+
+    if (pool.length === 0) {
+      pool = [...allUnits];
+    }
+
+    const sorted = sortUnitsByEffectiveLoad(pool, trueLoad);
+    if (!sorted.length) continue;
+
+    const lowestLoad = getUnitLoad(trueLoad, sorted[0]._id);
+    const candidates = sorted.filter((unit) => getUnitLoad(trueLoad, unit._id) === lowestLoad);
+    const selected = candidates[Math.floor(Math.random() * candidates.length)];
+    if (!selected) continue;
+
+    const selectedId = String(selected._id);
+    plan.set(item.internId, selectedId);
+    incomingBatch.set(selectedId, (incomingBatch.get(selectedId) || 0) + 1);
+    trueLoad.set(selectedId, (trueLoad.get(selectedId) || 0) + 1);
+  }
+
+  return { plan, occupancy, leavingSoon, recentIncoming, incomingBatch, trueLoad };
 }
 
 /**
@@ -227,12 +343,13 @@ function pickNextUnitForAssignment(
  * Creates exactly one 'active' Rotation starting on the intern's startDate.
  */
 async function assignFirstUnit(intern, allUnits) {
-  const [occupancy, internsLeavingSoon] = await Promise.all([
+  const [occupancy, internsLeavingSoon, recentIncoming] = await Promise.all([
     getUnitOccupancy(),
     getUnitInternsLeavingSoon(),
+    getRecentIncomingCounts(),
   ]);
-  const effectiveLoad = buildEffectiveLoadMap(allUnits, occupancy, internsLeavingSoon);
-  const { unit } = pickNextUnitForAssignment(allUnits, effectiveLoad, new Set(), null);
+  const trueLoad = buildTrueLoadMap(allUnits, occupancy, internsLeavingSoon, new Map(), recentIncoming);
+  const { unit } = pickNextUnitForAssignment(allUnits, trueLoad, new Set(), null);
 
   if (!unit) {
     throw new Error('No eligible unit available for assignment — all units are at capacity');
@@ -266,12 +383,12 @@ async function assignNextUnit(internOrId, options = {}) {
   const allUnits = await Unit.find({}).sort({ order: 1, position: 1, createdAt: 1 }).exec();
   if (!allUnits.length) throw new Error('No units configured');
 
-  const [occupancy, completedIds] = await Promise.all([
-    getUnitOccupancy(),
-    getCompletedUnitIds(intern._id),
-  ]);
-  const internsLeavingSoon = await getUnitInternsLeavingSoon();
-  const effectiveLoad = buildEffectiveLoadMap(allUnits, occupancy, internsLeavingSoon);
+  const batchPlan = await buildGlobalBatchPlan(allUnits, { now });
+  const occupancy = batchPlan.occupancy;
+  const completedIds = await getCompletedUnitIds(intern._id);
+  const internsLeavingSoon = batchPlan.leavingSoon;
+  const trueLoad = batchPlan.trueLoad;
+  const plannedUnitId = batchPlan.plan.get(String(intern._id)) || null;
 
   const today = startOfDay(now);
   let previousUnitId = intern.currentUnit?.toString?.() || null;
@@ -294,8 +411,8 @@ async function assignNextUnit(internOrId, options = {}) {
       if (occupancy.has(previousUnitId)) {
         occupancy.set(previousUnitId, Math.max(0, occupancy.get(previousUnitId) - 1));
       }
-      if (effectiveLoad.has(previousUnitId)) {
-        effectiveLoad.set(previousUnitId, Math.max(0, effectiveLoad.get(previousUnitId) - 1));
+      if (trueLoad.has(previousUnitId)) {
+        trueLoad.set(previousUnitId, (trueLoad.get(previousUnitId) || 0) - 1);
       }
     }
   } else if (latestRotation) {
@@ -315,18 +432,26 @@ async function assignNextUnit(internOrId, options = {}) {
   const elapsedDays = Math.max(0, Math.floor((today.getTime() - startAnchor.getTime()) / (1000 * 60 * 60 * 24)) + 1);
   const estimatedRotationsNeeded = Math.ceil(elapsedDays / Math.max(1, DEFAULT_DURATION));
   let safetyCounter = Math.max(20, estimatedRotationsNeeded + (allUnits.length * 4));
+  let firstSelection = true;
 
   while (safetyCounter > 0) {
     safetyCounter -= 1;
 
     const nextSelection = pickNextUnitForAssignment(
       allUnits,
-      effectiveLoad,
+      trueLoad,
       completedIds,
       previousUnitId
     );
 
     unit = nextSelection.unit;
+    if (firstSelection && plannedUnitId) {
+      const plannedUnit = allUnits.find((entry) => String(entry._id) === String(plannedUnitId));
+      if (plannedUnit) {
+        unit = plannedUnit;
+      }
+    }
+    firstSelection = false;
     wasReset = wasReset || nextSelection.wasReset;
     usedOverflow = usedOverflow || nextSelection.usedOverflow;
 
@@ -355,6 +480,8 @@ async function assignNextUnit(internOrId, options = {}) {
 
     previousUnitId = unit._id.toString();
     previousEndDate = endDate;
+
+    trueLoad.set(previousUnitId, (trueLoad.get(previousUnitId) || 0) + 1);
 
     if (rotationStatus === 'completed') {
       completedIds.add(previousUnitId);
@@ -453,35 +580,36 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
  * Returns all units an intern can be moved to right now.
  */
 async function getEligibleUnits(internId, currentUnitId = null) {
-  const [allUnits, occupancy, internsLeavingSoon, completedIds] = await Promise.all([
+  const [allUnits, occupancy, internsLeavingSoon, recentIncoming, completedIds] = await Promise.all([
     Unit.find({}).sort({ order: 1, position: 1, createdAt: 1 }).exec(),
     getUnitOccupancy(),
     getUnitInternsLeavingSoon(),
+    getRecentIncomingCounts(),
     getCompletedUnitIds(internId),
   ]);
 
-  const effectiveLoad = buildEffectiveLoadMap(allUnits, occupancy, internsLeavingSoon);
+  const trueLoad = buildTrueLoadMap(allUnits, occupancy, internsLeavingSoon, new Map(), recentIncoming);
 
-  let pool = buildEligibleUnitPool(allUnits, effectiveLoad, completedIds, currentUnitId, DEFAULT_CAPACITY, {
+  let pool = buildEligibleUnitPool(allUnits, trueLoad, completedIds, currentUnitId, DEFAULT_CAPACITY, {
     ignoreCompleted: false,
     ignoreCapacity: false,
   });
 
   if (pool.length === 0) {
-    pool = buildEligibleUnitPool(allUnits, effectiveLoad, completedIds, currentUnitId, DEFAULT_CAPACITY, {
+    pool = buildEligibleUnitPool(allUnits, trueLoad, completedIds, currentUnitId, DEFAULT_CAPACITY, {
       ignoreCompleted: true,
       ignoreCapacity: false,
     });
   }
 
   if (pool.length === 0) {
-    pool = buildEligibleUnitPool(allUnits, effectiveLoad, completedIds, currentUnitId, DEFAULT_CAPACITY, {
+    pool = buildEligibleUnitPool(allUnits, trueLoad, completedIds, currentUnitId, DEFAULT_CAPACITY, {
       ignoreCompleted: true,
       ignoreCapacity: true,
     });
   }
 
-  return sortUnitsByEffectiveLoad(pool, effectiveLoad)
+  return sortUnitsByEffectiveLoad(pool, trueLoad)
     .map((u) => ({
       id: String(u._id),
       name: u.name,
@@ -489,7 +617,8 @@ async function getEligibleUnits(internId, currentUnitId = null) {
       duration_days: u.durationDays || DEFAULT_DURATION,
       currentInterns: occupancy.get(String(u._id)) || 0,
       internsLeavingSoon: internsLeavingSoon.get(String(u._id)) || 0,
-      effectiveLoad: effectiveLoad.get(String(u._id)) || 0,
+      recentIncoming: recentIncoming.get(String(u._id)) || 0,
+      trueLoad: trueLoad.get(String(u._id)) || 0,
       capacity: DEFAULT_CAPACITY,
     }));
 }

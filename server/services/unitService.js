@@ -1,15 +1,5 @@
 const Unit = require('../models/Unit');
 
-function calculateWorkload(unit) {
-  const patientCount = Number(unit.patientCount || 0);
-  const capacity = Number(unit.capacity || 0);
-  if (!patientCount || !capacity) return 'Low';
-
-  const ratio = patientCount / capacity;
-  if (ratio >= 0.8) return 'High';
-  if (ratio >= 0.4) return 'Medium';
-  return 'Low';
-}
 
 function isCritical(unit) {
   const patientCount = Number(unit.patientCount || 0);
@@ -69,7 +59,6 @@ async function createUnit(data) {
     durationDays: finalDurationDays,
     capacity: finalCapacity,
     patientCount: finalPatientCount,
-    workload: calculateWorkload({ patientCount: finalPatientCount, capacity: finalCapacity }),
     description: description || null,
   });
 
@@ -94,13 +83,6 @@ async function updateUnit(id, data) {
 
   const updatedUnit = await Unit.findByIdAndUpdate(id, updateData, { new: true }).exec();
 
-  if (updatedUnit) {
-    const computedWorkload = calculateWorkload(updatedUnit);
-    if (computedWorkload !== updatedUnit.workload) {
-      updatedUnit.workload = computedWorkload;
-      await updatedUnit.save();
-    }
-  }
 
   return updatedUnit;
 }
@@ -118,7 +100,6 @@ module.exports = {
   createUnit,
   updateUnit,
   deleteUnit,
-  calculateWorkload,
   isCritical,
 };
 

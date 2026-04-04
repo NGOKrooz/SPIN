@@ -62,11 +62,6 @@ module.exports = {
           a: "#3b82f6",
           b: "#10b981",
         },
-        workload: {
-          low: "#10b981",
-          medium: "#f59e0b",
-          high: "#ef4444",
-        },
         coverage: {
           good: "#10b981",
           warning: "#f59e0b",

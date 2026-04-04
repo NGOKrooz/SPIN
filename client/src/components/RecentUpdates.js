@@ -28,7 +28,6 @@ const activityIcons = {
   intern_extension_added: TimerReset,
   intern_extension_removed: TimerReset,
   unit_updated: PencilRuler,
-  workload_updated: Building2,
   default: Clock,
 };
 
@@ -44,7 +43,6 @@ const activityColors = {
   intern_extension_added: 'text-amber-700 bg-amber-50',
   intern_extension_removed: 'text-orange-700 bg-orange-50',
   unit_updated: 'text-sky-700 bg-sky-50',
-  workload_updated: 'text-emerald-700 bg-emerald-50',
   default: 'text-gray-600 bg-gray-50',
 };
 

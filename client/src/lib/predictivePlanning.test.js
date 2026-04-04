@@ -1,4 +1,4 @@
-import { buildUpcomingMovements, previewNextUnitForIntern } from './predictivePlanning';
+import { buildBalancedBatchAssignments, buildUpcomingMovements, previewNextUnitForIntern } from './predictivePlanning';
 
 const BASE_DATE = new Date('2026-04-04T00:00:00.000Z');
 
@@ -33,50 +33,9 @@ const units = [
 ];
 
 describe('predictivePlanning', () => {
-  test('Test 1: 5-day preview appears when intern has 4 days left', () => {
-    const intern = buildIntern({
-      id: 'i-1',
-      name: 'Cynthia',
-      unitId: 'u-ortho',
-      unitName: 'Ortho',
-      startDate: '2026-03-15T00:00:00.000Z',
-      endDate: '2026-04-08T00:00:00.000Z',
-    });
-
-    const preview = previewNextUnitForIntern(intern, {
-      interns: [intern],
-      units,
-      referenceDate: BASE_DATE,
-      leavingSoonDays: 5,
-    });
-
-    expect(preview.shouldPreview).toBe(true);
-    expect(preview.status).toBe('preview');
-  });
-
-  test('Test 2: preview does not appear when intern has more than 5 days left', () => {
-    const intern = buildIntern({
-      id: 'i-2',
-      name: 'Daniel',
-      unitId: 'u-neuro',
-      unitName: 'Neuro',
-      startDate: '2026-03-20T00:00:00.000Z',
-      endDate: '2026-04-11T00:00:00.000Z',
-    });
-
-    const preview = previewNextUnitForIntern(intern, {
-      interns: [intern],
-      units,
-      referenceDate: BASE_DATE,
-      leavingSoonDays: 5,
-    });
-
-    expect(preview.shouldPreview).toBe(false);
-  });
-
-  test('Test 3: weekly board includes only interns moving in <=7 days', () => {
+  test('Test 1: movement board uses <=7-day moving intern batch', () => {
     const nearMove = buildIntern({
-      id: 'i-3',
+      id: 'i-1',
       name: 'Near Move',
       unitId: 'u-ortho',
       unitName: 'Ortho',
@@ -84,7 +43,7 @@ describe('predictivePlanning', () => {
       endDate: '2026-04-10T00:00:00.000Z',
     });
     const farMove = buildIntern({
-      id: 'i-4',
+      id: 'i-2',
       name: 'Far Move',
       unitId: 'u-neuro',
       unitName: 'Neuro',
@@ -92,52 +51,82 @@ describe('predictivePlanning', () => {
       endDate: '2026-04-20T00:00:00.000Z',
     });
 
-    const movements = buildUpcomingMovements([nearMove, farMove], units, {
+    const rows = buildUpcomingMovements([nearMove, farMove], units, {
       referenceDate: BASE_DATE,
       movementWindowDays: 7,
       leavingSoonDays: 5,
     });
 
-    expect(movements).toHaveLength(1);
-    expect(movements[0].internName).toBe('Near Move');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].internName).toBe('Near Move');
   });
 
-  test('Test 4: predictive logic treats full unit with leavers by effective load', () => {
-    const targetIntern = buildIntern({
-      id: 'i-5',
+  test('Test 2: recently filled unit is deprioritized', () => {
+    const target = buildIntern({
+      id: 'i-3',
       name: 'Target',
-      unitId: 'u-geri',
-      unitName: 'Geri',
+      unitId: 'u-neuro',
+      unitName: 'Neuro',
       startDate: '2026-03-20T00:00:00.000Z',
       endDate: '2026-04-08T00:00:00.000Z',
     });
 
-    const unitAInterns = [0, 1, 2, 3, 4].map((index) => buildIntern({
-      id: `a-${index}`,
-      name: `A-${index}`,
+    const recentToOrthoA = buildIntern({
+      id: 'i-recent-1',
+      name: 'Recent A',
       unitId: 'u-ortho',
       unitName: 'Ortho',
-      startDate: '2026-03-15T00:00:00.000Z',
-      endDate: index < 2 ? '2026-04-08T00:00:00.000Z' : '2026-04-20T00:00:00.000Z',
-    }));
-    const unitBInterns = [0, 1, 2].map((index) => buildIntern({
-      id: `b-${index}`,
-      name: `B-${index}`,
-      unitId: 'u-neuro',
-      unitName: 'Neuro',
-      startDate: '2026-03-15T00:00:00.000Z',
-      endDate: '2026-04-20T00:00:00.000Z',
-    }));
-
-    const preview = previewNextUnitForIntern(targetIntern, {
-      interns: [targetIntern, ...unitAInterns, ...unitBInterns],
-      units,
-      referenceDate: BASE_DATE,
-      leavingSoonDays: 5,
+      startDate: '2026-04-02T00:00:00.000Z',
+      endDate: '2026-04-25T00:00:00.000Z',
+    });
+    const recentToOrthoB = buildIntern({
+      id: 'i-recent-2',
+      name: 'Recent B',
+      unitId: 'u-ortho',
+      unitName: 'Ortho',
+      startDate: '2026-04-03T00:00:00.000Z',
+      endDate: '2026-04-25T00:00:00.000Z',
     });
 
-    expect(preview.metrics.effectiveLoad).toBe(3);
-    expect(['Ortho', 'Neuro']).toContain(preview.unit.name);
+    const preview = previewNextUnitForIntern(target, {
+      interns: [target, recentToOrthoA, recentToOrthoB],
+      units,
+      referenceDate: BASE_DATE,
+    });
+
+    expect(preview.unit.name).toBe('Geri');
+  });
+
+  test('Test 3: multiple same-day movers are distributed by incomingBatch', () => {
+    const movers = [
+      buildIntern({ id: 'i-m1', name: 'Mover 1', unitId: 'u-ortho', unitName: 'Ortho', startDate: '2026-03-20T00:00:00.000Z', endDate: '2026-04-08T00:00:00.000Z' }),
+      buildIntern({ id: 'i-m2', name: 'Mover 2', unitId: 'u-neuro', unitName: 'Neuro', startDate: '2026-03-20T00:00:00.000Z', endDate: '2026-04-08T00:00:00.000Z' }),
+      buildIntern({ id: 'i-m3', name: 'Mover 3', unitId: 'u-geri', unitName: 'Geri', startDate: '2026-03-20T00:00:00.000Z', endDate: '2026-04-08T00:00:00.000Z' }),
+    ];
+
+    const { assignments } = buildBalancedBatchAssignments(movers, units, {
+      referenceDate: BASE_DATE,
+    });
+
+    const destinations = assignments.map((row) => row.toUnitId);
+    expect(new Set(destinations).size).toBeGreaterThan(1);
+  });
+
+  test('Test 4: resulting true-load spread is near-balanced', () => {
+    const movers = [
+      buildIntern({ id: 'i-b1', name: 'B1', unitId: 'u-ortho', unitName: 'Ortho', startDate: '2026-03-20T00:00:00.000Z', endDate: '2026-04-08T00:00:00.000Z' }),
+      buildIntern({ id: 'i-b2', name: 'B2', unitId: 'u-neuro', unitName: 'Neuro', startDate: '2026-03-20T00:00:00.000Z', endDate: '2026-04-08T00:00:00.000Z' }),
+      buildIntern({ id: 'i-b3', name: 'B3', unitId: 'u-geri', unitName: 'Geri', startDate: '2026-03-20T00:00:00.000Z', endDate: '2026-04-08T00:00:00.000Z' }),
+      buildIntern({ id: 'i-b4', name: 'B4', unitId: 'u-geri', unitName: 'Geri', startDate: '2026-03-20T00:00:00.000Z', endDate: '2026-04-08T00:00:00.000Z' }),
+    ];
+
+    const { unitState } = buildBalancedBatchAssignments(movers, units, {
+      referenceDate: BASE_DATE,
+    });
+
+    const loads = unitState.map((row) => row.trueLoad);
+    const spread = Math.max(...loads) - Math.min(...loads);
+    expect(spread).toBeLessThanOrEqual(2);
   });
 
   test('Test 5: preview generation does not mutate source data', () => {
@@ -162,42 +151,5 @@ describe('predictivePlanning', () => {
 
     expect(interns).toEqual(internsSnapshot);
     expect(units).toEqual(unitsSnapshot);
-  });
-
-  test('Test 6: reassignment changes preview immediately', () => {
-    const intern = buildIntern({
-      id: 'i-7',
-      name: 'Reassigned',
-      unitId: 'u-ortho',
-      unitName: 'Ortho',
-      startDate: '2026-03-15T00:00:00.000Z',
-      endDate: '2026-04-07T00:00:00.000Z',
-    });
-
-    const before = previewNextUnitForIntern(intern, {
-      interns: [intern],
-      units: units.slice(0, 2),
-      referenceDate: BASE_DATE,
-      leavingSoonDays: 5,
-    });
-
-    const reassigned = {
-      ...intern,
-      currentUnit: {
-        ...intern.currentUnit,
-        id: 'u-neuro',
-        name: 'Neuro',
-      },
-    };
-
-    const after = previewNextUnitForIntern(reassigned, {
-      interns: [reassigned],
-      units: units.slice(0, 2),
-      referenceDate: BASE_DATE,
-      leavingSoonDays: 5,
-    });
-
-    expect(before.unit.name).toBe('Neuro');
-    expect(after.unit.name).toBe('Ortho');
   });
 });

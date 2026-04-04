@@ -17,7 +17,6 @@ const activityIcons = {
   rotation_moved: ArrowRight,
   unit_created: Building2,
   unit_updated: PencilRuler,
-  workload_updated: Building2,
   unit_deleted: Trash2,
   default: Clock,
 };
@@ -33,7 +32,6 @@ const activityColors = {
   rotation_moved: 'text-indigo-600 bg-indigo-50',
   unit_created: 'text-sky-600 bg-sky-50',
   unit_updated: 'text-cyan-600 bg-cyan-50',
-  workload_updated: 'text-green-600 bg-green-50',
   unit_deleted: 'text-red-600 bg-red-50',
   default: 'text-gray-600 bg-gray-50',
 };

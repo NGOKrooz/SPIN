@@ -82,7 +82,7 @@ Client Directory:
 
 5. ROUTES: VALIDATION & ERROR LOGGING ✓
    POST /api/units:
-     ✓ Validates: name (2-100 chars), durationDays, workload, patientCount
+   ✓ Validates: name (2-100 chars), durationDays, patientCount
      ✓ Logs: console.error() on failure
      ✓ Returns: 201 Created or 400/500 with error details
    

@@ -11,7 +11,6 @@ const ACTIVITY_TYPES = Object.freeze({
   UNIT_CREATED: 'unit_created',
   UNIT_UPDATE: 'unit_update',
   UNIT_UPDATED: 'unit_updated',
-  WORKLOAD_UPDATED: 'workload_updated',
   UNIT_DELETED: 'unit_deleted',
   ACTIVITY: 'activity',
 });
@@ -68,7 +67,6 @@ function formatFieldLabel(field) {
     description: 'Description',
     order: 'Order',
     position: 'Position',
-    workload: 'Workload',
   };
 
   return labels[field] || String(field || 'Field')
@@ -140,8 +138,6 @@ function buildActivityMessage(type, metadata = {}, fallbackMessage = null) {
       return metadata.message || `Unit ${unitName} was updated`;
     case ACTIVITY_TYPES.UNIT_UPDATED:
       return `Unit ${unitName} was updated: ${formatFieldLabel(field)} changed from ${oldValue} to ${newValue}`;
-    case ACTIVITY_TYPES.WORKLOAD_UPDATED:
-      return `Unit ${unitName} workload updated from ${oldValue} to ${newValue}`;
     case ACTIVITY_TYPES.UNIT_DELETED:
       return `Deleted unit: ${unitName}`;
     case ACTIVITY_TYPES.INTERN_UPDATE:

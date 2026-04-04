@@ -102,19 +102,6 @@ export function getBatchColor(batch) {
   return batch === 'A' ? 'bg-batch-a' : 'bg-batch-b';
 }
 
-export function getWorkloadColor(workload) {
-  switch (workload?.toLowerCase()) {
-    case 'low':
-      return 'bg-workload-low';
-    case 'medium':
-      return 'bg-workload-medium';
-    case 'high':
-      return 'bg-workload-high';
-    default:
-      return 'bg-gray-500';
-  }
-}
-
 export function getCoverageColor(status) {
   switch (status) {
     case 'good':

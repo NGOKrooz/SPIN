@@ -3,7 +3,7 @@ const { body, validationResult } = require('express-validator');
 
 const Unit = require('../models/Unit');
 const Rotation = require('../models/Rotation');
-const { createUnit, updateUnit, deleteUnit, calculateWorkload, isCritical } = require('../services/unitService');
+const { createUnit, updateUnit, deleteUnit, isCritical } = require('../services/unitService');
 const { getActivePatientCountMap, syncUnitPatientCounts } = require('../services/patientCountService');
 const { ACTIVITY_TYPES, logActivityEventSafe, logRecentUpdateSafe } = require('../services/recentUpdatesService');
 const { buildInternViews } = require('../services/internViewService');
@@ -137,7 +137,6 @@ const toUnitResponse = (unit, unitRotations, patientCountMap) => {
     current_rotations: unitRotations,
     patientCount,
     patient_count: patientCount,
-    workload: calculateWorkload({ patientCount, capacity: unit.capacity }),
     isCritical: isCritical({ patientCount, capacity: unit.capacity }),
   };
 };
@@ -192,7 +191,6 @@ const validateUnitPayload = [
     .isLength({ max: 100 }).withMessage('Unit name must be 1-100 characters'),
   body('durationDays').customSanitizer((value) => Number(value))
     .isFloat({ min: 1, max: 365 }).withMessage('Valid duration is required'),
-  body('workload').optional().isIn(['Low', 'Medium', 'High']).withMessage('Workload must be Low, Medium, or High'),
   body('patientCount').optional().customSanitizer((value) => Number(value)).isInt({ min: 0 }).withMessage('Patient count must be a non-negative integer'),
 ];
 
@@ -457,11 +455,6 @@ router.put('/:id', normalizeUnitPayload, validateUnitPayload, async (req, res) =
       }
     }
 
-    const previousWorkload = previousUnit.workload || calculateWorkload(previousUnit);
-    const nextWorkload = unit.workload || calculateWorkload(unit);
-    if (previousWorkload !== nextWorkload) {
-      changes.push(buildUnitChange('workload', 'workload', previousWorkload, nextWorkload));
-    }
 
     if (changes.length > 0) {
       const message = buildUnitUpdateMessage(previousUnit, unit, changes);

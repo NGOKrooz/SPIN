@@ -7,7 +7,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { api } from '../services/api';
-import { formatDate, getBatchColor, getWorkloadColor, getCoverageColor } from '../lib/utils';
+import { formatDate, getBatchColor } from '../lib/utils';
 import { useToast } from '../hooks/use-toast';
 
 export default function Rotations() {
@@ -306,9 +306,6 @@ export default function Rotations() {
                           </span>
                         </div>
                         <div className="mt-1">
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getWorkloadColor(rotation.unit_workload)}`}>
-                            {rotation.unit_workload} Workload
-                          </span>
                           {rotation.is_manual_assignment && (
                             <span className="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
                               Manual Assignment
@@ -364,9 +361,6 @@ export default function Rotations() {
                       End Date
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Workload
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Type
                     </th>
                   </tr>
@@ -390,11 +384,6 @@ export default function Rotations() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {formatDate(rotation.end_date)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white ${getWorkloadColor(rotation.unit_workload)}`}>
-                          {rotation.unit_workload}
-                        </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {rotation.is_manual_assignment ? 'Manual' : 'Automatic'}
