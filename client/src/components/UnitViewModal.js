@@ -5,6 +5,7 @@ import { Button } from './ui/button';
 import { X, Users } from 'lucide-react';
 import { api } from '../services/api';
 import { getBatchColor, formatDate, normalizeDate, calculateDaysBetween, exportToCSV, openPrintableWindow } from '../lib/utils';
+import { getInternUnitTiming } from '../lib/predictivePlanning';
 
 export default function UnitViewModal({ unit, onClose }) {
   const { data: unitDetails, isLoading, error } = useQuery({
@@ -41,6 +42,10 @@ export default function UnitViewModal({ unit, onClose }) {
     : [];
 
   const visibleCurrentInterns = currentInterns.length > 0 ? currentInterns : fallbackCurrentInterns;
+  const leavingSoonCount = visibleCurrentInterns.reduce((count, intern) => {
+    const timing = getInternUnitTiming(intern, today);
+    return timing.leavingSoon ? count + 1 : count;
+  }, 0);
 
   const handleExportCsv = () => {
     try {
@@ -158,22 +163,32 @@ export default function UnitViewModal({ unit, onClose }) {
               <div className="text-lg sm:text-xl font-semibold text-gray-900 break-words">{activeUnit.name}</div>
 
               <div className="space-y-2">
-                <div className="text-sm font-medium text-gray-700">Current Interns</div>
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-medium text-gray-700">Current Interns</div>
+                  <div className="text-xs rounded-full bg-amber-100 px-2 py-1 text-amber-700">
+                    Leaving in &lt;=5 days: {leavingSoonCount}
+                  </div>
+                </div>
                 {visibleCurrentInterns.length === 0 ? (
                   <div className="text-sm text-gray-500">No current interns</div>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm min-w-[560px]">
+                    <table className="w-full text-sm min-w-[720px]">
                       <thead>
                         <tr className="text-left text-gray-500 border-b">
                           <th className="py-2">Name</th>
                           <th className="py-2">Batch</th>
                           <th className="py-2">Joined Date</th>
-                          <th className="py-2">Duration</th>
+                          <th className="py-2">Progress</th>
+                          <th className="py-2">Ends</th>
+                          <th className="py-2">Status</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {visibleCurrentInterns.map((intern) => (
+                        {visibleCurrentInterns.map((intern) => {
+                          const timing = getInternUnitTiming(intern, today);
+
+                          return (
                           <tr key={intern.id} className="border-b last:border-b-0">
                             <td className="py-2">{intern.intern_name}</td>
                             <td className="py-2">
@@ -182,9 +197,19 @@ export default function UnitViewModal({ unit, onClose }) {
                               </span>
                             </td>
                             <td className="py-2">{formatDate(intern.start_date)}</td>
-                            <td className="py-2">{calculateDaysBetween(intern.start_date, intern.end_date)} days</td>
+                            <td className="py-2">{timing.progressLabel}</td>
+                            <td className="py-2">{timing.endsOnLabel}</td>
+                            <td className="py-2">
+                              {timing.leavingSoon ? (
+                                <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700">
+                                  Leaving Soon
+                                </span>
+                              ) : (
+                                <span className="text-xs text-gray-500">On Track</span>
+                              )}
+                            </td>
                           </tr>
-                        ))}
+                        )})}
                       </tbody>
                     </table>
                   </div>

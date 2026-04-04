@@ -6,17 +6,8 @@ import ReassignModal from './ReassignModal';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { exportToCSV, openPrintableWindow, formatDate, getBatchColor, getStatusColor, getWorkloadColor, normalizeDate, calculateDaysBetween } from '../lib/utils';
+import { previewNextUnitForIntern } from '../lib/predictivePlanning';
 import { api } from '../services/api';
-
-function format(date) {
-  const parsed = new Date(date);
-  if (Number.isNaN(parsed.getTime())) return 'Not started';
-  return parsed.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-}
 
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
 
@@ -151,6 +142,11 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
     queryFn: api.getUnits,
   });
 
+  const { data: interns } = useQuery({
+    queryKey: ['interns'],
+    queryFn: api.getInterns,
+  });
+
   const { data: systemSettings } = useQuery({
     queryKey: ['system-settings'],
     queryFn: api.getSystemSettings,
@@ -247,6 +243,42 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
       return !completedUnitIds.has(unitId);
     });
   }, [orderedUnits, currentUnitId, completedUnitIds]);
+
+  const currentRotation = currentRotations[0] || null;
+
+  const nextAssignmentPreview = React.useMemo(() => {
+    if (!currentRotation || !currentIntern) {
+      return {
+        status: 'pending',
+        reason: 'Pending Assignment',
+        shouldPreview: false,
+      };
+    }
+
+    const internForPreview = {
+      ...currentIntern,
+      currentUnit: {
+        ...(currentIntern.currentUnit || {}),
+        id: currentRotation.unit_id || currentRotation.unitId || currentIntern?.currentUnit?.id,
+        _id: currentRotation.unit_id || currentRotation.unitId || currentIntern?.currentUnit?._id,
+        name: currentRotation.unit_name || currentIntern?.currentUnit?.name,
+        startDate: currentRotation.start_date,
+        start_date: currentRotation.start_date,
+        endDate: currentRotation.end_date,
+        end_date: currentRotation.end_date,
+        duration: getTotalDuration(currentRotation),
+        duration_days: getTotalDuration(currentRotation),
+      },
+      completedUnits: completedRotations,
+    };
+
+    return previewNextUnitForIntern(internForPreview, {
+      interns: Array.isArray(interns) ? interns : [],
+      units: orderedUnits,
+      referenceDate: new Date(currentTime),
+      leavingSoonDays: 5,
+    });
+  }, [completedRotations, currentIntern, currentRotation, currentTime, interns, orderedUnits]);
 
   const getRotationDuration = React.useCallback((rotation) => {
     // NEVER use rotation.duration_days - backend doesn't update it after extension
@@ -532,7 +564,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                 <div className="flex items-center justify-between">
                   <CardTitle className="flex items-center space-x-2">
                     <Calendar className="h-5 w-5" />
-                    <span>Next Assignment</span>
+                    <span>Next Assignment (5-Day Preview)</span>
                   </CardTitle>
                   <Button
                     variant="outline"
@@ -558,12 +590,29 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                 </div>
               </CardHeader>
               <CardContent>
-                <p className="text-center py-4 text-gray-500">
-                  ✦ Next unit will be assigned automatically based on availability
-                </p>
-                <p className="text-xs text-center text-gray-400">
-                  Units are assigned dynamically to ensure balanced distribution
-                </p>
+                {!currentRotation ? (
+                  <p className="text-center py-4 text-gray-500">No active unit assignment</p>
+                ) : !nextAssignmentPreview.shouldPreview ? (
+                  <div className="text-center py-4 text-gray-500">
+                    Preview appears when current unit has 5 days or less remaining
+                  </div>
+                ) : nextAssignmentPreview.status === 'rotation-complete' ? (
+                  <div className="text-center py-4">
+                    <p className="font-medium text-green-700">Rotation Complete</p>
+                    <p className="text-xs text-gray-500 mt-1">All units have been completed.</p>
+                  </div>
+                ) : nextAssignmentPreview.status === 'pending' ? (
+                  <div className="text-center py-4">
+                    <p className="font-medium text-amber-700">Pending Assignment</p>
+                    <p className="text-xs text-gray-500 mt-1">No eligible unit available for preview.</p>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
+                    <p className="text-sm text-blue-700 font-medium">Next Assignment (in &lt;=5 days)</p>
+                    <p className="text-lg font-semibold text-gray-900 mt-1">{nextAssignmentPreview?.unit?.name || 'Pending Assignment'}</p>
+                    <p className="text-sm text-gray-600 mt-1">Starts: {nextAssignmentPreview?.startsOnLabel || 'TBD'}</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
