@@ -20,10 +20,6 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
     queryFn: () => api.getInternSchedule(intern.id),
   });
 
-  const scheduleRows = React.useMemo(() => (
-    Array.isArray(internSchedule) ? internSchedule : (internSchedule?.rotations || [])
-  ), [internSchedule]);
-
   // Use eligible units from schedule API (dynamic assignment — not just upcoming rotations)
   const availableUnits = React.useMemo(() => {
     const eligible = Array.isArray(internSchedule?.eligibleUnits)

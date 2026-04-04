@@ -8,7 +8,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { api } from '../services/api';
 import RecentUpdates from '../components/RecentUpdates';
-import { buildUpcomingMovements } from '../lib/predictivePlanning';
+import { buildUpcomingMovements, PREDICTIVE_WINDOW_DAYS } from '../lib/predictivePlanning';
 
 export default function Dashboard() {
   const { data: interns, isLoading: internsLoading } = useQuery({
@@ -21,11 +21,6 @@ export default function Dashboard() {
     queryFn: api.getUnits,
   });
 
-  const { isLoading: rotationsLoading } = useQuery({
-    queryKey: ['rotations', 'current'],
-    queryFn: api.getCurrentRotations,
-  });
-
   const todayLabel = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
     year: 'numeric',
@@ -35,7 +30,7 @@ export default function Dashboard() {
 
   // removed unused systemInfo
 
-  if (internsLoading || unitsLoading || rotationsLoading) {
+  if (internsLoading || unitsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -49,8 +44,8 @@ export default function Dashboard() {
   const criticalUnits = units?.filter(unit => unit?.status === 'critical') || [];
   const warningUnits = units?.filter(unit => unit?.status === 'warning') || [];
   const upcomingMovements = buildUpcomingMovements(interns || [], units || [], {
-    movementWindowDays: 7,
-    leavingSoonDays: 5,
+    movementWindowDays: PREDICTIVE_WINDOW_DAYS,
+    leavingSoonDays: PREDICTIVE_WINDOW_DAYS,
   });
 
   const stats = [
@@ -110,115 +105,87 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Recent Updates and Coverage */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
-          <RecentUpdates />
+      <div className="space-y-6">
+        <RecentUpdates />
 
-            <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
-              <CardHeader>
-                <CardTitle>Upcoming Movements (Next 7 Days)</CardTitle>
-                <CardDescription>Preview-only movement board based on global batch-balanced assignment</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {upcomingMovements.length === 0 ? (
-                  <div className="text-sm text-gray-500">No movements expected in the next 7 days.</div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm">
-                      <thead>
-                        <tr className="border-b text-left text-gray-500">
-                          <th className="py-2 pr-4">Intern</th>
-                          <th className="py-2 pr-4">From</th>
-                          <th className="py-2 pr-4">To</th>
-                          <th className="py-2">Move Date</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {upcomingMovements.map((movement) => (
-                          <tr key={`${movement.internId || movement.internName}-${movement.moveDateLabel}`} className="border-b last:border-b-0">
-                            <td className="py-2 pr-4 font-medium text-gray-900">{movement.internName}</td>
-                            <td className="py-2 pr-4 text-gray-700">{movement.fromUnit}</td>
-                            <td className="py-2 pr-4 text-gray-700">{movement.toUnit}</td>
-                            <td className="py-2 text-gray-600">{movement.moveDateLabel}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-          <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <AlertTriangle className="h-5 w-5" />
-                <span>Coverage Alerts</span>
-              </CardTitle>
-              <CardDescription>
-                Units requiring immediate attention
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {criticalUnits.length === 0 && warningUnits.length === 0 ? (
-                <div className="text-center py-4">
-                  <div className="text-green-600 text-sm">All units have adequate coverage</div>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {criticalUnits.map((unit) => (
-                    <div key={unit.id} className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm font-medium text-red-800 break-words">{unit.name}</span>
-                        <div className="text-xs text-red-600 mt-1 break-words">
-                          {unit.reason} • Batch A: {unit.byBatch.A}, Batch B: {unit.byBatch.B}
-                        </div>
-                      </div>
-                      <span className="text-xs bg-red-200 text-red-800 px-2 py-1 rounded ml-2">Critical</span>
-                    </div>
-                  ))}
-                  {warningUnits.map((unit) => (
-                    <div key={unit.id} className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm font-medium text-yellow-800 break-words">{unit.name}</span>
-                        <div className="text-xs text-yellow-600 mt-1 break-words">
-                          {unit.reason} • Batch A: {unit.byBatch.A}, Batch B: {unit.byBatch.B}
-                        </div>
-                      </div>
-                      <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded ml-2">Warning</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="space-y-6">
-          <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
-            <CardHeader>
-              <CardTitle>Operational Snapshot</CardTitle>
-              <CardDescription>Current dashboard health indicators</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
-                  <span className="text-sm text-gray-600">Critical Units</span>
-                  <span className="text-sm font-semibold text-red-700">{criticalUnits.length}</span>
-                </div>
-                <div className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
-                  <span className="text-sm text-gray-600">Warning Units</span>
-                  <span className="text-sm font-semibold text-yellow-700">{warningUnits.length}</span>
-                </div>
-                <div className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
-                  <span className="text-sm text-gray-600">Unassigned Interns</span>
-                  <span className="text-sm font-semibold text-gray-900">{unassignedInterns.length}</span>
-                </div>
+        <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
+          <CardHeader>
+            <CardTitle>Upcoming Movements (Next 5 Days)</CardTitle>
+            <CardDescription>Preview-only movement board based on global batch-balanced assignment</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {upcomingMovements.length === 0 ? (
+              <div className="text-sm text-gray-500">No movements expected in the next 5 days.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-gray-500">
+                      <th className="py-2 pr-4">Intern</th>
+                      <th className="py-2 pr-4">From</th>
+                      <th className="py-2 pr-4">To</th>
+                      <th className="py-2">Move Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {upcomingMovements.map((movement) => (
+                      <tr key={`${movement.internId || movement.internName}-${movement.moveDateLabel}`} className="border-b last:border-b-0">
+                        <td className="py-2 pr-4 font-medium text-gray-900">{movement.internName}</td>
+                        <td className="py-2 pr-4 text-gray-700">{movement.fromUnit}</td>
+                        <td className="py-2 pr-4 text-gray-700">{movement.toUnit}</td>
+                        <td className="py-2 text-gray-600">{movement.moveDateLabel}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            </CardContent>
-          </Card>
-        </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <AlertTriangle className="h-5 w-5" />
+              <span>Coverage Alerts</span>
+            </CardTitle>
+            <CardDescription>
+              Units requiring immediate attention
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {criticalUnits.length === 0 && warningUnits.length === 0 ? (
+              <div className="text-center py-4">
+                <div className="text-green-600 text-sm">All units have adequate coverage</div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {criticalUnits.map((unit) => (
+                  <div key={unit.id} className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium text-red-800 break-words">{unit.name}</span>
+                      <div className="text-xs text-red-600 mt-1 break-words">
+                        {unit.reason} • Batch A: {unit.byBatch.A}, Batch B: {unit.byBatch.B}
+                      </div>
+                    </div>
+                    <span className="text-xs bg-red-200 text-red-800 px-2 py-1 rounded ml-2">Critical</span>
+                  </div>
+                ))}
+                {warningUnits.map((unit) => (
+                  <div key={unit.id} className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium text-yellow-800 break-words">{unit.name}</span>
+                      <div className="text-xs text-yellow-600 mt-1 break-words">
+                        {unit.reason} • Batch A: {unit.byBatch.A}, Batch B: {unit.byBatch.B}
+                      </div>
+                    </div>
+                    <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded ml-2">Warning</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
       {/* Removed Recent Rotations per requirements */}
     </div>

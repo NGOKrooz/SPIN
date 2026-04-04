@@ -1,4 +1,9 @@
-import { buildBalancedBatchAssignments, buildUpcomingMovements, previewNextUnitForIntern } from './predictivePlanning';
+import {
+  buildBalancedBatchAssignments,
+  buildUpcomingMovements,
+  previewNextUnitForIntern,
+  PREDICTIVE_WINDOW_DAYS,
+} from './predictivePlanning';
 
 const BASE_DATE = new Date('2026-04-04T00:00:00.000Z');
 
@@ -33,14 +38,14 @@ const units = [
 ];
 
 describe('predictivePlanning', () => {
-  test('Test 1: movement board uses <=7-day moving intern batch', () => {
+  test('Test 1: movement board uses <=5-day moving intern batch', () => {
     const nearMove = buildIntern({
       id: 'i-1',
       name: 'Near Move',
       unitId: 'u-ortho',
       unitName: 'Ortho',
       startDate: '2026-03-20T00:00:00.000Z',
-      endDate: '2026-04-10T00:00:00.000Z',
+      endDate: '2026-04-09T00:00:00.000Z',
     });
     const farMove = buildIntern({
       id: 'i-2',
@@ -53,8 +58,8 @@ describe('predictivePlanning', () => {
 
     const rows = buildUpcomingMovements([nearMove, farMove], units, {
       referenceDate: BASE_DATE,
-      movementWindowDays: 7,
-      leavingSoonDays: 5,
+      movementWindowDays: PREDICTIVE_WINDOW_DAYS,
+      leavingSoonDays: PREDICTIVE_WINDOW_DAYS,
     });
 
     expect(rows).toHaveLength(1);
@@ -146,7 +151,7 @@ describe('predictivePlanning', () => {
       interns,
       units,
       referenceDate: BASE_DATE,
-      leavingSoonDays: 5,
+      leavingSoonDays: PREDICTIVE_WINDOW_DAYS,
     });
 
     expect(interns).toEqual(internsSnapshot);

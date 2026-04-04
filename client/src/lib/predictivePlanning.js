@@ -2,6 +2,7 @@ import { formatDate, normalizeDate } from './utils';
 
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
 const DEFAULT_DURATION_DAYS = 20;
+export const PREDICTIVE_WINDOW_DAYS = 5;
 
 const toDate = (value) => {
   if (!value) return null;
@@ -145,8 +146,8 @@ const recalcTrueLoad = (state, unitId) => {
 export function buildBalancedBatchAssignments(interns, units, options = {}) {
   const {
     referenceDate = new Date(),
-    movementWindowDays = 7,
-    leavingSoonDays = 5,
+    movementWindowDays = PREDICTIVE_WINDOW_DAYS,
+    leavingSoonDays = PREDICTIVE_WINDOW_DAYS,
     recentIncomingDays = 7,
   } = options;
 
@@ -227,7 +228,7 @@ export function previewNextUnitForIntern(intern, options = {}) {
     interns = [],
     units = [],
     referenceDate = new Date(),
-    leavingSoonDays = 5,
+    leavingSoonDays = PREDICTIVE_WINDOW_DAYS,
   } = options;
 
   const today = normalizeDate(referenceDate);
@@ -248,7 +249,7 @@ export function previewNextUnitForIntern(intern, options = {}) {
 
   const { assignments } = buildBalancedBatchAssignments(interns, units, {
     referenceDate: today,
-    movementWindowDays: 7,
+    movementWindowDays: leavingSoonDays,
     leavingSoonDays,
     recentIncomingDays: 7,
   });
@@ -283,8 +284,8 @@ export function previewNextUnitForIntern(intern, options = {}) {
 export function buildUpcomingMovements(interns, units, options = {}) {
   const {
     referenceDate = new Date(),
-    movementWindowDays = 7,
-    leavingSoonDays = 5,
+    movementWindowDays = PREDICTIVE_WINDOW_DAYS,
+    leavingSoonDays = PREDICTIVE_WINDOW_DAYS,
   } = options;
 
   const { assignments } = buildBalancedBatchAssignments(interns, units, {
@@ -337,6 +338,6 @@ export function getInternUnitTiming(internLike, referenceDate = new Date()) {
     remainingDays,
     progressLabel: `${elapsedDays} / ${totalDays} days`,
     endsOnLabel: formatDate(endDate),
-    leavingSoon: remainingDays >= 0 && remainingDays <= 5,
+    leavingSoon: remainingDays >= 0 && remainingDays <= PREDICTIVE_WINDOW_DAYS,
   };
 }

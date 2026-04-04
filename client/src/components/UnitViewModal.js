@@ -5,7 +5,7 @@ import { Button } from './ui/button';
 import { X, Users } from 'lucide-react';
 import { api } from '../services/api';
 import { getBatchColor, formatDate, normalizeDate, calculateDaysBetween, exportToCSV, openPrintableWindow } from '../lib/utils';
-import { getInternUnitTiming } from '../lib/predictivePlanning';
+import { getInternUnitTiming, PREDICTIVE_WINDOW_DAYS } from '../lib/predictivePlanning';
 
 export default function UnitViewModal({ unit, onClose }) {
   const { data: unitDetails, isLoading, error } = useQuery({
@@ -166,7 +166,7 @@ export default function UnitViewModal({ unit, onClose }) {
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-medium text-gray-700">Current Interns</div>
                   <div className="text-xs rounded-full bg-amber-100 px-2 py-1 text-amber-700">
-                    Leaving in &lt;=5 days: {leavingSoonCount}
+                    Leaving in &lt;={PREDICTIVE_WINDOW_DAYS} days: {leavingSoonCount}
                   </div>
                 </div>
                 {visibleCurrentInterns.length === 0 ? (

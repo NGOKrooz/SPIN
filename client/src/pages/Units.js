@@ -7,11 +7,24 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { api } from '../services/api';
-import { getBatchColor } from '../lib/utils';
+import { getBatchColor, cn } from '../lib/utils';
 import { useToast } from '../hooks/use-toast';
 import UnitForm from '../components/UnitForm';
 import UnitViewModal from '../components/UnitViewModal';
 import UnitOrderModal from '../components/UnitOrderModal';
+
+const getWorkloadTone = (value) => {
+  switch (String(value || '').toLowerCase()) {
+    case 'low':
+      return 'bg-emerald-100 text-emerald-700 ring-emerald-200 hover:bg-emerald-200';
+    case 'medium':
+      return 'bg-amber-100 text-amber-700 ring-amber-200 hover:bg-amber-200';
+    case 'high':
+      return 'bg-rose-100 text-rose-700 ring-rose-200 hover:bg-rose-200';
+    default:
+      return 'bg-gray-100 text-gray-700 ring-gray-200 hover:bg-gray-200';
+  }
+};
 
 export default function Units() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -81,6 +94,27 @@ export default function Units() {
   const getPatientCount = React.useCallback((unit) => {
     return Number(unit?.patient_count ?? unit?.patientCount ?? 0);
   }, []);
+
+  const getWorkloadLabel = React.useCallback((unit) => {
+    const patientCount = getPatientCount(unit);
+    if (patientCount >= 16) return 'High';
+    if (patientCount >= 8) return 'Medium';
+    return 'Low';
+  }, [getPatientCount]);
+
+  const openUnitDetails = React.useCallback((unitId) => {
+    const match = (units || []).find((unit) => String(unit.id || unit._id) === String(unitId));
+    if (!match) {
+      toast({
+        title: 'Unit not found',
+        description: 'Unable to open the selected unit details.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSelectedUnit(match);
+  }, [toast, units]);
 
 
   const handleEdit = (unit) => {
@@ -257,12 +291,25 @@ export default function Units() {
           const assignedInterns = getUnitInterns(unit);
           const currentInternCount = unit.current_interns ?? unit.currentInterns ?? assignedInterns.length;
           const patientCount = getPatientCount(unit);
+          const workloadLabel = getWorkloadLabel(unit);
 
           return (
           <Card key={unit.id} className="hover:shadow-lg transition-shadow">
             <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
+              <div className="flex items-start justify-between gap-3">
                 <CardTitle className="text-lg break-words pr-2">{unit.name}</CardTitle>
+                <button
+                  type="button"
+                  onClick={() => openUnitDetails(unit.id || unit._id)}
+                  className={cn(
+                    'inline-flex shrink-0 items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer pointer-events-auto',
+                    getWorkloadTone(workloadLabel)
+                  )}
+                  title={`Open ${unit.name} details`}
+                  aria-label={`Open ${unit.name} details from ${workloadLabel} workload badge`}
+                >
+                  {workloadLabel}
+                </button>
               </div>
               <CardDescription>
                 Duration: {unit.duration_days} days
@@ -298,9 +345,19 @@ export default function Units() {
                   <h4 className="text-sm font-medium text-gray-700">Patients</h4>
                   <span className="text-sm font-medium text-blue-600">{patientCount}</span>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  Active patients currently assigned to this unit.
-                </p>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs text-gray-500 mt-1">
+                    Active patients currently assigned to this unit.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => openUnitDetails(unit.id || unit._id)}
+                    className="text-xs font-medium text-blue-600 transition-colors hover:text-blue-700 focus:outline-none focus:underline cursor-pointer pointer-events-auto"
+                    title={`View ${unit.name} intern summary`}
+                  >
+                    View details
+                  </button>
+                </div>
               </div>
 
               {/* Actions */}
@@ -328,7 +385,7 @@ export default function Units() {
                   size="sm"
                   className="flex-1 min-w-[100px]"
                   onClick={() => {
-                    setSelectedUnit(unit);
+                    openUnitDetails(unit.id || unit._id);
                   }}
                 >
                   <Eye className="h-4 w-4 mr-1" />

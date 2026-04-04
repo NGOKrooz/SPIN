@@ -6,7 +6,7 @@ import ReassignModal from './ReassignModal';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { exportToCSV, openPrintableWindow, formatDate, getBatchColor, getStatusColor, normalizeDate, calculateDaysBetween } from '../lib/utils';
-import { previewNextUnitForIntern } from '../lib/predictivePlanning';
+import { previewNextUnitForIntern, PREDICTIVE_WINDOW_DAYS } from '../lib/predictivePlanning';
 import { api } from '../services/api';
 
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
@@ -276,7 +276,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
       interns: Array.isArray(interns) ? interns : [],
       units: orderedUnits,
       referenceDate: new Date(currentTime),
-      leavingSoonDays: 5,
+      leavingSoonDays: PREDICTIVE_WINDOW_DAYS,
     });
   }, [completedRotations, currentIntern, currentRotation, currentTime, interns, orderedUnits]);
 
