@@ -109,19 +109,23 @@ export default function UnitForm({ unit, onClose, onSuccess }) {
       patientCount: parsedPatientCount,
     };
 
-    console.log('Submitting unit data:', submitData);
+    console.log('Submitting unit update:', submitData);
 
     if (unit) {
-      updateMutation.mutate({ id: unit.id, data: submitData });
+      updateMutation.mutate({ id: unit.id || unit._id, data: submitData });
     } else {
       createMutation.mutate(submitData);
     }
   };
 
   const handleChange = (field, value) => {
+    const normalizedValue = field === 'patientCount'
+      ? (value === '' ? '' : Number(value))
+      : value;
+
     setFormData(prev => ({
       ...prev,
-      [field]: value
+      [field]: normalizedValue
     }));
   };
 

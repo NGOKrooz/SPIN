@@ -124,7 +124,11 @@ const toUnitResponse = (unit, unitRotations, patientCountMap) => {
   const internNames = interns
     .map((intern) => intern.name ? `${intern.name}${intern.batch ? ` (${intern.batch})` : ''}` : null)
     .filter(Boolean);
-  const patientCount = Number(patientCountMap.get(String(unit._id)) || 0);
+  const unitId = String(unit._id);
+  const hasAggregatedCount = patientCountMap instanceof Map && patientCountMap.has(unitId);
+  const patientCount = hasAggregatedCount
+    ? Number(patientCountMap.get(unitId) || 0)
+    : Number(unit.patientCount ?? 0);
 
   return {
     ...unit.toObject(),
@@ -430,11 +434,15 @@ router.put('/:id', normalizeUnitPayload, validateUnitPayload, async (req, res) =
   }
 
   try {
+    console.log('Incoming patientCount:', req.body.patientCount);
+
     const previousUnit = await Unit.findById(req.params.id).exec();
     if (!previousUnit) return res.status(404).json({ error: 'Unit not found' });
 
     const unit = await updateUnit(req.params.id, req.body);
     if (!unit) return res.status(404).json({ error: 'Unit not found' });
+
+    console.log('Saved patientCount:', unit.patientCount);
 
     const durationChanged = !areValuesEqual(getComparableUnitValue(previousUnit, 'durationDays'), getComparableUnitValue(unit, 'durationDays'));
 

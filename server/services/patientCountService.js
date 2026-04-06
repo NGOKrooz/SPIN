@@ -35,7 +35,7 @@ async function getActivePatientCountMap(unitIds = []) {
     { $group: { _id: '$unit', patientCount: { $sum: 1 } } },
   ]);
 
-  const countMap = new Map(normalizedUnitIds.map((unitId) => [unitId, 0]));
+  const countMap = new Map();
   for (const row of rows) {
     countMap.set(String(row._id), Number(row.patientCount || 0));
   }
@@ -64,9 +64,12 @@ async function syncUnitPatientCounts(unitsOrUnitIds = []) {
 
   for (const unit of units) {
     const unitId = unit._id.toString();
-    const patientCount = Number(countMap.get(unitId) || 0);
+    const hasAggregatedCount = countMap.has(unitId);
+    const patientCount = hasAggregatedCount
+      ? Number(countMap.get(unitId) || 0)
+      : Number(unit.patientCount ?? 0);
 
-      if (Number(unit.patientCount || 0) !== patientCount) {
+    if (Number(unit.patientCount ?? 0) !== patientCount) {
       operations.push({
         updateOne: {
           filter: { _id: unit._id },
