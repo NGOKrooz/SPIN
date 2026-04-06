@@ -89,7 +89,7 @@ router.post('/', normalizePatientPayload, validatePatientPayload, async (req, re
       admittedAt: req.body.admittedAt ? new Date(req.body.admittedAt) : new Date(),
     });
 
-    await syncUnitPatientCounts([unit._id]);
+    await syncUnitPatientCounts([unit._id], { forceZeroForRequestedIds: true });
     await logActivityEventSafe({
       type: 'patient_created',
       message: `${patient.name} was added to ${unit.name}`,
@@ -147,7 +147,7 @@ router.put('/:id', normalizePatientPayload, async (req, res) => {
     }
 
     await patient.save();
-    await syncUnitPatientCounts(affectedUnitIds);
+    await syncUnitPatientCounts(affectedUnitIds, { forceZeroForRequestedIds: true });
     await updateBatchStats().catch(() => {});
 
     const populatedPatient = await Patient.findById(patient._id).populate('unit', 'name').exec();
@@ -170,8 +170,10 @@ router.post('/:id/reassign', normalizePatientPayload, async (req, res) => {
 
     const nextUnit = await ensureUnitExists(unitId);
     const previousUnit = patient.unit;
+    const previousUnitId = previousUnit?._id?.toString?.() || previousUnit?.toString?.() || null;
+    const previousUnitName = previousUnit?.name || null;
 
-    if (String(previousUnit?._id || previousUnit) === String(nextUnit._id)) {
+    if (String(previousUnitId) === String(nextUnit._id)) {
       return res.json(formatPatient(patient));
     }
 
@@ -180,15 +182,15 @@ router.post('/:id/reassign', normalizePatientPayload, async (req, res) => {
     patient.dischargedAt = null;
     await patient.save();
 
-    await syncUnitPatientCounts([previousUnit?._id || previousUnit, nextUnit._id]);
+    await syncUnitPatientCounts([previousUnitId, nextUnit._id], { forceZeroForRequestedIds: true });
     await logActivityEventSafe({
       type: 'patient_reassigned',
-      message: `${patient.name} was reassigned from ${previousUnit?.name || 'Unknown unit'} to ${nextUnit.name}`,
+      message: `${patient.name} was reassigned from ${previousUnitName || 'Unknown unit'} to ${nextUnit.name}`,
       metadata: {
         patientId: patient._id.toString(),
         patientName: patient.name,
-        previousUnitId: previousUnit?._id?.toString?.() || previousUnit?.toString?.() || null,
-        previousUnitName: previousUnit?.name || null,
+        previousUnitId,
+        previousUnitName,
         nextUnitId: nextUnit._id.toString(),
         nextUnitName: nextUnit.name,
       },
@@ -208,17 +210,18 @@ router.delete('/:id', async (req, res) => {
     const patient = await Patient.findById(req.params.id).populate('unit', 'name').exec();
     if (!patient) return res.status(404).json({ error: 'Patient not found' });
 
-    const unitId = patient.unit?._id || patient.unit;
+    const unitId = patient.unit?._id?.toString?.() || patient.unit?.toString?.() || null;
+    const unitName = patient.unit?.name || null;
     await Patient.deleteOne({ _id: patient._id }).exec();
-    await syncUnitPatientCounts([unitId]);
+    await syncUnitPatientCounts([unitId], { forceZeroForRequestedIds: true });
     await logActivityEventSafe({
       type: 'patient_deleted',
-      message: `${patient.name} was removed from ${patient.unit?.name || 'Unknown unit'}`,
+      message: `${patient.name} was removed from ${unitName || 'Unknown unit'}`,
       metadata: {
         patientId: patient._id.toString(),
         patientName: patient.name,
-        unitId: patient.unit?._id?.toString?.() || patient.unit?.toString?.() || null,
-        unitName: patient.unit?.name || null,
+        unitId,
+        unitName,
       },
     });
     await updateBatchStats().catch(() => {});

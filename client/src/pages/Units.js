@@ -16,13 +16,13 @@ import UnitOrderModal from '../components/UnitOrderModal';
 const getWorkloadTone = (value) => {
   switch (String(value || '').toLowerCase()) {
     case 'low':
-      return 'bg-emerald-100 text-emerald-700 ring-emerald-200 hover:bg-emerald-200';
+      return 'bg-green-100 text-green-700 ring-green-200';
     case 'medium':
-      return 'bg-amber-100 text-amber-700 ring-amber-200 hover:bg-amber-200';
+      return 'bg-yellow-100 text-yellow-700 ring-yellow-200';
     case 'high':
-      return 'bg-rose-100 text-rose-700 ring-rose-200 hover:bg-rose-200';
+      return 'bg-red-100 text-red-700 ring-red-200';
     default:
-      return 'bg-gray-100 text-gray-700 ring-gray-200 hover:bg-gray-200';
+      return 'bg-gray-100 text-gray-700 ring-gray-200';
   }
 };
 
@@ -92,13 +92,14 @@ export default function Units() {
   }) || [];
 
   const getPatientCount = React.useCallback((unit) => {
-    return Number(unit?.patient_count ?? unit?.patientCount ?? 0);
+    const parsedValue = Number(unit?.patient_count ?? unit?.patientCount ?? 0);
+    return Number.isFinite(parsedValue) ? parsedValue : 0;
   }, []);
 
   const getWorkloadLabel = React.useCallback((unit) => {
     const patientCount = getPatientCount(unit);
-    if (patientCount >= 16) return 'High';
-    if (patientCount >= 8) return 'Medium';
+    if (patientCount >= 10) return 'High';
+    if (patientCount >= 5) return 'Medium';
     return 'Low';
   }, [getPatientCount]);
 
@@ -298,18 +299,15 @@ export default function Units() {
             <CardHeader className="pb-3">
               <div className="flex items-start justify-between gap-3">
                 <CardTitle className="text-lg break-words pr-2">{unit.name}</CardTitle>
-                <button
-                  type="button"
-                  onClick={() => openUnitDetails(unit.id || unit._id)}
+                <span
                   className={cn(
-                    'inline-flex shrink-0 items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer pointer-events-auto',
+                    'inline-flex shrink-0 items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset',
                     getWorkloadTone(workloadLabel)
                   )}
-                  title={`Open ${unit.name} details`}
-                  aria-label={`Open ${unit.name} details from ${workloadLabel} workload badge`}
+                  aria-label={`${workloadLabel} workload`}
                 >
                   {workloadLabel}
-                </button>
+                </span>
               </div>
               <CardDescription>
                 Duration: {unit.duration_days} days
@@ -343,19 +341,6 @@ export default function Units() {
                 <div className="flex items-center justify-between mb-2">
                   <h4 className="text-sm font-medium text-gray-700">Patients</h4>
                   <span className="text-sm font-medium text-blue-600">{patientCount}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs text-gray-500 mt-1">
-                    Active patients currently assigned to this unit.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => openUnitDetails(unit.id || unit._id)}
-                    className="text-xs font-medium text-blue-600 transition-colors hover:text-blue-700 focus:outline-none focus:underline cursor-pointer pointer-events-auto"
-                    title={`View ${unit.name} intern summary`}
-                  >
-                    View details
-                  </button>
                 </div>
               </div>
 

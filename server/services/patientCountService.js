@@ -30,12 +30,24 @@ async function getActivePatientCountMap(unitIds = []) {
     };
   }
 
+  const patientBackedUnitIds = normalizedUnitIds.length > 0
+    ? await Patient.distinct('unit', {
+      unit: {
+        $in: normalizedUnitIds.map((unitId) => new mongoose.Types.ObjectId(unitId)),
+      },
+    })
+    : await Patient.distinct('unit', { unit: { $ne: null } });
+
   const rows = await Patient.aggregate([
     { $match: match },
     { $group: { _id: '$unit', patientCount: { $sum: 1 } } },
   ]);
 
-  const countMap = new Map();
+  const countMap = new Map(
+    patientBackedUnitIds
+      .filter(Boolean)
+      .map((unitId) => [String(unitId), 0])
+  );
   for (const row of rows) {
     countMap.set(String(row._id), Number(row.patientCount || 0));
   }
@@ -43,7 +55,8 @@ async function getActivePatientCountMap(unitIds = []) {
   return countMap;
 }
 
-async function syncUnitPatientCounts(unitsOrUnitIds = []) {
+async function syncUnitPatientCounts(unitsOrUnitIds = [], options = {}) {
+  const { forceZeroForRequestedIds = false } = options;
   const asArray = Array.isArray(unitsOrUnitIds) ? unitsOrUnitIds : [unitsOrUnitIds];
   const providedUnits = asArray.filter((item) => item && typeof item === 'object' && item._id);
 
@@ -67,6 +80,8 @@ async function syncUnitPatientCounts(unitsOrUnitIds = []) {
     const hasAggregatedCount = countMap.has(unitId);
     const patientCount = hasAggregatedCount
       ? Number(countMap.get(unitId) || 0)
+      : forceZeroForRequestedIds
+        ? 0
       : Number(unit.patientCount ?? 0);
 
     if (Number(unit.patientCount ?? 0) !== patientCount) {
