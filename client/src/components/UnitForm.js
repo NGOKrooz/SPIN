@@ -12,6 +12,7 @@ export default function UnitForm({ unit, onClose, onSuccess }) {
   const [formData, setFormData] = useState({
     name: '',
     duration_days: '',
+    patientCount: '0',
     description: '',
   });
 
@@ -59,6 +60,7 @@ export default function UnitForm({ unit, onClose, onSuccess }) {
       setFormData({
         name: unit.name || '',
         duration_days: unit.duration_days || '',
+        patientCount: String(unit.patient_count ?? unit.patientCount ?? 0),
         description: unit.description || '',
       });
     }
@@ -88,12 +90,23 @@ export default function UnitForm({ unit, onClose, onSuccess }) {
       return;
     }
 
+    const parsedPatientCount = Number(formData.patientCount);
+    if (formData.patientCount === '' || !Number.isInteger(parsedPatientCount) || parsedPatientCount < 0) {
+      toast({
+        title: 'Error',
+        description: 'Patient count must be a whole number of 0 or more',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     const submitData = {
       ...formData,
       name: normalizedName,
       unit_name: normalizedName,
       duration_days: parsedDuration,
       duration: parsedDuration,
+      patientCount: parsedPatientCount,
     };
 
     console.log('Submitting unit data:', submitData);
@@ -158,18 +171,19 @@ export default function UnitForm({ unit, onClose, onSuccess }) {
               />
             </div>
 
-            {unit && (
-              <div>
-                <Label>Current Patient Count</Label>
-                <div className="mt-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
-                  {unit.patient_count ?? unit.patientCount ?? 0} active patients
-                </div>
-                <p className="mt-1 text-xs text-gray-500">
-                  Patient count is calculated automatically from patients assigned to this unit.
-                </p>
-              </div>
-            )}
-
+            <div>
+              <Label htmlFor="patientCount">Patient Count</Label>
+              <Input
+                id="patientCount"
+                type="number"
+                min="0"
+                step="1"
+                value={formData.patientCount}
+                onChange={(e) => handleChange('patientCount', e.target.value)}
+                placeholder="Enter patient count"
+                required
+              />
+            </div>
 
             <div>
               <Label htmlFor="description">Description</Label>

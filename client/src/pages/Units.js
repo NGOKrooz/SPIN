@@ -290,7 +290,6 @@ export default function Units() {
         {filteredUnits.map((unit) => {
           const assignedInterns = getUnitInterns(unit);
           const currentInternCount = unit.current_interns ?? unit.currentInterns ?? assignedInterns.length;
-          const patientCount = getPatientCount(unit);
           const workloadLabel = getWorkloadLabel(unit);
 
           return (
@@ -337,27 +336,6 @@ export default function Units() {
                 ) : (
                   <p className="text-sm text-gray-500">No interns assigned</p>
                 )}
-              </div>
-
-              {/* Patient Count Information */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-sm font-medium text-gray-700">Patients</h4>
-                  <span className="text-sm font-medium text-blue-600">{patientCount}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs text-gray-500 mt-1">
-                    Active patients currently assigned to this unit.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => openUnitDetails(unit.id || unit._id)}
-                    className="text-xs font-medium text-blue-600 transition-colors hover:text-blue-700 focus:outline-none focus:underline cursor-pointer pointer-events-auto"
-                    title={`View ${unit.name} intern summary`}
-                  >
-                    View details
-                  </button>
-                </div>
               </div>
 
               {/* Actions */}
