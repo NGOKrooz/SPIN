@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { X } from 'lucide-react';
 import { api } from '../services/api';
-import { formatDate } from '../lib/utils';
+import { formatDate, getStatusColor } from '../lib/utils';
 
 export default function InternDetailsModal({ intern, onClose }) {
   const [schedule, setSchedule] = useState({ rotations: [], completed: [], current: null, upcoming: [] });
@@ -54,6 +54,30 @@ export default function InternDetailsModal({ intern, onClose }) {
           <div className="mb-4">
             <div className="text-lg font-semibold text-gray-900">{intern.name}</div>
             <div className="text-sm text-gray-600">Batch {intern.batch} • Started {formatDate(intern.start_date)}</div>
+            <div className="mt-2 flex items-center space-x-2">
+              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor((intern.primaryStatus || 'ACTIVE').toLowerCase())}`}>
+                {intern.primaryStatus || 'ACTIVE'}
+              </span>
+              {intern.hasExtension && (
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor('extension')}`}>
+                  EXTENSION
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Extension Summary */}
+          <div className="mb-4 p-3 bg-gray-50 rounded">
+            <div className="text-sm font-medium text-gray-700 mb-2">Total Extension Days: {intern.totalExtensionDays || 0}</div>
+            {intern.extensionByUnit && intern.extensionByUnit.length > 0 && (
+              <div className="space-y-1">
+                {intern.extensionByUnit.map(({ unit, extensionDays }) => (
+                  <div key={unit} className="text-xs text-gray-600">
+                    {unit} → +{extensionDays} days
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {loading ? (

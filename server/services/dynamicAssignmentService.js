@@ -501,7 +501,8 @@ async function assignNextUnit(internOrId, options = {}) {
     .exec();
 
   intern.currentUnit = unit._id;
-  intern.status = Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active';
+  intern.extensionDays = 0;
+  intern.status = 'active';
   intern.rotationHistory = allRotations.map((entry) => entry._id);
   await intern.save();
 
@@ -537,16 +538,17 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
     } else if (endDate && today > endDate) {
       return assignNextUnit(intern, { completeCurrent: true, now: today });
     } else {
-      await Rotation.deleteMany({ intern: intern._id, status: 'upcoming' }).exec();
-
-      const desiredStatus = Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active';
+      const activeExtensionDays = Number(activeRotation.extensionDays || 0);
+      const desiredStatus = activeExtensionDays > 0 ? 'extended' : 'active';
       const currentUnitId = activeRotation.unit?.toString?.() || null;
       const hasChanges = String(intern.currentUnit || '') !== String(currentUnitId || '')
-        || intern.status !== desiredStatus;
+        || intern.status !== desiredStatus
+        || Number(intern.extensionDays || 0) !== activeExtensionDays;
 
       if (hasChanges) {
         intern.currentUnit = activeRotation.unit || null;
         intern.status = desiredStatus;
+        intern.extensionDays = activeExtensionDays;
         await intern.save();
       }
 

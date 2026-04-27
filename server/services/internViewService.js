@@ -28,6 +28,31 @@ const calculateElapsedDays = (startDate, durationDays, todayDate = new Date()) =
   return Math.max(0, elapsedDays);
 };
 
+// Helper functions for status computation
+const computePrimaryStatus = (rotations = []) => {
+  const hasActive = rotations.some(r => r.status === 'active');
+  const hasUpcoming = rotations.some(r => r.status === 'upcoming');
+  return hasActive || hasUpcoming ? 'ACTIVE' : 'COMPLETED';
+};
+
+const computeExtensionStatus = (rotations = []) => {
+  return rotations.some(r => Number(r.extensionDays || 0) > 0);
+};
+
+const computeTotalExtensionDays = (rotations = []) => {
+  return rotations.reduce((sum, r) => sum + Number(r.extensionDays || 0), 0);
+};
+
+const computeExtensionByUnit = (rotations = []) => {
+  const extensionMap = new Map();
+  rotations.forEach(r => {
+    const unitName = r.unitName || r.unit_name || 'Unknown Unit';
+    const extensionDays = Number(r.extensionDays || 0);
+    extensionMap.set(unitName, (extensionMap.get(unitName) || 0) + extensionDays);
+  });
+  return Array.from(extensionMap.entries()).map(([unit, days]) => ({ unit, extensionDays: days }));
+};
+
 // Helper functions (extracted from interns.js for reuse)
 const toIsoString = (date) => {
   if (!date) return null;
@@ -109,6 +134,12 @@ const formatIntern = (intern, rotations = []) => {
   const upcomingRotations = formattedRotations.filter(r => r.status === 'upcoming');
   const completedRotations = formattedRotations.filter(r => r.status === 'completed');
 
+  // Compute status fields
+  const primaryStatus = computePrimaryStatus(formattedRotations);
+  const hasExtension = computeExtensionStatus(formattedRotations);
+  const totalExtensionDays = computeTotalExtensionDays(formattedRotations);
+  const extensionByUnit = computeExtensionByUnit(formattedRotations);
+
   const startDate = intern.startDate || intern.start_date;
 
   const currentUnitDuration = Number(
@@ -157,6 +188,11 @@ const formatIntern = (intern, rotations = []) => {
     total_extension_days: intern.totalExtensionDays || intern.total_extension_days || 0,
     phone: intern.phone || intern.phone_number || '',
     phone_number: intern.phone || intern.phone_number || '',
+    // New computed status fields
+    primaryStatus,
+    hasExtension,
+    totalExtensionDays: totalExtensionDays,
+    extensionByUnit,
     currentUnit,
     rotations: formattedRotations,
     upcomingUnits: upcomingRotations,

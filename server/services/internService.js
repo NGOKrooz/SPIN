@@ -236,7 +236,11 @@ async function ensureInternStatusIsCorrect(internId) {
 
   let newStatus = 'completed';
   if (activeRotation) {
-    newStatus = Number(refreshedIntern.extensionDays || 0) > 0 ? 'extended' : 'active';
+    const activeExtensionDays = Number(activeRotation.extensionDays || 0);
+    newStatus = activeExtensionDays > 0 ? 'extended' : 'active';
+    refreshedIntern.extensionDays = activeExtensionDays;
+  } else {
+    refreshedIntern.extensionDays = 0;
   }
 
   const newCurrentUnit = activeRotation?.unit || null;
