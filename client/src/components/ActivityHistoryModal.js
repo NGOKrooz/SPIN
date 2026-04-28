@@ -48,7 +48,7 @@ export default function ActivityHistoryModal({ onClose }) {
   const [currentTime, setCurrentTime] = React.useState(() => Date.now());
   const { data, isLoading, error } = useQuery({
     queryKey: ['allActivities'],
-    queryFn: () => api.getRecentActivities(1000), // Fetch a large number to get all activities
+    queryFn: () => api.getRecentActivities('all'),
     refetchInterval: 30000,
   });
 
@@ -112,9 +112,9 @@ export default function ActivityHistoryModal({ onClose }) {
                 const colorClass = activityColors[activityType] || activityColors.default;
                 const message = activity.message || activity.description || 'Activity occurred';
                 const createdAt = activity.created_at || activity.createdAt || null;
-                const timeAgo = createdAt
-                  ? getRelativeTimeLabel(createdAt, currentTime)
-                  : 'Recently';
+                const metadata = activity.metadata || {};
+                const internName = activity.intern?.name || metadata.internName || metadata.intern || null;
+                const unitName = activity.unit?.name || metadata.unitName || metadata.unit || metadata.nextUnitName || metadata.previousUnitName || null;
                 const fullDate = createdAt
                   ? formatDateTime(createdAt)
                   : '';
@@ -141,15 +141,17 @@ export default function ActivityHistoryModal({ onClose }) {
                           ))}
                         </div>
                       ) : null}
-                      <div className="flex items-center space-x-2 mt-1">
-                        <p className="text-xs text-gray-500">{timeAgo}</p>
-                        {fullDate && (
-                          <>
-                            <span className="text-xs text-gray-300">•</span>
-                            <p className="text-xs text-gray-500">{fullDate}</p>
-                          </>
-                        )}
-                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-500">
+                      {internName && (
+                        <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-700">Intern: {internName}</span>
+                      )}
+                      {unitName && (
+                        <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-700">Unit: {unitName}</span>
+                      )}
+                      {fullDate && (
+                        <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-700">{fullDate}</span>
+                      )}
+                    </div>
                     </div>
                   </div>
                 );

@@ -141,18 +141,6 @@ export default function RecentUpdates() {
     );
   }
 
-  const handleClear = async () => {
-    const confirmed = window.confirm('Clear all recent updates? This action cannot be undone.');
-    if (!confirmed) return;
-
-    try {
-      await api.clearRecentActivities();
-      queryClient.invalidateQueries({ queryKey: ['recentActivities'] });
-    } catch (err) {
-      alert(err.message || 'Failed to clear updates');
-    }
-  };
-
   return (
     <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
       <CardHeader>
@@ -166,9 +154,7 @@ export default function RecentUpdates() {
               Latest activities in the system
             </CardDescription>
           </div>
-          <Button variant="outline" size="sm" onClick={handleClear}>
-            Clear Updates
-          </Button>
+
         </div>
       </CardHeader>
       <CardContent>
@@ -210,10 +196,8 @@ export default function RecentUpdates() {
                         ))}
                       </div>
                     ) : null}
-                    <div className="mt-1 flex items-center gap-2 text-xs text-gray-500">
-                      <span>{timeAgo}</span>
-                      {fullDate ? <span className="text-gray-300">•</span> : null}
-                      {fullDate ? <span>{fullDate}</span> : null}
+                      <div className="mt-1 flex flex-wrap gap-2 text-xs text-gray-500">
+                        {fullDate ? <span>{fullDate}</span> : <span>{timeAgo}</span>}
                     </div>
                   </div>
                 </div>

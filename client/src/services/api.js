@@ -117,6 +117,10 @@ export const activityAPI = {
   clear: () => http.delete('/activity/clear'),
 };
 
+export const spunAPI = {
+  getSummary: (limit = 25) => http.get('/spun', { params: { limit } }),
+};
+
 // Settings API
 export const settingsAPI = {
   getSystem: () => http.get('/settings/system'),
@@ -174,6 +178,9 @@ export const api = {
   // Activity
   getRecentActivities: (limit) => activityAPI.getRecent(limit),
   clearRecentActivities: () => activityAPI.clear(),
+
+  // Spun
+  getSpunHistory: (limit) => spunAPI.getSummary(limit),
 
   // Settings
   getSystemSettings: () => settingsAPI.getSystem(),
