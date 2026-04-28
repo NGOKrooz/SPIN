@@ -1,5 +1,9 @@
 const express = require('express');
-const { getSpinHistory, getSpinCount } = require('../services/spinService');
+const {
+  getSpinHistory,
+  getSpinCount,
+  getSpinCountsByIntern,
+} = require('../services/spinService');
 
 const router = express.Router();
 
@@ -19,13 +23,14 @@ function parseLimit(rawValue, fallback = 20, max = 1000) {
 router.get('/', async (req, res) => {
   try {
     const limit = parseLimit(req.query.limit, 20, 1000);
-    const [recent, totalSpins] = await Promise.all([
+    const [recent, spinCounts] = await Promise.all([
       getSpinHistory(limit),
-      getSpinCount(),
+      getSpinCountsByIntern(),
     ]);
 
     res.json({
-      totalSpins,
+      totalSpins: spinCounts.totalSpins,
+      internSpins: spinCounts.internSpins,
       recent,
     });
   } catch (err) {

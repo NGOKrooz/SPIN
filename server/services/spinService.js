@@ -1,5 +1,6 @@
 const SpinRecord = require('../models/SpinRecord');
 const Rotation = require('../models/Rotation');
+const Intern = require('../models/Intern');
 
 const toId = (value) => {
   if (!value) return null;
@@ -87,6 +88,34 @@ async function getSpinCount() {
   return Rotation.countDocuments({ status: 'completed' }).exec();
 }
 
+async function getSpinCountsByIntern() {
+  const interns = await Intern.find({})
+    .sort({ createdAt: 1, _id: 1 })
+    .select('name createdAt')
+    .lean();
+
+  const completedCounts = await Rotation.aggregate([
+    { $match: { status: 'completed' } },
+    { $group: { _id: '$intern', count: { $sum: 1 } } },
+  ]).exec();
+
+  const countsByInternId = new Map(
+    completedCounts.map((row) => [row._id?.toString?.(), row.count])
+  );
+
+  const internSpins = interns.map((intern) => ({
+    intern: {
+      id: intern._id.toString(),
+      name: intern.name || 'Unknown intern',
+    },
+    count: countsByInternId.get(intern._id.toString()) || 0,
+  }));
+
+  const totalSpins = internSpins.reduce((sum, item) => sum + item.count, 0);
+
+  return { totalSpins, internSpins };
+}
+
 async function logSpinEvent({
   internId = null,
   internName = null,
@@ -128,6 +157,7 @@ async function logSpinEventSafe(event) {
 module.exports = {
   getSpinHistory,
   getSpinCount,
+  getSpinCountsByIntern,
   logSpinEvent,
   logSpinEventSafe,
 };
