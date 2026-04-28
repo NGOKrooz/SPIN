@@ -74,8 +74,6 @@ export default function Dashboard() {
         <div className="rounded-2xl border border-gray-200 bg-white/70 p-5 shadow-sm backdrop-blur sm:p-6">
           <div className="space-y-1">
             <h1 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">Internship Scheduler</h1>
-            <h2 className="text-base font-semibold text-gray-700 sm:text-lg">UNTH Ituku Ozalla</h2>
-            <p className="text-sm text-gray-500 sm:text-base">Physiotherapy Department</p>
           </div>
         </div>
 

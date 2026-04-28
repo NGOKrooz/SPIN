@@ -7,7 +7,6 @@ import {
   Building2, 
   Settings,
   Stethoscope,
-  MessageCircle,
   X
 } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -134,6 +133,7 @@ export default function Layout() {
               </div>
               <div>
                 <h1 className="text-lg font-bold text-gray-900 leading-tight">SPIN</h1>
+                <p className="text-xs text-gray-600 leading-tight">UNTH Ituku Ozalla<br />Physiotherapy Department</p>
               </div>
             </div>
             <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
@@ -147,6 +147,7 @@ export default function Layout() {
               </div>
               <div>
                 <h1 className="text-xl font-bold text-gray-900">SPIN</h1>
+                <p className="text-xs text-gray-600 leading-tight">UNTH Ituku Ozalla<br />Physiotherapy Department</p>
               </div>
             </div>
           </div>
@@ -181,21 +182,15 @@ export default function Layout() {
 
           {/* Footer */}
           <div className="border-t border-gray-200 p-4">
-            <a
-              href="https://wa.me/2349068361100"
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center justify-center space-x-2 rounded-md px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-green-700 transition-colors"
-            >
-              <MessageCircle className="h-4 w-4" />
-              <span>Contact Team</span>
-            </a>
+            <div className="text-center text-xs text-gray-500">
+              v1.0
+            </div>
           </div>
         </div>
       </div>
 
       {/* Role switch bar */}
-      <div className="md:pl-64">
+      <div className="md:ml-64">
         <div className="sticky top-0 z-40 hidden h-10 items-center justify-end bg-white/80 px-4 backdrop-blur md:flex">
           <div className="text-xs text-gray-600">
             Role: <span className="font-medium">{role}</span>
@@ -216,7 +211,7 @@ export default function Layout() {
       </div>
 
       {/* Main content */}
-      <div className="md:pl-64">
+      <div className="md:ml-64">
         <main className="py-4 md:py-8">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <Outlet />
