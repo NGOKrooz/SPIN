@@ -1085,11 +1085,15 @@ router.post('/:id/remove-extension', async (req, res) => {
       return res.status(400).json({ error: 'Intern ID is required' });
     }
 
-    if (req.body.days === undefined || req.body.days === null || req.body.days === '') {
+    const rawDays = req.body.remove_days !== undefined && req.body.remove_days !== null
+      ? req.body.remove_days
+      : req.body.days;
+
+    if (rawDays === undefined || rawDays === null || rawDays === '') {
       return res.status(400).json({ error: 'Days to remove is required' });
     }
 
-    let days = typeof req.body.days !== 'number' ? Number(req.body.days) : req.body.days;
+    let days = typeof rawDays !== 'number' ? Number(rawDays) : rawDays;
     if (!Number.isFinite(days) || Number.isNaN(days) || days <= 0) {
       return res.status(400).json({ error: 'Valid number of days is required' });
     }
@@ -1126,7 +1130,13 @@ router.post('/:id/remove-extension', async (req, res) => {
     }
 
     const currentExtensionDays = Number(rotation.extensionDays || 0);
-    const removeDays = Math.min(days, currentExtensionDays);
+    if (currentExtensionDays <= 0) {
+      return res.status(400).json({ error: 'No extension days available to remove' });
+    }
+    if (days > currentExtensionDays) {
+      return res.status(400).json({ error: `Cannot remove more days than current extension (${currentExtensionDays})` });
+    }
+    const removeDays = days;
 
     const originalEndDate = rotation.endDate ? startOfDay(rotation.endDate) : null;
     const originalDuration = Number(rotation.duration || getRotationTotalDuration(rotation));

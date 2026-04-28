@@ -113,7 +113,7 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
     if (!selectedUnit) {
       toast({
         title: 'Error',
-        description: 'Please select a valid upcoming unit',
+        description: 'Please select a valid unit',
         variant: 'destructive',
       });
       return;
@@ -207,7 +207,7 @@ export default function ReassignModal({ intern, currentRotation, onClose, onSucc
             {availableUnits.length === 0 && (
               <div className="bg-yellow-50 p-3 rounded-lg">
                 <p className="text-sm text-yellow-800">
-                  No upcoming units are available for reassignment.
+                  No eligible units are available for reassignment.
                 </p>
               </div>
             )}

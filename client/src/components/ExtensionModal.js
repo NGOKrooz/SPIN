@@ -170,7 +170,10 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
 
     removeExtensionMutation.mutate({
       id: intern.id,
-      data: { days, reason: removeFormData.reason || 'Extension removed' },
+      data: {
+        remove_days: days,
+        reason: removeFormData.reason || 'Extension removed',
+      },
     });
   };
 
@@ -281,7 +284,7 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
               </p>
               <form onSubmit={handleRemove} className="space-y-3">
                 <div>
-                  <Label htmlFor="remove-days">Days to Remove</Label>
+                  <Label htmlFor="remove-days">Remove Days *</Label>
                   <Input
                     id="remove-days"
                     type="number"
@@ -290,7 +293,11 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
                     value={removeFormData.days}
                     onChange={(e) => handleRemoveChange('days', e.target.value)}
                     placeholder={`1 – ${currentExtensionDays}`}
+                    required
                   />
+                  <p className="text-xs text-gray-500 mt-1">
+                    You may remove up to {currentExtensionDays} extension day{currentExtensionDays === 1 ? '' : 's'}.
+                  </p>
                 </div>
                 <div>
                   <Label htmlFor="remove-reason">Reason (Optional)</Label>
@@ -305,14 +312,17 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="flex justify-end">
+                <div className="flex items-center justify-end space-x-3">
+                  <Button type="button" variant="outline" onClick={() => setRemoveFormData({ days: '', reason: '' })}>
+                    Cancel
+                  </Button>
                   <Button
                     type="submit"
-                    variant="outline"
+                    variant="destructive"
                     disabled={isRemoving}
-                    className="text-red-600 border-red-300 hover:bg-red-50"
+                    className="hospital-gradient"
                   >
-                    {isRemoving ? 'Removing...' : 'Remove Extension Days'}
+                    {isRemoving ? 'Applying...' : 'Apply Reduction'}
                   </Button>
                 </div>
               </form>

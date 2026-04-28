@@ -582,46 +582,23 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
  * Returns all units an intern can be moved to right now.
  */
 async function getEligibleUnits(internId, currentUnitId = null) {
-  const [allUnits, occupancy, internsLeavingSoon, recentIncoming, completedIds] = await Promise.all([
+  const [allUnits, completedIds] = await Promise.all([
     Unit.find({}).sort({ order: 1, position: 1, createdAt: 1 }).exec(),
-    getUnitOccupancy(),
-    getUnitInternsLeavingSoon(),
-    getRecentIncomingCounts(),
     getCompletedUnitIds(internId),
   ]);
 
-  const trueLoad = buildTrueLoadMap(allUnits, occupancy, internsLeavingSoon, new Map(), recentIncoming);
-
-  let pool = buildEligibleUnitPool(allUnits, trueLoad, completedIds, currentUnitId, DEFAULT_CAPACITY, {
-    ignoreCompleted: false,
-    ignoreCapacity: false,
-  });
-
-  if (pool.length === 0) {
-    pool = buildEligibleUnitPool(allUnits, trueLoad, completedIds, currentUnitId, DEFAULT_CAPACITY, {
-      ignoreCompleted: true,
-      ignoreCapacity: false,
-    });
-  }
-
-  if (pool.length === 0) {
-    pool = buildEligibleUnitPool(allUnits, trueLoad, completedIds, currentUnitId, DEFAULT_CAPACITY, {
-      ignoreCompleted: true,
-      ignoreCapacity: true,
-    });
-  }
-
-  return sortUnitsByEffectiveLoad(pool, trueLoad)
-    .map((u) => ({
-      id: String(u._id),
-      name: u.name,
-      durationDays: u.durationDays || DEFAULT_DURATION,
-      duration_days: u.durationDays || DEFAULT_DURATION,
-      currentInterns: occupancy.get(String(u._id)) || 0,
-      internsLeavingSoon: internsLeavingSoon.get(String(u._id)) || 0,
-      recentIncoming: recentIncoming.get(String(u._id)) || 0,
-      trueLoad: trueLoad.get(String(u._id)) || 0,
-      capacity: DEFAULT_CAPACITY,
+  return allUnits
+    .filter((unit) => {
+      const unitId = String(unit._id);
+      if (currentUnitId && unitId === String(currentUnitId)) return false;
+      if (completedIds.has(unitId)) return false;
+      return true;
+    })
+    .map((unit) => ({
+      id: String(unit._id),
+      name: unit.name,
+      durationDays: getUnitDuration(unit),
+      duration_days: getUnitDuration(unit),
     }));
 }
 
