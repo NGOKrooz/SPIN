@@ -28,6 +28,42 @@ const calculateElapsedDays = (startDate, durationDays, todayDate = new Date()) =
   return Math.max(0, elapsedDays);
 };
 
+const getRotationBaseDuration = (rotation, fallbackUnit = null) => {
+  const rawBaseDuration = Number(rotation?.baseDuration);
+  if (Number.isFinite(rawBaseDuration) && rawBaseDuration > 0) {
+    return rawBaseDuration;
+  }
+
+  const rawFallbackDuration = Number(
+    fallbackUnit?.durationDays ?? fallbackUnit?.duration ?? fallbackUnit?.duration_days
+  );
+  return Number.isFinite(rawFallbackDuration) && rawFallbackDuration > 0 ? rawFallbackDuration : 20;
+};
+
+const getRotationExtensionDays = (rotation, fallbackUnit = null) => {
+  const rawExtensionDays = Number(rotation?.extensionDays);
+  if (Number.isFinite(rawExtensionDays) && rawExtensionDays >= 0) {
+    return rawExtensionDays;
+  }
+
+  const baseDuration = getRotationBaseDuration(rotation, fallbackUnit);
+  const rawTotalDuration = Number(rotation?.duration);
+  if (Number.isFinite(rawTotalDuration) && rawTotalDuration > 0 && Number.isFinite(baseDuration) && baseDuration > 0) {
+    return Math.max(0, rawTotalDuration - baseDuration);
+  }
+
+  return 0;
+};
+
+const getRotationTotalDuration = (rotation, fallbackUnit = null) => {
+  const rawTotalDuration = Number(rotation?.duration);
+  if (Number.isFinite(rawTotalDuration) && rawTotalDuration > 0) {
+    return rawTotalDuration;
+  }
+
+  return getRotationBaseDuration(rotation, fallbackUnit) + getRotationExtensionDays(rotation, fallbackUnit);
+};
+
 // Helper functions for status computation
 const computePrimaryStatus = (rotations = []) => {
   const hasActive = rotations.some(r => r.status === 'active');
@@ -95,9 +131,9 @@ const formatRotation = (rotation) => {
   const unitId = unit?._id?.toString() || unit?.id || null;
   const unitName = unit?.name || (rotation.unit_name || null);
 
-  const rotationDuration = rotation.duration != null ? Number(rotation.duration) : null;
-  const rotationBaseDuration = rotation.baseDuration != null ? Number(rotation.baseDuration) : null;
-  const rotationExtensionDays = rotation.extensionDays != null ? Number(rotation.extensionDays) : 0;
+  const rotationBaseDuration = getRotationBaseDuration(rotation, rotation.unit);
+  const rotationExtensionDays = getRotationExtensionDays(rotation, rotation.unit);
+  const rotationDuration = getRotationTotalDuration(rotation, rotation.unit);
 
   return {
     id: rotation._id?.toString(),
@@ -142,13 +178,7 @@ const formatIntern = (intern, rotations = []) => {
 
   const startDate = intern.startDate || intern.start_date;
 
-  const currentUnitDuration = Number(
-    currentRotation?.duration
-    || currentRotation?.unit?.duration
-    || currentRotation?.unit?.durationDays
-    || currentRotation?.unit?.duration_days
-    || 0
-  ) || null;
+  const currentUnitDuration = Number(getRotationTotalDuration(currentRotation, currentRotation?.unit)) || null;
   const currentUnitStartDate = currentRotation?.startDate || currentRotation?.start_date || null;
   const currentUnitElapsedDays = calculateElapsedDays(currentUnitStartDate, currentUnitDuration);
 
@@ -399,5 +429,12 @@ module.exports = {
   buildInternViews,
   formatIntern,
   formatRotation,
-  getRotationStatus
+  getRotationStatus,
+  getRotationBaseDuration,
+  getRotationExtensionDays,
+  getRotationTotalDuration,
+  computePrimaryStatus,
+  computeExtensionStatus,
+  computeTotalExtensionDays,
+  computeExtensionByUnit,
 };

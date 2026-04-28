@@ -57,22 +57,29 @@ export default function Interns() {
     });
   }, [queryClient]);
 
-  // Derive status on client: trust backend status, but force Extended when extension days exist
+  const titleCase = (value) => {
+    if (!value) return '';
+    const normalized = String(value).toLowerCase();
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  };
+
   const mapWithDerivedStatus = (list) => (list || []).map((i) => {
-    const extensionDays = Number(i.extensionDays ?? i.extension_days) || 0;
-
-    let derived = i.status || 'Active';
-
-    if (derived !== 'Completed' && extensionDays > 0) {
-      derived = 'Extended';
-    }
+    const extensionDays = Number(i.totalExtensionDays ?? i.total_extension_days ?? i.extensionDays ?? i.extension_days) || 0;
+    const primaryStatus = i.primaryStatus
+      ? String(i.primaryStatus).toUpperCase()
+      : String(i.status || 'Active').toLowerCase() === 'completed'
+        ? 'COMPLETED'
+        : 'ACTIVE';
+    const hasExtension = extensionDays > 0 || Boolean(i.hasExtension);
 
     return {
       ...i,
       id: i.id || i._id,
       startDate: i.startDate || i.start_date,
       extensionDays,
-      derivedStatus: derived,
+      primaryStatus,
+      displayStatus: titleCase(primaryStatus),
+      hasExtension,
       internshipDays: i.internshipDays,
     };
   });
@@ -110,7 +117,7 @@ export default function Interns() {
   };
 
   const extendedCount = useMemo(() => {
-    return (derivedInterns || []).filter((i) => i.derivedStatus === 'Extended').length;
+    return (derivedInterns || []).filter((i) => i.hasExtension).length;
   }, [derivedInterns]);
 
   if (isLoading) {
@@ -250,12 +257,12 @@ export default function Interns() {
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
                           <span>Current unit: {intern.currentUnit?.name || 'Not Assigned'}</span>
                         </div>
-                        <div className="mt-1">
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(intern.derivedStatus || intern.status)}`}>
-                            {intern.derivedStatus || intern.status}
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(intern.primaryStatus?.toLowerCase() || intern.status)}`}>
+                            {intern.displayStatus || titleCase(intern.status)}
                           </span>
-                          {(intern.derivedStatus === 'Extended' || intern.status === 'Extended') && intern.extensionDays > 0 && (
-                            <span className="ml-2 text-xs text-yellow-600">
+                          {intern.hasExtension && intern.extensionDays > 0 && (
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
                               +{intern.extensionDays} days
                             </span>
                           )}

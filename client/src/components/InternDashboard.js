@@ -117,9 +117,20 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   }, [internDetails]);
 
   const currentIntern = internState || intern;
-  const extensionDays = Number(currentIntern?.extension_days) || 0;
-  const primaryStatus = currentIntern?.primaryStatus || 'ACTIVE';
-  const hasExtension = currentIntern?.hasExtension || false;
+  const extensionDays = Number(
+    currentIntern?.totalExtensionDays
+    ?? currentIntern?.total_extension_days
+    ?? currentIntern?.extensionDays
+    ?? currentIntern?.extension_days
+    ?? 0
+  );
+  const primaryStatus = currentIntern?.primaryStatus
+    ? String(currentIntern.primaryStatus).toUpperCase()
+    : String(currentIntern?.status || 'ACTIVE').toUpperCase();
+  const displayStatus = primaryStatus === 'ACTIVE' ? 'Active'
+    : primaryStatus === 'COMPLETED' ? 'Completed'
+    : `${primaryStatus.charAt(0).toUpperCase()}${primaryStatus.slice(1).toLowerCase()}`;
+  const hasExtension = Boolean(currentIntern?.hasExtension) || extensionDays > 0;
 
   const { data: internSchedule } = useQuery({
     queryKey: ['intern-schedule', intern.id],
@@ -500,23 +511,20 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
               </Card>
               <Card>
                 <CardContent className="p-4">
-                  <div className="flex items-center space-x-2">
-                    <div className="flex items-center space-x-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(primaryStatus.toLowerCase())}`}>
-                        {primaryStatus}
+                        {displayStatus}
                       </span>
-                      {hasExtension && (
+                      {hasExtension && extensionDays > 0 && (
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor('extension')}`}>
-                          EXTENSION
+                          +{extensionDays} days
                         </span>
                       )}
                     </div>
                     <div>
                       <p className="text-sm font-medium text-gray-600">Status</p>
-                      <p className="text-xl font-bold text-gray-900">
-                        {primaryStatus}
-                        {hasExtension && ' with Extension'}
-                      </p>
+                      <p className="text-xl font-bold text-gray-900">{displayStatus}</p>
                     </div>
                   </div>
                 </CardContent>
