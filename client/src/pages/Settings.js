@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Settings as SettingsIcon, Save, LogOut } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { useToast } from '../hooks/use-toast';
 import { api } from '../services/api';
@@ -12,7 +11,6 @@ export default function Settings() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState({
-    rotation_duration_weeks: 4,
     allow_reassignment: true,
     auto_log_activity: true,
   });
@@ -63,7 +61,6 @@ export default function Settings() {
   useEffect(() => {
     if (settings) {
       setFormData({
-        rotation_duration_weeks: settings.rotation_duration_weeks ?? 4,
         allow_reassignment: settings.allow_reassignment ?? true,
         auto_log_activity: settings.auto_log_activity ?? true,
       });
@@ -78,7 +75,6 @@ export default function Settings() {
 
   const handleSave = () => {
     const payload = {
-      rotation_duration_weeks: parseInt(formData.rotation_duration_weeks, 10),
       allow_reassignment: !!formData.allow_reassignment,
       auto_log_activity: !!formData.auto_log_activity,
     };
@@ -110,20 +106,6 @@ export default function Settings() {
           <CardDescription>Configure rotation management system</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div>
-            <Label htmlFor="rotation_duration_weeks">Rotation Duration (Weeks)</Label>
-            <Input
-              id="rotation_duration_weeks"
-              type="number"
-              min="1"
-              max="52"
-              value={formData.rotation_duration_weeks}
-              onChange={(e) => handleChange('rotation_duration_weeks', e.target.value)}
-              placeholder="4"
-            />
-            <p className="text-xs text-gray-500 mt-1">Default rotation duration in weeks</p>
-          </div>
-
           <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
             <div className="flex-1">
               <Label className="font-medium">Allow Manual Reassignment</Label>
