@@ -6,6 +6,7 @@ import {
   Users, 
   Building2, 
   Settings,
+  Repeat,
   Stethoscope,
   X
 } from 'lucide-react';
@@ -16,6 +17,7 @@ const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Interns', href: '/interns', icon: Users },
   { name: 'Units', href: '/units', icon: Building2 },
+  { name: 'Spun', href: '/spun', icon: Repeat },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
@@ -133,7 +135,6 @@ export default function Layout() {
               </div>
               <div>
                 <h1 className="text-lg font-bold text-gray-900 leading-tight">SPIN</h1>
-                <p className="text-xs text-gray-600 leading-tight">UNTH Ituku Ozalla<br />Physiotherapy Department</p>
               </div>
             </div>
             <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
@@ -147,7 +148,6 @@ export default function Layout() {
               </div>
               <div>
                 <h1 className="text-xl font-bold text-gray-900">SPIN</h1>
-                <p className="text-xs text-gray-600 leading-tight">UNTH Ituku Ozalla<br />Physiotherapy Department</p>
               </div>
             </div>
           </div>
@@ -183,7 +183,7 @@ export default function Layout() {
           {/* Footer */}
           <div className="border-t border-gray-200 p-4">
             <div className="text-center text-xs text-gray-500">
-              v1.0
+              UNTH Ituku Ozalla<br />Physiotherapy Department<br />v1.0
             </div>
           </div>
         </div>
