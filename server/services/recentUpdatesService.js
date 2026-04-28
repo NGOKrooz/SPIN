@@ -149,34 +149,39 @@ function buildActivityMessage(type, metadata = {}, fallbackMessage = null) {
 
 function normalizeActivity(item) {
   const metadata = item?.metadata || item?.details || null;
-  const type = normalizeType(item?.type || item?.action);
-  const createdAt = item?.createdAt || item?.timestamp || item?.created_at || null;
-  const message = item?.message || buildActivityMessage(type, metadata);
+  const type = normalizeType(item?.type || item?.action || item?.action_type);
+  const createdAt = item?.created_at || item?.createdAt || item?.timestamp || null;
+  const message = item?.description || item?.message || buildActivityMessage(type, metadata);
 
   return {
     id: item?._id?.toString?.() || item?.id || null,
+    action_type: type,
+    description: message,
+    intern: item?.intern || metadata?.internId || null,
+    unit: item?.unit || metadata?.unitId || null,
+    created_at: createdAt,
+    // Legacy
     type,
     entityId: item?.entityId || resolveEntityId(metadata),
     action: type,
     message,
-    description: message,
     metadata,
     createdAt,
-    created_at: createdAt,
-    intern: item?.intern || metadata?.internId || null,
+    timestamp: createdAt,
   };
 }
 
-async function getRecentActivities(limit = 10) {
-  const parsedLimit = Number(limit);
-  const safeLimit = Number.isFinite(parsedLimit) && parsedLimit > 0
-    ? Math.min(parsedLimit, 100)
-    : 10;
+async function getRecentActivities(limit = null) {
+  const query = ActivityLog.find({})
+    .populate('intern', 'name')
+    .populate('unit', 'name')
+    .sort({ created_at: -1, _id: -1 });
 
-  const items = await ActivityLog.find({})
-    .sort({ createdAt: -1, _id: -1 })
-    .limit(safeLimit)
-    .exec();
+  if (limit && Number.isFinite(limit) && limit > 0) {
+    query.limit(Math.min(limit, 10000)); // Allow up to 10k for full history
+  }
+
+  const items = await query.exec();
 
   return items.map(normalizeActivity);
 }
@@ -187,13 +192,18 @@ async function logActivityEvent({ type, metadata = {}, message = null, createdAt
   const resolvedMessage = buildActivityMessage(normalizedType, resolvedMetadata, message);
 
   const activity = await ActivityLog.create({
+    action_type: normalizedType,
+    description: resolvedMessage,
+    intern: resolvedMetadata?.internId || null,
+    unit: resolvedMetadata?.unitId || null,
+    created_at: createdAt,
+    // Legacy fields
     type: normalizedType,
     entityId: resolveEntityId(resolvedMetadata),
     action: normalizedType,
     metadata: resolvedMetadata,
     details: resolvedMetadata,
     message: resolvedMessage,
-    intern: resolvedMetadata?.internId || null,
     timestamp: createdAt,
     createdAt,
   });

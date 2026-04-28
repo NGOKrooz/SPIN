@@ -3,6 +3,7 @@
 const Intern = require('../models/Intern');
 const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
+const { logSpinEventSafe } = require('./spinService');
 
 const DEFAULT_CAPACITY = 4;
 const DEFAULT_DURATION = 20;
@@ -442,6 +443,41 @@ async function assignNextUnit(internOrId, options = {}) {
     .sort({ endDate: -1, startDate: -1, createdAt: -1 })
     .exec();
 
+  let completedRotation = null;
+  const getUnitName = (unitRef) => {
+    if (!unitRef) return 'Unknown unit';
+    if (typeof unitRef === 'string') return unitRef;
+    return unitRef.name || String(unitRef) || 'Unknown unit';
+  };
+
+  const logCompletedSpin = async (nextUnit, nextRotation) => {
+    if (!completedRotation) return;
+
+    const completedUnitName = getUnitName(completedRotation.unit);
+    const nextUnitName = nextUnit ? getUnitName(nextUnit) : null;
+    const description = nextUnit
+      ? `${intern.name} completed ${completedUnitName} and moved to ${nextUnitName}`
+      : `${intern.name} completed final rotation on ${completedUnitName}`;
+
+    await logSpinEventSafe({
+      internId: intern._id,
+      internName: intern.name,
+      unitId: completedRotation.unit?.toString?.() || null,
+      unitName: completedUnitName,
+      rotationId: completedRotation._id?.toString?.() || null,
+      nextUnitId: nextUnit?._id?.toString?.() || null,
+      nextUnitName,
+      nextRotationId: nextRotation?._id?.toString?.() || null,
+      description,
+      metadata: {
+        previousUnitName: completedUnitName,
+        nextUnitName,
+        completedRotationId: completedRotation._id?.toString?.() || null,
+      },
+      createdAt: new Date(),
+    });
+  };
+
   if (currentRotation && completeCurrent) {
     currentRotation.status = 'completed';
     await currentRotation.save();
@@ -506,6 +542,9 @@ async function assignNextUnit(internOrId, options = {}) {
       intern.currentUnit = null;
       intern.status = 'completed';
       await intern.save();
+      if (completedRotation) {
+        await logCompletedSpin(null, null);
+      }
       return { rotation: null, unit: null, wasReset, usedOverflow };
     }
 
@@ -539,7 +578,14 @@ async function assignNextUnit(internOrId, options = {}) {
   }
 
   if (!rotation || rotation.status !== 'active') {
+    if (completedRotation) {
+      await logCompletedSpin(null, null);
+    }
     throw new Error('Failed to build a continuous rotation timeline');
+  }
+
+  if (completedRotation) {
+    await logCompletedSpin(unit, rotation);
   }
 
   const allRotations = await Rotation.find({ intern: intern._id })

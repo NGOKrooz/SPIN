@@ -24,7 +24,7 @@ router.get('/', async (req, res) => {
     const stats = await updateBatchStats();
     const recentActivities = await ActivityLog.find({})
       .populate('intern')
-      .sort({ createdAt: -1 })
+      .sort({ created_at: -1 })
       .limit(10)
       .exec();
 
@@ -42,7 +42,7 @@ router.get('/recent', async (req, res) => {
   try {
     const updates = await ActivityLog.find()
       .populate('intern')
-      .sort({ createdAt: -1 })
+      .sort({ created_at: -1 })
       .limit(10)
       .exec();
 

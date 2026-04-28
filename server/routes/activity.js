@@ -15,7 +15,10 @@ const router = express.Router();
 
 const DEFAULT_ROTATION_DURATION_DAYS = 20;
 
-function parseLimit(rawValue, fallback = 10, max = 1000) {
+function parseLimit(rawValue, fallback = null, max = 10000) {
+  if (rawValue === 'all' || rawValue === 'unlimited') {
+    return null; // No limit
+  }
   const parsed = Number(rawValue);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return fallback;
@@ -129,7 +132,7 @@ async function fetchRecentActivities(limit) {
 // GET /api/activity - Get recent activities (compatibility endpoint)
 router.get('/', async (req, res) => {
   try {
-    const limit = parseLimit(req.query.limit, 10, 1000);
+    const limit = parseLimit(req.query.limit, null, 10000);
     const activities = await fetchRecentActivities(limit);
     res.status(200).json(activities);
   } catch (err) {
@@ -141,7 +144,7 @@ router.get('/', async (req, res) => {
 // GET /api/activity/recent - Get recent activities
 router.get('/recent', async (req, res) => {
   try {
-    const limit = parseLimit(req.query.limit, 10, 1000);
+    const limit = parseLimit(req.query.limit, null, 10000);
     const activities = await fetchRecentActivities(limit);
     res.status(200).json(activities);
   } catch (err) {

@@ -131,6 +131,7 @@ try {
   app.use('/api/rotations', require('./routes/rotations'));
   app.use('/api/activity', require('./routes/activity'));
   app.use('/api/activities', require('./routes/activity'));
+  app.use('/api/spun', require('./routes/spun'));
   app.use('/api/settings', require('./routes/settings').router);
   app.use('/api/config', require('./routes/config'));
   app.use('/api/dashboard', require('./routes/dashboard'));
