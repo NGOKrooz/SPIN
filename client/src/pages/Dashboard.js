@@ -69,16 +69,11 @@ export default function Dashboard() {
 
   return (
     <div className="mx-auto w-full max-w-[1200px] space-y-6 px-4 sm:px-6 lg:px-8">
-      {/* Header */}
-      <div className="space-y-4">
-        <div className="rounded-2xl border border-gray-200 bg-white/70 p-5 shadow-sm backdrop-blur sm:p-6">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">Internship Scheduler</h1>
-          </div>
-        </div>
-
-        <div>
-          <h3 className="text-2xl font-bold text-gray-900 sm:text-3xl">Dashboard</h3>
+      {/* Header Card */}
+      <div className="rounded-2xl border border-gray-200 bg-white/70 p-5 shadow-sm backdrop-blur sm:p-6">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">Internship Scheduler</h1>
+          <h2 className="text-xl font-semibold text-gray-700 sm:text-2xl">Dashboard</h2>
           <p className="text-sm text-gray-600 sm:text-base">{todayLabel}</p>
         </div>
       </div>
