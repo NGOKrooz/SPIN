@@ -20,6 +20,7 @@ const {
   getEligibleUnits,
   getCompletedUnitIds,
   getUnitOccupancy,
+  assignNextUnit,
   DEFAULT_CAPACITY,
 } = require('../services/dynamicAssignmentService');
 const { updateBatchStats } = require('./dashboard');
@@ -1191,6 +1192,33 @@ router.post('/:id/remove-extension', async (req, res) => {
   } catch (err) {
     console.error('REMOVE EXTENSION ERROR:', err);
     res.status(500).json({ success: false, error: 'Failed to remove extension' });
+  }
+});
+
+// POST /api/interns/:id/auto-advance - Auto-advance a specific intern's rotation
+router.post('/:id/auto-advance', async (req, res) => {
+  try {
+    const internId = req.params.id;
+    if (!internId || !mongoose.Types.ObjectId.isValid(internId)) {
+      return res.status(400).json({ error: 'Valid intern ID is required' });
+    }
+
+    const intern = await Intern.findById(internId).exec();
+    if (!intern) {
+      return res.status(404).json({ error: 'Intern not found' });
+    }
+
+    // Use the dynamic assignment service to properly advance and log spin
+    const { rotation } = await assignNextUnit(internId, { completeCurrent: true, now: new Date() });
+
+    await ensureInternStatusIsCorrect(internId);
+    await updateBatchStats().catch(() => {});
+
+    const internView = await buildInternView(internId);
+    res.json({ success: true, autoAdvanced: true, intern: internView, rotation });
+  } catch (err) {
+    console.error('AUTO-ADVANCE ERROR:', err);
+    res.status(500).json({ success: false, error: 'Failed to auto-advance intern' });
   }
 });
 

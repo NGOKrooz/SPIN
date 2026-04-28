@@ -1,4 +1,5 @@
 const SpinRecord = require('../models/SpinRecord');
+const Rotation = require('../models/Rotation');
 
 const toId = (value) => {
   if (!value) return null;
@@ -46,23 +47,44 @@ function normalizeSpin(item) {
 }
 
 async function getSpinHistory(limit = null) {
-  const query = SpinRecord.find({})
+  const query = Rotation.find({ status: 'completed' })
     .populate('intern', 'name')
     .populate('unit', 'name')
-    .populate('next_unit', 'name')
-    .populate('rotation', 'startDate endDate')
-    .sort({ created_at: -1, _id: -1 });
+    .sort({ endDate: -1, createdAt: -1 });
 
   if (limit && Number.isFinite(limit) && limit > 0) {
     query.limit(Math.min(limit, 1000));
   }
 
-  const items = await query.exec();
-  return items.map(normalizeSpin);
+  const rotations = await query.exec();
+  return rotations.map(rotation => ({
+    id: rotation._id.toString(),
+    intern: rotation.intern ? {
+      id: rotation.intern._id.toString(),
+      name: rotation.intern.name,
+    } : null,
+    unit: rotation.unit ? {
+      id: rotation.unit._id.toString(),
+      name: rotation.unit.name,
+    } : null,
+    rotationId: rotation._id.toString(),
+    nextUnit: null, // Not available in Rotation model
+    nextRotationId: null, // Not available in Rotation model
+    description: `${rotation.intern?.name || 'Unknown intern'} completed rotation at ${rotation.unit?.name || 'Unknown unit'}`,
+    metadata: {
+      endDate: rotation.endDate,
+      startDate: rotation.startDate,
+      duration: rotation.duration,
+      extensionDays: rotation.extensionDays,
+    },
+    created_at: rotation.endDate || rotation.createdAt,
+    createdAt: rotation.endDate || rotation.createdAt,
+    timestamp: rotation.endDate || rotation.createdAt,
+  }));
 }
 
 async function getSpinCount() {
-  return SpinRecord.countDocuments().exec();
+  return Rotation.countDocuments({ status: 'completed' }).exec();
 }
 
 async function logSpinEvent({

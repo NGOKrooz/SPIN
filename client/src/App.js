@@ -7,6 +7,7 @@ import Interns from './pages/Interns';
 import Units from './pages/Units';
 import Spun from './pages/Spun';
 import Settings from './pages/Settings';
+import History from './pages/History';
 
 function App() {
   return (
@@ -19,6 +20,7 @@ function App() {
           <Route path="spun" element={<Spun />} />
           {/* Manual assignment route removed */}
           <Route path="settings" element={<Settings />} />
+          <Route path="history" element={<History />} />
         </Route>
       </Routes>
       <Toaster />

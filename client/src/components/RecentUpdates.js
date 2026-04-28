@@ -1,5 +1,6 @@
 import React from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { 
@@ -11,7 +12,8 @@ import {
   RefreshCcw,
   Trash2,
   TimerReset,
-  PencilRuler
+  PencilRuler,
+  ChevronRight
 } from 'lucide-react';
 import { api } from '../services/api';
 import { formatDateTime, getRelativeTimeLabel } from '../lib/utils';
@@ -55,7 +57,7 @@ function getChangeNewValue(change) {
 }
 
 export default function RecentUpdates() {
-  const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [currentTime, setCurrentTime] = React.useState(() => Date.now());
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ['recentActivities'],
@@ -154,7 +156,15 @@ export default function RecentUpdates() {
               Latest activities in the system
             </CardDescription>
           </div>
-
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate('/history')}
+            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+          >
+            View More
+            <ChevronRight className="h-4 w-4 ml-1" />
+          </Button>
         </div>
       </CardHeader>
       <CardContent>

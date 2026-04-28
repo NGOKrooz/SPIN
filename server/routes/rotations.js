@@ -10,6 +10,7 @@ const {
   updateRotation,
   deleteRotation,
 } = require('../services/rotationService');
+const { assignNextUnit } = require('../services/dynamicAssignmentService');
 const { logRecentUpdateSafe } = require('../services/recentUpdatesService');
 
 const router = express.Router();
@@ -163,8 +164,9 @@ router.post('/auto-advance', async (req, res) => {
       return res.status(400).json({ error: 'internId is required' });
     }
 
-    const result = await autoAdvanceRotation(internId);
-    res.json({ autoAdvanced: result });
+    // Use the dynamic assignment service to properly advance and log spin
+    const { rotation } = await assignNextUnit(internId, { completeCurrent: true, now: new Date() });
+    res.json({ autoAdvanced: true, rotation });
   } catch (err) {
     console.error('Error auto-advancing rotation:', err);
     res.status(500).json({ error: 'Failed to auto-advance rotation' });
