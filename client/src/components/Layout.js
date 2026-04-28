@@ -127,8 +127,8 @@ export default function Layout() {
         )}
       >
         <div className="flex h-full flex-col">
-          {/* Logo */}
-          <div className="flex h-16 items-center justify-between px-4 glass-header md:hidden">
+          {/* Sidebar Header */}
+          <div className="sidebar-header flex h-16 items-center justify-between px-4 glass-header md:hidden">
             <div className="flex items-center space-x-2">
               <div className="hospital-gradient rounded-lg p-2">
                 <Stethoscope className="h-5 w-5 text-white" />
@@ -141,7 +141,7 @@ export default function Layout() {
               <X className="h-4 w-4" />
             </Button>
           </div>
-          <div className="hidden h-16 items-center px-4 glass-header md:flex">
+          <div className="sidebar-header hidden h-16 items-center px-4 glass-header md:flex">
             <div className="flex items-center space-x-2">
               <div className="hospital-gradient rounded-lg p-2">
                 <Stethoscope className="h-6 w-6 text-white" />
@@ -152,8 +152,8 @@ export default function Layout() {
             </div>
           </div>
 
-          {/* Navigation */}
-          <nav className="flex-1 space-y-1 px-4 py-4">
+          {/* Sidebar Menu */}
+          <nav className="sidebar-menu flex-1 space-y-1 px-4 py-4">
             {navigation.map((item) => {
               const isActive = location.pathname === item.href;
               return (
@@ -180,10 +180,11 @@ export default function Layout() {
             })}
           </nav>
 
-          {/* Footer */}
-          <div className="border-t border-gray-200 p-4">
+          {/* Sidebar Footer */}
+          <div className="sidebar-footer border-t border-gray-200 p-4 mt-auto">
             <div className="text-center text-xs text-gray-500">
-              UNTH Ituku Ozalla<br />Physiotherapy Department<br />v1.0
+              <p>UNTH Ituku Ozalla</p>
+              <p>Physiotherapy Department</p>
             </div>
           </div>
         </div>
