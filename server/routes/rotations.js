@@ -10,6 +10,7 @@ const {
   updateRotation,
   deleteRotation,
 } = require('../services/rotationService');
+const { reshuffleAllUpcoming } = require('../services/rotationPlanService');
 const { assignNextUnit } = require('../services/dynamicAssignmentService');
 const { logRecentUpdateSafe } = require('../services/recentUpdatesService');
 
@@ -79,6 +80,17 @@ router.get('/upcoming', async (req, res) => {
   } catch (err) {
     console.error('Error fetching upcoming rotations:', err);
     res.status(500).json({ error: 'Failed to fetch upcoming rotations' });
+  }
+});
+
+// POST /api/rotations/refresh-upcoming - Rebuild all upcoming rotations without touching active/completed assignments
+router.post('/refresh-upcoming', async (req, res) => {
+  try {
+    const refreshResult = await reshuffleAllUpcoming();
+    res.json({ success: true, ...refreshResult });
+  } catch (err) {
+    console.error('Error refreshing upcoming rotations:', err);
+    res.status(500).json({ error: 'Failed to refresh upcoming rotations' });
   }
 });
 

@@ -2,8 +2,7 @@ import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { 
   Users, 
-  Building2, 
-  AlertTriangle
+  Building2
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { api } from '../services/api';
@@ -41,8 +40,6 @@ export default function Dashboard() {
   const activeInterns = interns?.filter(intern => intern.currentUnit) || [];
   const unassignedInterns = interns?.filter(intern => !intern.currentUnit) || [];
 
-  const criticalUnits = units?.filter(unit => unit?.status === 'critical') || [];
-  const warningUnits = units?.filter(unit => unit?.status === 'warning') || [];
   const upcomingMovements = buildUpcomingMovements(interns || [], units || [], {
     movementWindowDays: PREDICTIVE_WINDOW_DAYS,
     leavingSoonDays: PREDICTIVE_WINDOW_DAYS,
@@ -131,50 +128,6 @@ export default function Dashboard() {
                     ))}
                   </tbody>
                 </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <AlertTriangle className="h-5 w-5" />
-              <span>Coverage Alerts</span>
-            </CardTitle>
-            <CardDescription>
-              Units requiring immediate attention
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {criticalUnits.length === 0 && warningUnits.length === 0 ? (
-              <div className="text-center py-4">
-                <div className="text-green-600 text-sm">All units have adequate coverage</div>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {criticalUnits.map((unit) => (
-                  <div key={unit.id} className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm font-medium text-red-800 break-words">{unit.name}</span>
-                      <div className="text-xs text-red-600 mt-1 break-words">
-                        {unit.reason} • Batch A: {unit.byBatch.A}, Batch B: {unit.byBatch.B}
-                      </div>
-                    </div>
-                    <span className="text-xs bg-red-200 text-red-800 px-2 py-1 rounded ml-2">Critical</span>
-                  </div>
-                ))}
-                {warningUnits.map((unit) => (
-                  <div key={unit.id} className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm font-medium text-yellow-800 break-words">{unit.name}</span>
-                      <div className="text-xs text-yellow-600 mt-1 break-words">
-                        {unit.reason} • Batch A: {unit.byBatch.A}, Batch B: {unit.byBatch.B}
-                      </div>
-                    </div>
-                    <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded ml-2">Warning</span>
-                  </div>
-                ))}
               </div>
             )}
           </CardContent>

@@ -42,6 +42,24 @@ export default function Settings() {
     },
   });
 
+  const refreshUpcomingMutation = useMutation({
+    mutationFn: api.refreshUpcomingRotations,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['upcoming-rotations'] });
+      toast({
+        title: 'Upcoming rotations refreshed',
+        description: 'All upcoming rotations were reshuffled successfully.',
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to refresh upcoming rotations',
+        variant: 'destructive',
+      });
+    },
+  });
+
   useEffect(() => {
     if (settings) {
       setFormData({
@@ -152,6 +170,28 @@ export default function Settings() {
               {updateMutation.isPending ? 'Saving...' : 'Save Settings'}
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
+        <CardHeader>
+          <CardTitle className="flex items-center space-x-2">
+            <SettingsIcon className="h-5 w-5" />
+            <span>Upcoming Rotation Refresh</span>
+          </CardTitle>
+          <CardDescription>Reshuffle all upcoming rotations while leaving active and completed assignments unchanged.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Use this action when you want the system to rebuild upcoming intern rotations based on current unit load, capacity, and near-term intern departures.
+          </p>
+          <Button
+            onClick={() => refreshUpcomingMutation.mutate()}
+            disabled={refreshUpcomingMutation.isPending}
+            className="hospital-gradient"
+          >
+            {refreshUpcomingMutation.isPending ? 'Refreshing...' : 'Refresh Upcoming Rotations'}
+          </Button>
         </CardContent>
       </Card>
 

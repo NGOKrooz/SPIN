@@ -1,6 +1,13 @@
 const Intern = require('../models/Intern');
 const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
+const {
+  getUnitOccupancy,
+  getUnitInternsLeavingSoon,
+  getCompletedUnitIds,
+  selectNextUnit,
+  DEFAULT_CAPACITY,
+} = require('./dynamicAssignmentService');
 
 const DEFAULT_ROTATION_DURATION_DAYS = 20;
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
@@ -515,6 +522,94 @@ const rebuildInternFutureRotations = async ({
   };
 };
 
+async function reshuffleAllUpcoming() {
+  const interns = await Intern.find({}).exec();
+  const units = await Unit.find({}).sort({ order: 1, position: 1, createdAt: 1 }).exec();
+  const occupancy = await getUnitOccupancy();
+  const leavingSoon = await getUnitInternsLeavingSoon();
+
+  const trueLoad = new Map();
+  for (const unit of units) {
+    const unitId = String(unit._id);
+    const currentCount = occupancy.get(unitId) || 0;
+    const leavingCount = leavingSoon.get(unitId) || 0;
+    trueLoad.set(unitId, currentCount - leavingCount);
+  }
+
+  const results = [];
+  const today = startOfDay(new Date());
+
+  for (const intern of interns) {
+    const activeRotation = await Rotation.findOne({ intern: intern._id, status: 'active' })
+      .sort({ startDate: -1 })
+      .populate('unit')
+      .exec();
+
+    let nextStart = startOfDay(today);
+    let currentUnitId = null;
+
+    if (activeRotation && activeRotation.endDate) {
+      currentUnitId = activeRotation.unit?._id?.toString?.() || activeRotation.unit?.toString?.() || null;
+      const extensionDays = Number(activeRotation.extensionDays || 0);
+      nextStart = addDays(startOfDay(activeRotation.endDate), extensionDays + 1);
+    } else {
+      const latestRotation = await Rotation.findOne({ intern: intern._id })
+        .sort({ endDate: -1, startDate: -1 })
+        .exec();
+      if (latestRotation && latestRotation.endDate) {
+        const extensionDays = Number(latestRotation.extensionDays || 0);
+        nextStart = addDays(startOfDay(latestRotation.endDate), extensionDays + 1);
+      }
+    }
+
+    const completedIds = await getCompletedUnitIds(intern._id);
+    await Rotation.deleteMany({ intern: intern._id, status: 'upcoming' }).exec();
+
+    const createdUpcoming = [];
+    const usedUnitIds = new Set(completedIds);
+    if (currentUnitId) usedUnitIds.add(currentUnitId);
+
+    while (true) {
+      const nextSelection = selectNextUnit(units, trueLoad, usedUnitIds, currentUnitId, DEFAULT_CAPACITY);
+      if (!nextSelection || !nextSelection.unit) {
+        break;
+      }
+
+      const unit = nextSelection.unit;
+      const unitId = String(unit._id);
+      if (usedUnitIds.has(unitId)) {
+        break;
+      }
+
+      const duration = getUnitDuration(unit);
+      const endDate = addDays(nextStart, duration - 1);
+      const rotation = await Rotation.create({
+        intern: intern._id,
+        unit: unit._id,
+        startDate: nextStart,
+        endDate,
+        baseDuration: duration,
+        extensionDays: 0,
+        duration,
+        status: 'upcoming',
+      });
+
+      createdUpcoming.push(rotation);
+      usedUnitIds.add(unitId);
+      trueLoad.set(unitId, (trueLoad.get(unitId) || 0) + 1);
+      currentUnitId = unitId;
+      nextStart = addDays(endDate, 1);
+    }
+
+    results.push({ internId: intern._id.toString(), createdUpcoming: createdUpcoming.length });
+  }
+
+  return {
+    refreshed: results.length,
+    details: results,
+  };
+}
+
 module.exports = {
   DEFAULT_ROTATION_DURATION_DAYS,
   DAY_IN_MS,
@@ -528,4 +623,5 @@ module.exports = {
   getOrderedUnits,
   computeDeterministicProgress,
   getActiveUnitLoadMap,
+  reshuffleAllUpcoming,
 };
