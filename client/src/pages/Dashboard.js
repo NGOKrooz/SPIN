@@ -189,6 +189,53 @@ export default function Dashboard() {
           </Card>
         )}
 
+        {/* DEBUG SECTION */}
+        <Card className="border-2 border-red-500 shadow-sm bg-white/70 backdrop-blur">
+          <CardHeader>
+            <CardTitle className="text-red-600">DEBUG PENDING MOVEMENTS</CardTitle>
+            <CardDescription>Use these buttons to force test the pending system</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div className="flex space-x-2">
+                <Button
+                  variant="destructive"
+                  onClick={async () => {
+                    try {
+                      const result = await api.debugForcePendingRotation();
+                      alert('Created: ' + result.message);
+                      window.location.reload();
+                    } catch (err) {
+                      alert('Failed: ' + err.message);
+                    }
+                  }}
+                >
+                  Force Create Pending
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    try {
+                      const result = await api.debugCheckPendingRotations();
+                      alert(`Pending count: ${result.count}`);
+                      console.log('Pending rotations:', result.rotations);
+                    } catch (err) {
+                      alert('Failed: ' + err.message);
+                    }
+                  }}
+                >
+                  Check Pending Count
+                </Button>
+              </div>
+              {pendingConfirmations.length === 0 ? (
+                <p className="text-red-600 font-semibold">No pending movements found - Click "Force Create Pending" to test</p>
+              ) : (
+                <p className="text-green-600 font-semibold">Found {pendingConfirmations.length} pending movement(s) - System working!</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
         <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
           <CardHeader>
             <CardTitle>Upcoming Movements (Next 5 Days)</CardTitle>

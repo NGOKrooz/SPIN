@@ -274,4 +274,69 @@ router.post('/:id/reassign', async (req, res) => {
   }
 });
 
+// GET /api/rotations/debug/pending - DEBUG: Check pending rotations
+router.get('/debug/pending', async (req, res) => {
+  try {
+    const pendingRotations = await Rotation.find({ status: 'pending_confirmation' })
+      .populate('intern')
+      .populate('unit')
+      .exec();
+
+    console.log('DEBUG: PENDING COUNT:', pendingRotations.length);
+
+    res.json({
+      count: pendingRotations.length,
+      rotations: pendingRotations,
+    });
+  } catch (err) {
+    console.error('Error checking pending rotations:', err);
+    res.status(500).json({ error: 'Failed to check pending rotations' });
+  }
+});
+
+// POST /api/rotations/debug/force-pending - DEBUG: Force create a pending rotation for testing
+router.post('/debug/force-pending', async (req, res) => {
+  try {
+    const intern = await Intern.findOne({}).exec();
+    if (!intern) {
+      return res.status(404).json({ error: 'No interns found' });
+    }
+
+    const units = await Unit.find({}).exec();
+    if (units.length === 0) {
+      return res.status(404).json({ error: 'No units found' });
+    }
+
+    const current = await Rotation.findOne({ intern: intern._id, status: 'active' })
+      .sort({ startDate: -1, createdAt: -1 })
+      .exec();
+
+    if (!current) {
+      return res.status(404).json({ error: 'No active rotation for intern' });
+    }
+
+    const nextUnit = units.find(u => u._id.toString() !== current.unit.toString()) || units[0];
+
+    const pendingRotation = await Rotation.create({
+      intern: intern._id,
+      unit: nextUnit._id,
+      startDate: new Date(),
+      endDate: new Date(),
+      status: 'pending_confirmation',
+      duration: 20,
+    });
+
+    console.log('DEBUG: Created pending rotation for intern:', intern.name, 'to unit:', nextUnit.name);
+
+    res.json({
+      success: true,
+      message: `Created pending rotation for ${intern.name} to ${nextUnit.name}`,
+      rotation: pendingRotation,
+    });
+  } catch (err) {
+    console.error('Error forcing pending rotation:', err);
+    res.status(500).json({ error: 'Failed to force pending rotation' });
+  }
+});
+
 module.exports = router;
