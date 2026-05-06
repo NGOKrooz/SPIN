@@ -570,7 +570,7 @@ async function reshuffleAllUpcoming() {
     if (currentUnitId) usedUnitIds.add(currentUnitId);
 
     while (true) {
-      const nextSelection = selectNextUnit(units, trueLoad, usedUnitIds, currentUnitId, DEFAULT_CAPACITY);
+      const nextSelection = selectNextUnit(units, trueLoad, completedIds, currentUnitId, DEFAULT_CAPACITY);
       if (!nextSelection || !nextSelection.unit) {
         break;
       }
@@ -595,7 +595,7 @@ async function reshuffleAllUpcoming() {
       });
 
       createdUpcoming.push(rotation);
-      usedUnitIds.add(unitId);
+      completedIds.add(unitId); // Add to completed so it doesn't get selected again
       trueLoad.set(unitId, (trueLoad.get(unitId) || 0) + 1);
       currentUnitId = unitId;
       nextStart = addDays(endDate, 1);

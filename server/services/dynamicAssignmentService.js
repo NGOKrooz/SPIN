@@ -185,6 +185,68 @@ async function getCompletedUnitIds(internId) {
   return new Set(completed.map((r) => r.unit?.toString?.()).filter(Boolean));
 }
 
+async function getPendingConfirmationRotation(internId) {
+  return Rotation.findOne({ intern: internId, status: 'pending_confirmation' })
+    .sort({ startDate: 1, createdAt: 1 })
+    .exec();
+}
+
+async function createPendingConfirmationRotation(intern, activeRotation, now = new Date()) {
+  if (!intern || !activeRotation) return null;
+  const endDate = activeRotation.endDate ? startOfDay(activeRotation.endDate) : null;
+  const startDate = endDate ? addDays(endDate, 1) : startOfDay(now);
+
+  const allUnits = await Unit.find({}).sort({ order: 1, position: 1, createdAt: 1 }).exec();
+  const completedIds = await getCompletedUnitIds(intern._id);
+  const currentUnitId = activeRotation.unit?.toString?.() || null;
+  const availableUnits = allUnits.filter((unit) => {
+    const unitId = String(unit._id);
+    if (currentUnitId && unitId === currentUnitId) return false;
+    if (completedIds.has(unitId)) return false;
+    return true;
+  });
+
+  let nextUnit = null;
+  if (availableUnits.length > 0) {
+    nextUnit = await selectBestUnit(availableUnits, now, new Set());
+    if (!nextUnit) nextUnit = availableUnits[0];
+  }
+
+  if (!nextUnit) {
+    const fallbackUnits = allUnits.filter((unit) => String(unit._id) !== String(currentUnitId));
+    if (fallbackUnits.length > 0) {
+      nextUnit = fallbackUnits[0];
+    }
+  }
+
+  if (!nextUnit) return null;
+
+  const duration = getUnitDuration(nextUnit);
+  const { endDate: pendingEndDate } = getRotationWindow(startDate, duration);
+
+  return Rotation.create({
+    intern: intern._id,
+    unit: nextUnit._id,
+    startDate,
+    endDate: pendingEndDate,
+    baseDuration: duration,
+    extensionDays: 0,
+    duration,
+    status: 'pending_confirmation',
+  });
+}
+
+async function ensurePendingConfirmation(internId, activeRotation, now = new Date()) {
+  if (!activeRotation) return null;
+  const today = startOfDay(now);
+  const pendingRotation = await getPendingConfirmationRotation(internId);
+  if (pendingRotation) return pendingRotation;
+
+  const rotationEndDay = activeRotation.endDate ? startOfDay(activeRotation.endDate) : null;
+  if (!rotationEndDay || rotationEndDay >= today) return null;
+  return createPendingConfirmationRotation({ _id: internId }, activeRotation, now);
+}
+
 /**
  * Core dynamic unit selection engine.
  *
@@ -587,6 +649,7 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
     .sort({ startDate: -1, createdAt: -1 })
     .exec();
 
+  let pendingRotation = null;
   if (activeRotation) {
     const startDate = activeRotation.startDate ? startOfDay(activeRotation.startDate) : null;
     const endDate = activeRotation.endDate ? startOfDay(activeRotation.endDate) : null;
@@ -594,9 +657,16 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
     if (startDate && today < startDate) {
       activeRotation.status = 'upcoming';
       await activeRotation.save();
-    } else if (endDate && today > endDate) {
-      return assignNextUnit(intern, { completeCurrent: true, now: today });
     } else {
+      if (activeRotation.status !== 'active') {
+        activeRotation.status = 'active';
+        await activeRotation.save();
+      }
+
+      if (endDate && endDate < today) {
+        pendingRotation = await ensurePendingConfirmation(intern._id, activeRotation, today);
+      }
+
       const activeExtensionDays = Number(activeRotation.extensionDays || 0);
       const desiredStatus = activeExtensionDays > 0 ? 'extended' : 'active';
       const currentUnitId = activeRotation.unit?.toString?.() || null;
@@ -611,8 +681,13 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
         await intern.save();
       }
 
-      return { rotation: activeRotation, unit: activeRotation.unit, wasReset: false, usedOverflow: false };
+      return { rotation: activeRotation, pending: pendingRotation, unit: activeRotation.unit, wasReset: false, usedOverflow: false };
     }
+  }
+
+  const pendingRotationFallback = await getPendingConfirmationRotation(intern._id);
+  if (pendingRotationFallback) {
+    return { rotation: null, pending: pendingRotationFallback, unit: null, wasReset: false, usedOverflow: false };
   }
 
   const rotationCount = await Rotation.countDocuments({ intern: intern._id }).exec();
@@ -622,7 +697,7 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
       intern.currentUnit = null;
       intern.status = 'completed';
       await intern.save();
-      return { rotation: null, unit: null, wasReset: false, usedOverflow: false };
+      return { rotation: null, pending: null, unit: null, wasReset: false, usedOverflow: false };
     }
 
     const { rotation, unit } = await assignFirstUnit(intern, allUnits);
@@ -630,7 +705,7 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
     intern.status = Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active';
     intern.rotationHistory = [rotation._id];
     await intern.save();
-    return { rotation, unit, wasReset: false, usedOverflow: false };
+    return { rotation, pending: null, unit, wasReset: false, usedOverflow: false };
   }
 
   return assignNextUnit(intern, { completeCurrent: false, now: today });
@@ -671,6 +746,9 @@ module.exports = {
   isUnitFull,
   selectBestUnit,
   getCompletedUnitIds,
+  getPendingConfirmationRotation,
+  createPendingConfirmationRotation,
+  ensurePendingConfirmation,
   getNextRotationStartDate,
   getRotationWindow,
   selectNextUnit,

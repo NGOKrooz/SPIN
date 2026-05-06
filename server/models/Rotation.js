@@ -8,7 +8,7 @@ const RotationSchema = new mongoose.Schema({
   extensionDays: { type: Number, default: 0 },
   duration: { type: Number, default: 20 },
   endDate: { type: Date },
-  status: { type: String, enum: ['active', 'upcoming', 'completed'], default: 'active' },
+  status: { type: String, enum: ['active', 'pending_confirmation', 'upcoming', 'completed'], default: 'active' },
   createdAt: { type: Date, default: Date.now }
 });
 

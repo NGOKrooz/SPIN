@@ -17,6 +17,7 @@ const {
 const {
   assignFirstUnit,
   ensureContinuousAssignment,
+  ensurePendingConfirmation,
   getEligibleUnits,
   getCompletedUnitIds,
   getUnitOccupancy,
@@ -400,13 +401,17 @@ const syncInternRotationStates = async (internId) => {
     const startDate = startOfDay(rotation.startDate);
     const endDate = startOfDay(rotation.endDate);
 
-    let nextStatus = 'completed';
+    let nextStatus = rotation.status;
     if (activeRotationId && rotation._id.toString() === activeRotationId) {
       nextStatus = 'active';
+    } else if (rotation.status === 'pending_confirmation') {
+      nextStatus = 'pending_confirmation';
     } else if (startDate > now) {
       nextStatus = 'upcoming';
     } else if (endDate < now) {
       nextStatus = 'completed';
+    } else {
+      nextStatus = 'active';
     }
 
     if (rotation.status !== nextStatus) {
@@ -423,7 +428,8 @@ const syncInternRotationStates = async (internId) => {
   }
 
   const current = rotations.find((rotation) => rotation._id.toString() === activeRotationId) || null;
-  const upcoming = rotations.filter((rotation) => rotation.status === 'upcoming');
+  const pending = rotations.filter((rotation) => rotation.status === 'pending_confirmation');
+  const upcoming = rotations.filter((rotation) => rotation.status === 'upcoming' || rotation.status === 'pending_confirmation');
   const completed = rotations.filter((rotation) => rotation.status === 'completed');
 
   intern.currentUnit = current?.unit || null;
@@ -431,7 +437,7 @@ const syncInternRotationStates = async (internId) => {
     const activeExtensionDays = Number(getRotationExtensionDays(current, current.unit));
     intern.status = activeExtensionDays > 0 ? 'extended' : 'active';
     intern.extensionDays = activeExtensionDays;
-  } else if (upcoming.length > 0) {
+  } else if (pending.length > 0 || upcoming.length > 0) {
     intern.status = 'active';
     intern.extensionDays = 0;
   } else {
@@ -612,7 +618,8 @@ router.get('/:id/schedule', async (req, res) => {
       .exec();
 
     const currentRotation = rawRotations.find((rotation) => rotation.status === 'active') || null;
-    const upcomingRotations = rawRotations.filter((rotation) => rotation.status === 'upcoming');
+    const pendingRotations = rawRotations.filter((rotation) => rotation.status === 'pending_confirmation');
+    const upcomingRotations = rawRotations.filter((rotation) => rotation.status === 'upcoming' || rotation.status === 'pending_confirmation');
     const completedRotations = rawRotations.filter((rotation) => rotation.status === 'completed');
 
     let progress = 'Not started';
@@ -623,6 +630,7 @@ router.get('/:id/schedule', async (req, res) => {
     }
 
     const current = currentRotation ? formatRotationForSchedule(currentRotation) : null;
+    const pending = pendingRotations.map(formatRotationForSchedule);
     const upcoming = upcomingRotations.map(formatRotationForSchedule);
     const completed = completedRotations.map(formatRotationForSchedule);
 
@@ -636,6 +644,7 @@ router.get('/:id/schedule', async (req, res) => {
     res.json({
       rotations: internView.rotations,
       current,
+      pending,
       upcoming,
       completed,
       currentUnit: current?.unit_name || 'Not started',
@@ -1195,7 +1204,7 @@ router.post('/:id/remove-extension', async (req, res) => {
   }
 });
 
-// POST /api/interns/:id/auto-advance - Auto-advance a specific intern's rotation
+// POST /api/interns/:id/auto-advance - Auto-advance a specific intern's rotation, creating pending confirmation instead of activating the next unit
 router.post('/:id/auto-advance', async (req, res) => {
   try {
     const internId = req.params.id;
@@ -1208,14 +1217,22 @@ router.post('/:id/auto-advance', async (req, res) => {
       return res.status(404).json({ error: 'Intern not found' });
     }
 
-    // Use the dynamic assignment service to properly advance and log spin
-    const { rotation } = await assignNextUnit(internId, { completeCurrent: true, now: new Date() });
+    const activeRotation = await Rotation.findOne({ intern: intern._id, status: 'active' })
+      .sort({ startDate: -1, createdAt: -1 })
+      .exec();
 
+    const pendingRotation = await ensurePendingConfirmation(intern._id, activeRotation, new Date());
     await ensureInternStatusIsCorrect(internId);
     await updateBatchStats().catch(() => {});
 
     const internView = await buildInternView(internId);
-    res.json({ success: true, autoAdvanced: true, intern: internView, rotation });
+    res.json({
+      success: true,
+      autoAdvanced: Boolean(pendingRotation),
+      pendingConfirmation: Boolean(pendingRotation),
+      intern: internView,
+      pendingRotation,
+    });
   } catch (err) {
     console.error('AUTO-ADVANCE ERROR:', err);
     res.status(500).json({ success: false, error: 'Failed to auto-advance intern' });

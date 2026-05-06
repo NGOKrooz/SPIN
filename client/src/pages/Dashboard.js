@@ -40,6 +40,20 @@ export default function Dashboard() {
   const activeInterns = interns?.filter(intern => intern.currentUnit) || [];
   const unassignedInterns = interns?.filter(intern => !intern.currentUnit) || [];
 
+  const pendingConfirmations = (interns || [])
+    .flatMap((intern) => {
+      return (intern.rotations || [])
+        .filter((rotation) => rotation.status === 'pending_confirmation')
+        .map((rotation) => ({
+          internId: intern.id || intern._id,
+          internName: intern.name,
+          fromUnit: intern.currentUnit?.name || 'Current assignment',
+          toUnit: rotation.unit?.name || 'Pending unit',
+          moveDate: rotation.startDate,
+          moveDateLabel: rotation.startDate ? new Date(rotation.startDate).toLocaleDateString('en-US') : 'TBD',
+        }));
+    });
+
   const upcomingMovements = buildUpcomingMovements(interns || [], units || [], {
     movementWindowDays: PREDICTIVE_WINDOW_DAYS,
     leavingSoonDays: PREDICTIVE_WINDOW_DAYS,
@@ -97,6 +111,39 @@ export default function Dashboard() {
 
       <div className="space-y-6">
         <RecentUpdates />
+
+        {pendingConfirmations.length > 0 && (
+          <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
+            <CardHeader>
+              <CardTitle>Pending Confirmations</CardTitle>
+              <CardDescription>Movements awaiting administrative approval before the next rotation starts</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-gray-500">
+                      <th className="py-2 pr-4">Intern</th>
+                      <th className="py-2 pr-4">From</th>
+                      <th className="py-2 pr-4">To</th>
+                      <th className="py-2">Start Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingConfirmations.map((movement) => (
+                      <tr key={`${movement.internId || movement.internName}-${movement.moveDateLabel}`} className="border-b last:border-b-0">
+                        <td className="py-2 pr-4 font-medium text-gray-900">{movement.internName}</td>
+                        <td className="py-2 pr-4 text-gray-700">{movement.fromUnit}</td>
+                        <td className="py-2 pr-4 text-gray-700">{movement.toUnit}</td>
+                        <td className="py-2 text-gray-600">{movement.moveDateLabel}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
           <CardHeader>
