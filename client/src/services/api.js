@@ -105,6 +105,7 @@ export const rotationsAPI = {
   fixEndDates: () => http.post('/rotations/fix-end-dates'),
   autoAdvance: () => http.post('/rotations/auto-advance'),
   acceptPending: (rotationId) => http.post(`/rotations/${rotationId}/accept`),
+  reassignPending: (rotationId, unitId) => http.post(`/rotations/${rotationId}/reassign`, { unitId }),
   refreshUpcoming: () => http.post('/rotations/refresh-upcoming'),
 };
 
@@ -177,6 +178,7 @@ export const api = {
   generateRotations: (startDate) => rotationsAPI.generate(startDate),
   autoAdvanceRotations: () => rotationsAPI.autoAdvance(),
   acceptPendingRotation: (rotationId) => rotationsAPI.acceptPending(rotationId),
+  reassignPendingRotation: (rotationId, unitId) => rotationsAPI.reassignPending(rotationId, unitId),
   refreshUpcomingRotations: () => rotationsAPI.refreshUpcoming(),
 
   // Activity

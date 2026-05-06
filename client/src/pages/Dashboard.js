@@ -5,6 +5,7 @@ import {
   Building2
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import { Button } from '../components/ui/button';
 import { api } from '../services/api';
 import RecentUpdates from '../components/RecentUpdates';
 import { buildUpcomingMovements, PREDICTIVE_WINDOW_DAYS } from '../lib/predictivePlanning';
@@ -44,15 +45,28 @@ export default function Dashboard() {
     .flatMap((intern) => {
       return (intern.rotations || [])
         .filter((rotation) => rotation.status === 'pending_confirmation')
-        .map((rotation) => ({
-          internId: intern.id || intern._id,
-          internName: intern.name,
-          fromUnit: intern.currentUnit?.name || 'Current assignment',
-          toUnit: rotation.unit?.name || 'Pending unit',
-          moveDate: rotation.startDate,
-          moveDateLabel: rotation.startDate ? new Date(rotation.startDate).toLocaleDateString('en-US') : 'TBD',
-        }));
+        .map((rotation) => {
+          const currentRotation = intern.rotations.find(r => r.status === 'active');
+          const startDate = new Date(rotation.startDate);
+          const today = new Date();
+          const daysInCurrent = currentRotation ? Math.floor((today - new Date(currentRotation.startDate)) / (1000 * 60 * 60 * 24)) + 1 : 0;
+          const duration = currentRotation?.duration || 20;
+
+          return {
+            rotationId: rotation._id || rotation.id,
+            internId: intern.id || intern._id,
+            internName: intern.name,
+            currentUnit: intern.currentUnit?.name || 'Current assignment',
+            nextUnit: rotation.unit?.name || 'Pending unit',
+            moveDate: rotation.startDate,
+            moveDateLabel: rotation.startDate ? new Date(rotation.startDate).toLocaleDateString('en-US') : 'TBD',
+            currentDays: daysInCurrent,
+            duration: duration,
+          };
+        });
     });
+
+  console.log("PENDING MOVES:", pendingConfirmations.length);
 
   const upcomingMovements = buildUpcomingMovements(interns || [], units || [], {
     movementWindowDays: PREDICTIVE_WINDOW_DAYS,
@@ -119,27 +133,57 @@ export default function Dashboard() {
               <CardDescription>Movements awaiting administrative approval before the next rotation starts</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-gray-500">
-                      <th className="py-2 pr-4">Intern</th>
-                      <th className="py-2 pr-4">From</th>
-                      <th className="py-2 pr-4">To</th>
-                      <th className="py-2">Start Date</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pendingConfirmations.map((movement) => (
-                      <tr key={`${movement.internId || movement.internName}-${movement.moveDateLabel}`} className="border-b last:border-b-0">
-                        <td className="py-2 pr-4 font-medium text-gray-900">{movement.internName}</td>
-                        <td className="py-2 pr-4 text-gray-700">{movement.fromUnit}</td>
-                        <td className="py-2 pr-4 text-gray-700">{movement.toUnit}</td>
-                        <td className="py-2 text-gray-600">{movement.moveDateLabel}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="space-y-4">
+                {pendingConfirmations.map((movement) => (
+                  <div key={movement.rotationId} className="border rounded-lg p-4 bg-gray-50">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <h4 className="font-semibold text-gray-900">{movement.internName}</h4>
+                        <p className="text-sm text-gray-600">
+                          Current Unit: {movement.currentUnit} (Day {movement.currentDays}/{movement.duration})
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          Next Unit: {movement.nextUnit}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          Start Date: {movement.moveDateLabel}
+                        </p>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Button
+                          size="sm"
+                          onClick={async () => {
+                            try {
+                              await api.acceptPendingRotation(movement.rotationId);
+                              window.location.reload();
+                            } catch (err) {
+                              alert('Failed to accept movement: ' + err.message);
+                            }
+                          }}
+                        >
+                          Accept
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={async () => {
+                            const newUnitId = prompt('Enter new unit ID:');
+                            if (newUnitId) {
+                              try {
+                                await api.reassignPendingRotation(movement.rotationId, newUnitId);
+                                window.location.reload();
+                              } catch (err) {
+                                alert('Failed to reassign: ' + err.message);
+                              }
+                            }
+                          }}
+                        >
+                          Reassign
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>

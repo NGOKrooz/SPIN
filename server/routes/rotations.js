@@ -3,6 +3,7 @@ const { body, validationResult } = require('express-validator');
 
 const Rotation = require('../models/Rotation');
 const Intern = require('../models/Intern');
+const Unit = require('../models/Unit');
 const {
   getCurrentRotations,
   getUpcomingRotations,
@@ -234,6 +235,42 @@ router.post('/:id/accept', async (req, res) => {
   } catch (err) {
     console.error('Error accepting rotation:', err);
     res.status(500).json({ error: 'Failed to accept pending rotation' });
+  }
+});
+
+// POST /api/rotations/:id/reassign - Reassign a pending confirmation movement to a different unit
+router.post('/:id/reassign', async (req, res) => {
+  try {
+    const rotationId = req.params.id;
+    const { unitId } = req.body;
+
+    if (!rotationId || !unitId) {
+      return res.status(400).json({ error: 'Rotation ID and unitId are required' });
+    }
+
+    const pendingRotation = await Rotation.findById(rotationId).populate('intern').populate('unit').exec();
+    if (!pendingRotation) {
+      return res.status(404).json({ error: 'Rotation not found' });
+    }
+
+    if (pendingRotation.status !== 'pending_confirmation') {
+      return res.status(400).json({ error: 'Rotation is not pending confirmation' });
+    }
+
+    const newUnit = await Unit.findById(unitId).exec();
+    if (!newUnit) {
+      return res.status(404).json({ error: 'New unit not found' });
+    }
+
+    pendingRotation.unit = unitId;
+    await pendingRotation.save();
+
+    const updatedRotation = await Rotation.findById(rotationId).populate('intern').populate('unit').exec();
+
+    res.json({ success: true, rotation: updatedRotation });
+  } catch (err) {
+    console.error('Error reassigning rotation:', err);
+    res.status(500).json({ error: 'Failed to reassign pending rotation' });
   }
 });
 
