@@ -5,7 +5,6 @@ import {
   Building2
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { Button } from '../components/ui/button';
 import { api } from '../services/api';
 import RecentUpdates from '../components/RecentUpdates';
 import { buildUpcomingMovements, PREDICTIVE_WINDOW_DAYS } from '../lib/predictivePlanning';
@@ -40,33 +39,6 @@ export default function Dashboard() {
 
   const activeInterns = interns?.filter(intern => intern.currentUnit) || [];
   const unassignedInterns = interns?.filter(intern => !intern.currentUnit) || [];
-
-  const pendingConfirmations = (interns || [])
-    .flatMap((intern) => {
-      return (intern.rotations || [])
-        .filter((rotation) => rotation.status === 'pending_confirmation')
-        .map((rotation) => {
-          const currentRotation = intern.rotations.find(r => r.status === 'active');
-          const startDate = new Date(rotation.startDate);
-          const today = new Date();
-          const daysInCurrent = currentRotation ? Math.floor((today - new Date(currentRotation.startDate)) / (1000 * 60 * 60 * 24)) + 1 : 0;
-          const duration = currentRotation?.duration || 20;
-
-          return {
-            rotationId: rotation._id || rotation.id,
-            internId: intern.id || intern._id,
-            internName: intern.name,
-            currentUnit: intern.currentUnit?.name || 'Current assignment',
-            nextUnit: rotation.unit?.name || 'Pending unit',
-            moveDate: rotation.startDate,
-            moveDateLabel: rotation.startDate ? new Date(rotation.startDate).toLocaleDateString('en-US') : 'TBD',
-            currentDays: daysInCurrent,
-            duration: duration,
-          };
-        });
-    });
-
-  console.log("PENDING MOVES:", pendingConfirmations.length);
 
   const upcomingMovements = buildUpcomingMovements(interns || [], units || [], {
     movementWindowDays: PREDICTIVE_WINDOW_DAYS,
@@ -125,116 +97,6 @@ export default function Dashboard() {
 
       <div className="space-y-6">
         <RecentUpdates />
-
-        {pendingConfirmations.length > 0 && (
-          <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
-            <CardHeader>
-              <CardTitle>Pending Confirmations</CardTitle>
-              <CardDescription>Movements awaiting administrative approval before the next rotation starts</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {pendingConfirmations.map((movement) => (
-                  <div key={movement.rotationId} className="border rounded-lg p-4 bg-gray-50">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <h4 className="font-semibold text-gray-900">{movement.internName}</h4>
-                        <p className="text-sm text-gray-600">
-                          Current Unit: {movement.currentUnit} (Day {movement.currentDays}/{movement.duration})
-                        </p>
-                        <p className="text-sm text-gray-600">
-                          Next Unit: {movement.nextUnit}
-                        </p>
-                        <p className="text-sm text-gray-600">
-                          Start Date: {movement.moveDateLabel}
-                        </p>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Button
-                          size="sm"
-                          onClick={async () => {
-                            try {
-                              await api.acceptPendingRotation(movement.rotationId);
-                              window.location.reload();
-                            } catch (err) {
-                              alert('Failed to accept movement: ' + err.message);
-                            }
-                          }}
-                        >
-                          Accept
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={async () => {
-                            const newUnitId = prompt('Enter new unit ID:');
-                            if (newUnitId) {
-                              try {
-                                await api.reassignPendingRotation(movement.rotationId, newUnitId);
-                                window.location.reload();
-                              } catch (err) {
-                                alert('Failed to reassign: ' + err.message);
-                              }
-                            }
-                          }}
-                        >
-                          Reassign
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* DEBUG SECTION */}
-        <Card className="border-2 border-red-500 shadow-sm bg-white/70 backdrop-blur">
-          <CardHeader>
-            <CardTitle className="text-red-600">DEBUG PENDING MOVEMENTS</CardTitle>
-            <CardDescription>Use these buttons to force test the pending system</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex space-x-2">
-                <Button
-                  variant="destructive"
-                  onClick={async () => {
-                    try {
-                      const result = await api.debugForcePendingRotation();
-                      alert('Created: ' + result.message);
-                      window.location.reload();
-                    } catch (err) {
-                      alert('Failed: ' + err.message);
-                    }
-                  }}
-                >
-                  Force Create Pending
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={async () => {
-                    try {
-                      const result = await api.debugCheckPendingRotations();
-                      alert(`Pending count: ${result.count}`);
-                      console.log('Pending rotations:', result.rotations);
-                    } catch (err) {
-                      alert('Failed: ' + err.message);
-                    }
-                  }}
-                >
-                  Check Pending Count
-                </Button>
-              </div>
-              {pendingConfirmations.length === 0 ? (
-                <p className="text-red-600 font-semibold">No pending movements found - Click "Force Create Pending" to test</p>
-              ) : (
-                <p className="text-green-600 font-semibold">Found {pendingConfirmations.length} pending movement(s) - System working!</p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
 
         <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
           <CardHeader>

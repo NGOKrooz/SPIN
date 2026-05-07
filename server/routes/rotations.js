@@ -2,8 +2,6 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 
 const Rotation = require('../models/Rotation');
-const Intern = require('../models/Intern');
-const Unit = require('../models/Unit');
 const {
   getCurrentRotations,
   getUpcomingRotations,
@@ -13,7 +11,7 @@ const {
   deleteRotation,
 } = require('../services/rotationService');
 const { reshuffleAllUpcoming } = require('../services/rotationPlanService');
-const { assignNextUnit, ensurePendingConfirmation } = require('../services/dynamicAssignmentService');
+const { assignNextUnit } = require('../services/dynamicAssignmentService');
 const { logRecentUpdateSafe } = require('../services/recentUpdatesService');
 
 const router = express.Router();
@@ -170,7 +168,7 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// POST /api/rotations/auto-advance - Trigger auto-advance and create pending confirmation movements when appropriate
+// POST /api/rotations/auto-advance - Trigger auto-advance
 router.post('/auto-advance', async (req, res) => {
   try {
     const { internId } = req.body;
@@ -178,164 +176,12 @@ router.post('/auto-advance', async (req, res) => {
       return res.status(400).json({ error: 'internId is required' });
     }
 
-    const intern = await Intern.findById(internId).exec();
-    if (!intern) {
-      return res.status(404).json({ error: 'Intern not found' });
-    }
-
-    const activeRotation = await Rotation.findOne({ intern: intern._id, status: 'active' })
-      .sort({ startDate: -1, createdAt: -1 })
-      .exec();
-
-    const pendingRotation = await ensurePendingConfirmation(intern._id, activeRotation, new Date());
-    res.json({
-      autoAdvanced: Boolean(pendingRotation),
-      pendingConfirmation: Boolean(pendingRotation),
-      pendingRotation,
-    });
+    // Use the dynamic assignment service to properly advance and log spin
+    const { rotation } = await assignNextUnit(internId, { completeCurrent: true, now: new Date() });
+    res.json({ autoAdvanced: true, rotation });
   } catch (err) {
     console.error('Error auto-advancing rotation:', err);
     res.status(500).json({ error: 'Failed to auto-advance rotation' });
-  }
-});
-
-// POST /api/rotations/:id/accept - Accept a pending confirmation movement and activate it
-router.post('/:id/accept', async (req, res) => {
-  try {
-    const rotationId = req.params.id;
-    if (!rotationId) {
-      return res.status(400).json({ error: 'Rotation ID is required' });
-    }
-
-    const pendingRotation = await Rotation.findById(rotationId).populate('intern').populate('unit').exec();
-    if (!pendingRotation) {
-      return res.status(404).json({ error: 'Rotation not found' });
-    }
-
-    if (pendingRotation.status !== 'pending_confirmation') {
-      return res.status(400).json({ error: 'Rotation is not pending confirmation' });
-    }
-
-    const activeRotation = await Rotation.findOne({ intern: pendingRotation.intern._id, status: 'active' })
-      .sort({ startDate: -1, createdAt: -1 })
-      .exec();
-
-    if (activeRotation) {
-      activeRotation.status = 'completed';
-      await activeRotation.save();
-    }
-
-    pendingRotation.status = 'active';
-    await pendingRotation.save();
-
-    await Intern.findByIdAndUpdate(pendingRotation.intern._id, { currentUnit: pendingRotation.unit._id }).exec();
-    const acceptedRotation = await Rotation.findById(rotationId).populate('intern').populate('unit').exec();
-
-    res.json({ success: true, rotation: acceptedRotation });
-  } catch (err) {
-    console.error('Error accepting rotation:', err);
-    res.status(500).json({ error: 'Failed to accept pending rotation' });
-  }
-});
-
-// POST /api/rotations/:id/reassign - Reassign a pending confirmation movement to a different unit
-router.post('/:id/reassign', async (req, res) => {
-  try {
-    const rotationId = req.params.id;
-    const { unitId } = req.body;
-
-    if (!rotationId || !unitId) {
-      return res.status(400).json({ error: 'Rotation ID and unitId are required' });
-    }
-
-    const pendingRotation = await Rotation.findById(rotationId).populate('intern').populate('unit').exec();
-    if (!pendingRotation) {
-      return res.status(404).json({ error: 'Rotation not found' });
-    }
-
-    if (pendingRotation.status !== 'pending_confirmation') {
-      return res.status(400).json({ error: 'Rotation is not pending confirmation' });
-    }
-
-    const newUnit = await Unit.findById(unitId).exec();
-    if (!newUnit) {
-      return res.status(404).json({ error: 'New unit not found' });
-    }
-
-    pendingRotation.unit = unitId;
-    await pendingRotation.save();
-
-    const updatedRotation = await Rotation.findById(rotationId).populate('intern').populate('unit').exec();
-
-    res.json({ success: true, rotation: updatedRotation });
-  } catch (err) {
-    console.error('Error reassigning rotation:', err);
-    res.status(500).json({ error: 'Failed to reassign pending rotation' });
-  }
-});
-
-// GET /api/rotations/debug/pending - DEBUG: Check pending rotations
-router.get('/debug/pending', async (req, res) => {
-  try {
-    const pendingRotations = await Rotation.find({ status: 'pending_confirmation' })
-      .populate('intern')
-      .populate('unit')
-      .exec();
-
-    console.log('DEBUG: PENDING COUNT:', pendingRotations.length);
-
-    res.json({
-      count: pendingRotations.length,
-      rotations: pendingRotations,
-    });
-  } catch (err) {
-    console.error('Error checking pending rotations:', err);
-    res.status(500).json({ error: 'Failed to check pending rotations' });
-  }
-});
-
-// POST /api/rotations/debug/force-pending - DEBUG: Force create a pending rotation for testing
-router.post('/debug/force-pending', async (req, res) => {
-  try {
-    const intern = await Intern.findOne({}).exec();
-    if (!intern) {
-      return res.status(404).json({ error: 'No interns found' });
-    }
-
-    const units = await Unit.find({}).exec();
-    if (units.length === 0) {
-      return res.status(404).json({ error: 'No units found' });
-    }
-
-    const current = await Rotation.findOne({ intern: intern._id, status: 'active' })
-      .sort({ startDate: -1, createdAt: -1 })
-      .exec();
-
-    if (!current) {
-      return res.status(404).json({ error: 'No active rotation for intern' });
-    }
-
-    const nextUnit = units.find(u => u._id.toString() !== current.unit.toString()) || units[0];
-
-    const pendingRotation = await Rotation.create({
-      intern: intern._id,
-      unit: nextUnit._id,
-      startDate: new Date(),
-      endDate: new Date(),
-      status: 'pending_confirmation',
-      duration: 20,
-    });
-
-    console.log('DEBUG: Created pending rotation for intern:', intern.name, 'to unit:', nextUnit.name);
-
-    res.json({
-      success: true,
-      message: `Created pending rotation for ${intern.name} to ${nextUnit.name}`,
-      rotation: pendingRotation,
-    });
-  } catch (err) {
-    console.error('Error forcing pending rotation:', err);
-    res.status(500).json({ error: 'Failed to force pending rotation' });
   }
 });
 
