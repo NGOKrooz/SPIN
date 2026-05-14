@@ -89,6 +89,12 @@ export default function Dashboard() {
   console.log('[PHASE 1] Movement Queue count:', movementQueue.length);
   console.log('[PHASE 1] Nearing completion interns:', nearingCompletionInterns.map((item) => item.internName));
   console.log('[PHASE 1] Awaiting confirmation interns:', awaitingConfirmationInterns.map((item) => item.internName));
+  movementQueue.forEach((item) => {
+    console.log('QUEUE ITEM:', item);
+    if (!item.nextAssignment) {
+      console.warn('QUEUE ITEM MISSING nextAssignment:', item.internId, item.internName);
+    }
+  });
 
   const stats = [
     {
@@ -214,15 +220,15 @@ export default function Dashboard() {
                       </div>
 
                       <div className="space-y-3">
-                        {item.status === 'awaiting_confirmation' && (
-                          <>
-                            <div>
-                              <div className="text-sm text-gray-500 font-medium">Next Unit</div>
-                              <div className="text-lg font-semibold text-gray-900">
-                                {item.nextUnit || 'Pending Assignment'}
-                              </div>
-                            </div>
+                        <div>
+                          <div className="text-sm text-gray-500 font-medium">Next Unit</div>
+                          <div className="text-lg font-semibold text-gray-900">
+                            {item.nextAssignment?.unit?.name || item.nextUnit || 'Next unit not assigned'}
+                          </div>
+                        </div>
 
+                        {item.isAwaitingConfirmation && item.nextAssignment && (
+                          <>
                             <div className="flex gap-2 pt-2">
                               <button
                                 className="flex items-center gap-2 flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
