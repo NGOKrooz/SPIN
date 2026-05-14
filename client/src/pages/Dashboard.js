@@ -253,11 +253,6 @@ export default function Dashboard() {
                               {reassignNextMutation.isPending ? 'Reassigning...' : 'Reassign'}
                             </button>
                           </div>
-                          <div className="text-xs text-gray-500">
-                            {item.isOverdue
-                              ? `Overdue by ${Math.max(0, -item.remainingDays)} day${Math.max(0, -item.remainingDays) === 1 ? '' : 's'}`
-                              : 'Buttons are visible early; movement can be confirmed once overdue.'}
-                          </div>
                         </>
                       </div>
                     </div>
