@@ -9,6 +9,8 @@ const {
   createManualRotation,
   updateRotation,
   deleteRotation,
+  acceptMovement,
+  reassignNextUnit,
 } = require('../services/rotationService');
 const { reshuffleAllUpcoming } = require('../services/rotationPlanService');
 const { assignNextUnit } = require('../services/dynamicAssignmentService');
@@ -168,21 +170,60 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// POST /api/rotations/auto-advance - Trigger auto-advance
-router.post('/auto-advance', async (req, res) => {
+// POST /api/rotations/:internId/accept-movement - PHASE 2: Accept movement for an intern
+router.post('/:internId/accept-movement', async (req, res) => {
   try {
-    const { internId } = req.body;
-    if (!internId) {
-      return res.status(400).json({ error: 'internId is required' });
+    const { internId } = req.params;
+    
+    const result = await acceptMovement(internId);
+    
+    // Log the recent update
+    await logRecentUpdateSafe('movement_accepted', `${result.internName} moved from ${result.fromUnit} to ${result.toUnit}`);
+    
+    res.json({
+      success: true,
+      message: `Movement accepted for ${result.internName}`,
+      data: result
+    });
+  } catch (err) {
+    console.error('Error accepting movement:', err);
+    res.status(500).json({ error: err.message || 'Failed to accept movement' });
+  }
+});
+
+// POST /api/rotations/:internId/reassign-next - PHASE 3: Reassign next unit for an intern
+router.post('/:internId/reassign-next', async (req, res) => {
+  try {
+    const { internId } = req.params;
+    const { newUnitId } = req.body;
+
+    if (!newUnitId) {
+      return res.status(400).json({ error: 'newUnitId is required' });
     }
 
-    // Use the dynamic assignment service to properly advance and log spin
-    const { rotation } = await assignNextUnit(internId, { completeCurrent: true, now: new Date() });
-    res.json({ autoAdvanced: true, rotation });
+    const result = await reassignNextUnit(internId, newUnitId);
+
+    // Log the recent update
+    await logRecentUpdateSafe('unit_reassigned', `${result.internName} reassigned from ${result.previousUnit} to ${result.newUnit}`);
+
+    res.json({
+      success: true,
+      message: `Next unit reassigned for ${result.internName}`,
+      data: result
+    });
   } catch (err) {
-    console.error('Error auto-advancing rotation:', err);
-    res.status(500).json({ error: 'Failed to auto-advance rotation' });
+    console.error('Error reassigning next unit:', err);
+    res.status(500).json({ error: err.message || 'Failed to reassign next unit' });
   }
+});
+
+// POST /api/rotations/auto-advance - DISABLED IN PHASE 1
+// ⚠️ Auto-advance is disabled. Interns use confirmation-based movement instead.
+router.post('/auto-advance', async (req, res) => {
+  return res.status(501).json({ 
+    error: 'Auto-advance is disabled in Phase 1. Use confirmation-based movement system instead.',
+    phase: 'PHASE 1: Confirmation-Based Movement'
+  });
 });
 
 module.exports = router;

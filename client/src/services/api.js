@@ -104,8 +104,8 @@ export const rotationsAPI = {
   generate: (startDate) => http.post('/rotations/generate', { start_date: startDate }),
   fixEndDates: () => http.post('/rotations/fix-end-dates'),
   autoAdvance: () => http.post('/rotations/auto-advance'),
-  refreshUpcoming: () => http.post('/rotations/refresh-upcoming'),
-};
+  refreshUpcoming: () => http.post('/rotations/refresh-upcoming'),  acceptMovement: (internId) => http.post(`/rotations/${internId}/accept-movement`),
+  reassignNext: (internId, newUnitId) => http.post(`/rotations/${internId}/reassign-next`, { newUnitId }),};
 
 // Auto-advance API for specific intern
 export const autoAdvanceAPI = {
@@ -176,6 +176,8 @@ export const api = {
   generateRotations: (startDate) => rotationsAPI.generate(startDate),
   autoAdvanceRotations: () => rotationsAPI.autoAdvance(),
   refreshUpcomingRotations: () => rotationsAPI.refreshUpcoming(),
+  acceptMovement: (internId) => rotationsAPI.acceptMovement(internId),
+  reassignNext: (internId, newUnitId) => rotationsAPI.reassignNext(internId, newUnitId),
 
   // Activity
   getRecentActivities: (limit) => activityAPI.getRecent(limit),

@@ -9,6 +9,7 @@ const { ensureInternStatusIsCorrect } = require('../services/internService');
 const { ACTIVITY_TYPES, logActivityEventSafe } = require('../services/recentUpdatesService');
 const { createExtensionReason } = require('../services/extensionService');
 const { buildInternView, buildInternViews } = require('../services/internViewService');
+const { checkAndMarkAwaitingConfirmation } = require('../services/rotationService');
 const {
   getUnitDuration,
   recalculateEndDate,
@@ -400,8 +401,10 @@ const syncInternRotationStates = async (internId) => {
     const startDate = startOfDay(rotation.startDate);
     const endDate = startOfDay(rotation.endDate);
 
-    let nextStatus = 'completed';
-    if (activeRotationId && rotation._id.toString() === activeRotationId) {
+    let nextStatus = rotation.status;
+    if (rotation.status === 'awaiting_confirmation') {
+      nextStatus = 'awaiting_confirmation';
+    } else if (activeRotationId && rotation._id.toString() === activeRotationId) {
       nextStatus = 'active';
     } else if (startDate > now) {
       nextStatus = 'upcoming';
@@ -424,6 +427,7 @@ const syncInternRotationStates = async (internId) => {
 
   const current = rotations.find((rotation) => rotation._id.toString() === activeRotationId) || null;
   const upcoming = rotations.filter((rotation) => rotation.status === 'upcoming');
+  const awaitingConfirmation = rotations.filter((rotation) => rotation.status === 'awaiting_confirmation');
   const completed = rotations.filter((rotation) => rotation.status === 'completed');
 
   intern.currentUnit = current?.unit || null;
@@ -431,7 +435,7 @@ const syncInternRotationStates = async (internId) => {
     const activeExtensionDays = Number(getRotationExtensionDays(current, current.unit));
     intern.status = activeExtensionDays > 0 ? 'extended' : 'active';
     intern.extensionDays = activeExtensionDays;
-  } else if (upcoming.length > 0) {
+  } else if (upcoming.length > 0 || awaitingConfirmation.length > 0) {
     intern.status = 'active';
     intern.extensionDays = 0;
   } else {
@@ -576,6 +580,14 @@ router.get('/', async (req, res) => {
   try {
     const sortDirection = getInternSortDirection(req.query.sort);
     const internIds = await Intern.find().select('_id').lean().exec();
+    
+    // PHASE 1: Check and mark awaiting confirmations for all interns
+    await Promise.all(internIds.map(({ _id }) => 
+      checkAndMarkAwaitingConfirmation(_id).catch((error) => {
+        console.error('❌ Error checking awaiting confirmation for intern:', _id?.toString?.() || _id, error);
+      })
+    ));
+    
     await Promise.all(internIds.map(({ _id }) => syncInternRotationStates(_id).catch((error) => {
       console.error('❌ Error syncing intern rotation state:', _id?.toString?.() || _id, error);
     })));
@@ -657,6 +669,11 @@ router.get('/:id/schedule', async (req, res) => {
 // GET /api/interns/:id - Get a single intern
 router.get('/:id', async (req, res) => {
   try {
+    // PHASE 1: Check and mark awaiting confirmation
+    await checkAndMarkAwaitingConfirmation(req.params.id).catch((error) => {
+      console.error('❌ Error checking awaiting confirmation for intern:', req.params.id, error);
+    });
+    
     await syncInternRotationStates(req.params.id);
     const internView = await buildInternView(req.params.id);
     res.json(internView);
@@ -1195,31 +1212,13 @@ router.post('/:id/remove-extension', async (req, res) => {
   }
 });
 
-// POST /api/interns/:id/auto-advance - Auto-advance a specific intern's rotation
+// POST /api/interns/:id/auto-advance - DISABLED IN PHASE 1
+// ⚠️ Auto-advance is disabled. Interns use confirmation-based movement instead.
 router.post('/:id/auto-advance', async (req, res) => {
-  try {
-    const internId = req.params.id;
-    if (!internId || !mongoose.Types.ObjectId.isValid(internId)) {
-      return res.status(400).json({ error: 'Valid intern ID is required' });
-    }
-
-    const intern = await Intern.findById(internId).exec();
-    if (!intern) {
-      return res.status(404).json({ error: 'Intern not found' });
-    }
-
-    // Use the dynamic assignment service to properly advance and log spin
-    const { rotation } = await assignNextUnit(internId, { completeCurrent: true, now: new Date() });
-
-    await ensureInternStatusIsCorrect(internId);
-    await updateBatchStats().catch(() => {});
-
-    const internView = await buildInternView(internId);
-    res.json({ success: true, autoAdvanced: true, intern: internView, rotation });
-  } catch (err) {
-    console.error('AUTO-ADVANCE ERROR:', err);
-    res.status(500).json({ success: false, error: 'Failed to auto-advance intern' });
-  }
+  return res.status(501).json({ 
+    error: 'Auto-advance is disabled in Phase 1. Use confirmation-based movement system instead.',
+    phase: 'PHASE 1: Confirmation-Based Movement'
+  });
 });
 
 module.exports = router;

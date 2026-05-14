@@ -590,12 +590,21 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
   if (activeRotation) {
     const startDate = activeRotation.startDate ? startOfDay(activeRotation.startDate) : null;
     const endDate = activeRotation.endDate ? startOfDay(activeRotation.endDate) : null;
+    const awaitingRotation = await Rotation.findOne({ intern: intern._id, status: 'awaiting_confirmation' })
+      .sort({ startDate: 1, createdAt: 1 })
+      .exec();
 
     if (startDate && today < startDate) {
       activeRotation.status = 'upcoming';
       await activeRotation.save();
     } else if (endDate && today > endDate) {
-      return assignNextUnit(intern, { completeCurrent: true, now: today });
+      // PHASE 4: Preserve overdue active assignments when a next movement is already staged.
+      if (awaitingRotation) {
+        return { rotation: activeRotation, unit: activeRotation.unit, wasReset: false, usedOverflow: false };
+      }
+
+      // PHASE 4: Do not auto-advance expired active rotations by default.
+      return { rotation: activeRotation, unit: activeRotation.unit, wasReset: false, usedOverflow: false };
     } else {
       const activeExtensionDays = Number(activeRotation.extensionDays || 0);
       const desiredStatus = activeExtensionDays > 0 ? 'extended' : 'active';

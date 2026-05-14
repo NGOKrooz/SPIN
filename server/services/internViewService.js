@@ -19,12 +19,9 @@ const calculateElapsedDays = (startDate, durationDays, todayDate = new Date()) =
   if (today < start) return 0;
 
   const elapsedDays = Math.floor((today.getTime() - start.getTime()) / DAY_IN_MS) + 1;
-  const parsedDuration = Number(durationDays);
 
-  if (Number.isFinite(parsedDuration) && parsedDuration > 0) {
-    return Math.max(0, Math.min(parsedDuration, elapsedDays));
-  }
-
+  // PHASE 1: Allow day count to exceed planned duration
+  // This shows actual days (21/21, 22/21, 25/21) to reflect delayed reporting
   return Math.max(0, elapsedDays);
 };
 
@@ -100,7 +97,7 @@ const toIsoString = (date) => {
 };
 
 const getRotationStatus = (rotation, today = new Date()) => {
-  if (rotation?.status === 'active' || rotation?.status === 'upcoming' || rotation?.status === 'completed') {
+  if (rotation?.status === 'active' || rotation?.status === 'upcoming' || rotation?.status === 'completed' || rotation?.status === 'awaiting_confirmation') {
     return rotation.status;
   }
 
@@ -168,6 +165,7 @@ const formatIntern = (intern, rotations = []) => {
 
   const currentRotation = formattedRotations.find(r => r.status === 'active');
   const upcomingRotations = formattedRotations.filter(r => r.status === 'upcoming');
+  const awaitingConfirmationRotations = formattedRotations.filter(r => r.status === 'awaiting_confirmation');
   const completedRotations = formattedRotations.filter(r => r.status === 'completed');
 
   // Compute status fields
@@ -226,6 +224,7 @@ const formatIntern = (intern, rotations = []) => {
     currentUnit,
     rotations: formattedRotations,
     upcomingUnits: upcomingRotations,
+    awaitingConfirmationUnits: awaitingConfirmationRotations,
     completedUnits: completedRotations,
     createdAt: toIsoString(intern.createdAt),
     updatedAt: toIsoString(intern.updatedAt),

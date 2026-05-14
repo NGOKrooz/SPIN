@@ -563,14 +563,28 @@ async function reshuffleAllUpcoming() {
     }
 
     const completedIds = await getCompletedUnitIds(intern._id);
+    const awaitingRotations = await Rotation.find({ intern: intern._id, status: 'awaiting_confirmation' })
+      .select('unit')
+      .exec();
     await Rotation.deleteMany({ intern: intern._id, status: 'upcoming' }).exec();
 
     const createdUpcoming = [];
     const usedUnitIds = new Set(completedIds);
     if (currentUnitId) usedUnitIds.add(currentUnitId);
+    for (const awaiting of awaitingRotations) {
+      const awaitingUnitId = awaiting.unit?.toString?.() || null;
+      if (awaitingUnitId) {
+        usedUnitIds.add(awaitingUnitId);
+      }
+    }
 
     while (true) {
-      const nextSelection = selectNextUnit(units, trueLoad, completedIds, currentUnitId, DEFAULT_CAPACITY);
+      const availableUnits = units.filter((unit) => !usedUnitIds.has(String(unit._id)));
+      if (availableUnits.length === 0) {
+        break;
+      }
+
+      const nextSelection = selectNextUnit(availableUnits, trueLoad, completedIds, currentUnitId, DEFAULT_CAPACITY);
       if (!nextSelection || !nextSelection.unit) {
         break;
       }
