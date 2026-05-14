@@ -6,6 +6,7 @@ const Unit = require('../models/Unit');
 
 const DEFAULT_CAPACITY = 4;
 const DEFAULT_DURATION = 20;
+const DAY_IN_MS = 1000 * 60 * 60 * 24;
 const LEAVING_SOON_DAYS = 5;
 const MOVEMENT_WINDOW_DAYS = 7;
 const RECENT_INCOMING_DAYS = 7;
@@ -45,6 +46,62 @@ const getRotationWindow = (startDateLike, durationLike) => {
     endDate,
     duration: safeDuration,
   };
+};
+
+const getRotationManualExtensionDays = (rotation) => {
+  const rawManual = Number(rotation?.manualExtensionDays);
+  const rawAuto = Number(rotation?.autoExtensionDays);
+  const totalExtensionDays = Number(rotation?.extensionDays);
+
+  if (Number.isFinite(rawManual) && rawManual >= 0 && Number.isFinite(rawAuto) && rawAuto >= 0) {
+    if (rawManual === 0 && rawAuto === 0 && Number.isFinite(totalExtensionDays) && totalExtensionDays > 0) {
+      return totalExtensionDays;
+    }
+    return rawManual;
+  }
+
+  if (Number.isFinite(rawManual) && rawManual >= 0) {
+    return rawManual;
+  }
+
+  if (Number.isFinite(totalExtensionDays) && totalExtensionDays >= 0) {
+    return totalExtensionDays;
+  }
+
+  return 0;
+};
+
+const getRotationAutoExtensionDays = (rotation) => {
+  const rawAuto = Number(rotation?.autoExtensionDays);
+  if (Number.isFinite(rawAuto) && rawAuto >= 0) {
+    return rawAuto;
+  }
+  return 0;
+};
+
+const getRotationTotalExtensionDays = (rotation) => {
+  if (rotation?.manualExtensionDays !== undefined || rotation?.autoExtensionDays !== undefined) {
+    return getRotationManualExtensionDays(rotation) + getRotationAutoExtensionDays(rotation);
+  }
+  const rawExtensionDays = Number(rotation?.extensionDays);
+  return Number.isFinite(rawExtensionDays) && rawExtensionDays >= 0 ? rawExtensionDays : 0;
+};
+
+const shiftFutureRotations = async (internId, pivotEndDate, dayDelta, excludeRotationIds = []) => {
+  if (!pivotEndDate || !Number.isFinite(Number(dayDelta)) || dayDelta === 0) return;
+  const pivot = startOfDay(pivotEndDate);
+  const futureRotations = await Rotation.find({
+    intern: internId,
+    startDate: { $gt: pivot },
+    _id: { $nin: excludeRotationIds },
+  }).exec();
+
+  for (const rotation of futureRotations) {
+    if (rotation.startDate) rotation.startDate = addDays(rotation.startDate, dayDelta);
+    if (rotation.endDate) rotation.endDate = addDays(rotation.endDate, dayDelta);
+    if (rotation.actualEndDate) rotation.actualEndDate = addDays(rotation.actualEndDate, dayDelta);
+    await rotation.save();
+  }
 };
 
 /**
@@ -600,23 +657,51 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
     } else if (endDate && today > endDate) {
       // PHASE 4: Preserve overdue active assignments when a next movement is already staged.
       if (awaitingRotation) {
+        const overdueDays = Math.max(0, Math.floor((today.getTime() - endDate.getTime()) / DAY_IN_MS));
+        if (overdueDays > 0) {
+          const manualExtensionDays = getRotationManualExtensionDays(activeRotation);
+          const autoExtensionDays = getRotationAutoExtensionDays(activeRotation) + overdueDays;
+          activeRotation.manualExtensionDays = manualExtensionDays;
+          activeRotation.autoExtensionDays = autoExtensionDays;
+          activeRotation.extensionDays = manualExtensionDays + autoExtensionDays;
+          activeRotation.duration = Number(activeRotation.duration || 0) + overdueDays;
+          activeRotation.endDate = addDays(endDate, overdueDays);
+          await activeRotation.save();
+          await shiftFutureRotations(intern._id, endDate, overdueDays, [activeRotation._id]);
+
+          if (intern) {
+            intern.currentUnit = activeRotation.unit || null;
+            intern.status = 'extended';
+            intern.manualExtensionDays = manualExtensionDays;
+            intern.autoExtensionDays = autoExtensionDays;
+            intern.extensionDays = manualExtensionDays + autoExtensionDays;
+            intern.totalExtensionDays = Number(intern.totalExtensionDays || 0) + overdueDays;
+            await intern.save();
+          }
+        }
+
         return { rotation: activeRotation, unit: activeRotation.unit, wasReset: false, usedOverflow: false };
       }
 
       // PHASE 4: Do not auto-advance expired active rotations by default.
       return { rotation: activeRotation, unit: activeRotation.unit, wasReset: false, usedOverflow: false };
     } else {
-      const activeExtensionDays = Number(activeRotation.extensionDays || 0);
+      const activeExtensionDays = getRotationTotalExtensionDays(activeRotation);
       const desiredStatus = activeExtensionDays > 0 ? 'extended' : 'active';
       const currentUnitId = activeRotation.unit?.toString?.() || null;
       const hasChanges = String(intern.currentUnit || '') !== String(currentUnitId || '')
         || intern.status !== desiredStatus
-        || Number(intern.extensionDays || 0) !== activeExtensionDays;
+        || Number(intern.extensionDays || 0) !== activeExtensionDays
+        || Number(intern.manualExtensionDays || 0) !== getRotationManualExtensionDays(activeRotation)
+        || Number(intern.autoExtensionDays || 0) !== getRotationAutoExtensionDays(activeRotation);
 
       if (hasChanges) {
         intern.currentUnit = activeRotation.unit || null;
         intern.status = desiredStatus;
+        intern.manualExtensionDays = getRotationManualExtensionDays(activeRotation);
+        intern.autoExtensionDays = getRotationAutoExtensionDays(activeRotation);
         intern.extensionDays = activeExtensionDays;
+        intern.totalExtensionDays = getRotationTotalExtensionDays(activeRotation);
         await intern.save();
       }
 

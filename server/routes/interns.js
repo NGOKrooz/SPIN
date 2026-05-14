@@ -9,7 +9,7 @@ const { ensureInternStatusIsCorrect } = require('../services/internService');
 const { ACTIVITY_TYPES, logActivityEventSafe } = require('../services/recentUpdatesService');
 const { createExtensionReason } = require('../services/extensionService');
 const { buildInternView, buildInternViews } = require('../services/internViewService');
-const { checkAndMarkAwaitingConfirmation } = require('../services/rotationService');
+const { checkAndMarkAwaitingConfirmation, autoAdvanceRotation } = require('../services/rotationService');
 const {
   getUnitDuration,
   recalculateEndDate,
@@ -68,7 +68,42 @@ const getRotationBaseDuration = (rotation, fallbackUnit = null) => {
     : fallbackBaseDuration;
 };
 
-const getRotationExtensionDays = (rotation, fallbackUnit = null) => {
+const getRotationManualExtensionDays = (rotation) => {
+  const rawManual = Number(rotation?.manualExtensionDays);
+  const rawAuto = Number(rotation?.autoExtensionDays);
+  const totalExtensionDays = Number(rotation?.extensionDays);
+
+  if (Number.isFinite(rawManual) && rawManual >= 0 && Number.isFinite(rawAuto) && rawAuto >= 0) {
+    if (rawManual === 0 && rawAuto === 0 && Number.isFinite(totalExtensionDays) && totalExtensionDays > 0) {
+      return totalExtensionDays;
+    }
+    return rawManual;
+  }
+
+  if (Number.isFinite(rawManual) && rawManual >= 0) {
+    return rawManual;
+  }
+
+  if (Number.isFinite(totalExtensionDays) && totalExtensionDays >= 0) {
+    return totalExtensionDays;
+  }
+
+  return 0;
+};
+
+const getRotationAutoExtensionDays = (rotation) => {
+  const rawAuto = Number(rotation?.autoExtensionDays);
+  if (Number.isFinite(rawAuto) && rawAuto >= 0) {
+    return rawAuto;
+  }
+  return 0;
+};
+
+const getRotationTotalExtensionDays = (rotation, fallbackUnit = null) => {
+  if (rotation?.manualExtensionDays !== undefined || rotation?.autoExtensionDays !== undefined) {
+    return getRotationManualExtensionDays(rotation) + getRotationAutoExtensionDays(rotation);
+  }
+
   const rawExtensionDays = Number(rotation?.extensionDays);
   if (Number.isFinite(rawExtensionDays) && rawExtensionDays >= 0) {
     return rawExtensionDays;
@@ -82,6 +117,8 @@ const getRotationExtensionDays = (rotation, fallbackUnit = null) => {
 
   return 0;
 };
+
+const getRotationExtensionDays = (rotation, fallbackUnit = null) => getRotationTotalExtensionDays(rotation, fallbackUnit);
 
 const getRotationTotalDuration = (rotation, fallbackUnit = null) => {
   const rawTotalDuration = Number(rotation?.duration);
@@ -108,9 +145,12 @@ const shiftFutureRotations = async (internId, pivotEndDate, dayDelta) => {
   for (const futureRotation of futureRotations) {
     futureRotation.startDate = addDays(startOfDay(futureRotation.startDate), dayDelta);
     futureRotation.endDate = addDays(startOfDay(futureRotation.endDate), dayDelta);
+    if (futureRotation.actualEndDate) {
+      futureRotation.actualEndDate = addDays(startOfDay(futureRotation.actualEndDate), dayDelta);
+    }
     const totalDuration = getRotationTotalDuration(futureRotation, futureRotation.unit);
     futureRotation.baseDuration = getRotationBaseDuration(futureRotation, futureRotation.unit);
-    futureRotation.extensionDays = getRotationExtensionDays(futureRotation, futureRotation.unit);
+    futureRotation.extensionDays = getRotationTotalExtensionDays(futureRotation, futureRotation.unit);
     futureRotation.duration = totalDuration;
     await futureRotation.save();
   }
@@ -378,7 +418,9 @@ const syncInternRotationStates = async (internId) => {
 
   for (const rotation of rotations) {
     const baseDuration = getRotationBaseDuration(rotation, rotation.unit);
-    const extensionDays = getRotationExtensionDays(rotation, rotation.unit);
+    const manualExtensionDays = getRotationManualExtensionDays(rotation);
+    const autoExtensionDays = getRotationAutoExtensionDays(rotation);
+    const extensionDays = manualExtensionDays + autoExtensionDays;
     const totalDuration = getRotationTotalDuration(rotation, rotation.unit);
     const safeDuration = Number.isFinite(totalDuration) && totalDuration > 0
       ? totalDuration
@@ -386,6 +428,12 @@ const syncInternRotationStates = async (internId) => {
 
     if (rotation.baseDuration !== baseDuration) {
       rotation.baseDuration = baseDuration;
+    }
+    if (rotation.manualExtensionDays !== manualExtensionDays) {
+      rotation.manualExtensionDays = manualExtensionDays;
+    }
+    if (rotation.autoExtensionDays !== autoExtensionDays) {
+      rotation.autoExtensionDays = autoExtensionDays;
     }
     if (rotation.extensionDays !== extensionDays) {
       rotation.extensionDays = extensionDays;
@@ -430,18 +478,31 @@ const syncInternRotationStates = async (internId) => {
   const awaitingConfirmation = rotations.filter((rotation) => rotation.status === 'awaiting_confirmation');
   const completed = rotations.filter((rotation) => rotation.status === 'completed');
 
+  const totalExtensionDays = rotations.reduce(
+    (sum, rotation) => sum + getRotationTotalExtensionDays(rotation, rotation.unit),
+    0
+  );
+
   intern.currentUnit = current?.unit || null;
   if (current) {
-    const activeExtensionDays = Number(getRotationExtensionDays(current, current.unit));
+    const activeExtensionDays = getRotationTotalExtensionDays(current, current.unit);
     intern.status = activeExtensionDays > 0 ? 'extended' : 'active';
+    intern.manualExtensionDays = getRotationManualExtensionDays(current);
+    intern.autoExtensionDays = getRotationAutoExtensionDays(current);
     intern.extensionDays = activeExtensionDays;
   } else if (upcoming.length > 0 || awaitingConfirmation.length > 0) {
     intern.status = 'active';
+    intern.manualExtensionDays = 0;
+    intern.autoExtensionDays = 0;
     intern.extensionDays = 0;
   } else {
     intern.status = 'completed';
+    intern.manualExtensionDays = 0;
+    intern.autoExtensionDays = 0;
     intern.extensionDays = 0;
   }
+
+  intern.totalExtensionDays = totalExtensionDays;
 
   if (intern.isModified()) {
     await intern.save();
@@ -711,6 +772,8 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
       phone,
       batch,
       status: 'active',
+      manualExtensionDays: 0,
+      autoExtensionDays: 0,
       extensionDays: 0,
       totalExtensionDays: 0,
     });
@@ -1031,13 +1094,19 @@ router.post('/:id/extend', async (req, res) => {
     if (!rotation.baseDuration) {
       const unitBaseDuration = rotation.unit ? getUnitDuration(rotation.unit) : Number(rotation.duration || DEFAULT_ROTATION_DURATION_DAYS);
       rotation.baseDuration = unitBaseDuration;
-      rotation.extensionDays = Math.max(0, Number(rotation.duration || DEFAULT_ROTATION_DURATION_DAYS) - unitBaseDuration);
+      rotation.manualExtensionDays = Math.max(0, Number(rotation.duration || DEFAULT_ROTATION_DURATION_DAYS) - unitBaseDuration);
+      rotation.autoExtensionDays = 0;
+      rotation.extensionDays = rotation.manualExtensionDays;
     }
 
     const originalEndDate = rotation.endDate ? startOfDay(rotation.endDate) : null;
     const originalDuration = Number(rotation.duration || getRotationTotalDuration(rotation));
 
-    rotation.extensionDays = Number(rotation.extensionDays || 0) + days;
+    const currentManualExtensionDays = getRotationManualExtensionDays(rotation);
+    const currentAutoExtensionDays = getRotationAutoExtensionDays(rotation);
+    rotation.manualExtensionDays = currentManualExtensionDays + days;
+    rotation.autoExtensionDays = currentAutoExtensionDays;
+    rotation.extensionDays = rotation.manualExtensionDays + rotation.autoExtensionDays;
     const totalDuration = rotation.baseDuration + rotation.extensionDays;
 
     if (!Number.isFinite(totalDuration) || totalDuration <= 0) {
@@ -1062,6 +1131,8 @@ router.post('/:id/extend', async (req, res) => {
     await shiftFutureRotations(intern._id, originalEndDate, deltaDays);
 
     intern.totalExtensionDays = Math.max(0, Number(intern.totalExtensionDays || 0) + days);
+    intern.manualExtensionDays = getRotationManualExtensionDays(rotation);
+    intern.autoExtensionDays = getRotationAutoExtensionDays(rotation);
     intern.extensionDays = rotation.status !== 'completed' ? Number(rotation.extensionDays || 0) : 0;
     intern.status = rotation.status === 'completed'
       ? 'completed'
@@ -1147,7 +1218,9 @@ router.post('/:id/remove-extension', async (req, res) => {
       rotation.extensionDays = Math.max(0, Number(rotation.duration || DEFAULT_ROTATION_DURATION_DAYS) - unitBaseDuration);
     }
 
-    const currentExtensionDays = Number(rotation.extensionDays || 0);
+    const currentManualExtensionDays = getRotationManualExtensionDays(rotation);
+    const currentAutoExtensionDays = getRotationAutoExtensionDays(rotation);
+    const currentExtensionDays = currentManualExtensionDays + currentAutoExtensionDays;
     if (currentExtensionDays <= 0) {
       return res.status(400).json({ error: 'No extension days available to remove' });
     }
@@ -1159,7 +1232,11 @@ router.post('/:id/remove-extension', async (req, res) => {
     const originalEndDate = rotation.endDate ? startOfDay(rotation.endDate) : null;
     const originalDuration = Number(rotation.duration || getRotationTotalDuration(rotation));
 
-    rotation.extensionDays = Math.max(0, currentExtensionDays - removeDays);
+    const removeFromAuto = Math.min(currentAutoExtensionDays, removeDays);
+    const removeFromManual = Math.max(0, removeDays - removeFromAuto);
+    rotation.autoExtensionDays = currentAutoExtensionDays - removeFromAuto;
+    rotation.manualExtensionDays = currentManualExtensionDays - removeFromManual;
+    rotation.extensionDays = rotation.manualExtensionDays + rotation.autoExtensionDays;
     const totalDuration = rotation.baseDuration + rotation.extensionDays;
 
     if (!Number.isFinite(totalDuration) || totalDuration <= 0) {
@@ -1184,6 +1261,8 @@ router.post('/:id/remove-extension', async (req, res) => {
     await shiftFutureRotations(intern._id, originalEndDate, deltaDays);
 
     intern.totalExtensionDays = Math.max(0, Number(intern.totalExtensionDays || 0) - removeDays);
+    intern.manualExtensionDays = rotation.manualExtensionDays || 0;
+    intern.autoExtensionDays = rotation.autoExtensionDays || 0;
     intern.extensionDays = rotation.status !== 'completed' ? Number(rotation.extensionDays || 0) : 0;
     intern.status = rotation.status === 'completed'
       ? 'completed'
@@ -1212,13 +1291,14 @@ router.post('/:id/remove-extension', async (req, res) => {
   }
 });
 
-// POST /api/interns/:id/auto-advance - DISABLED IN PHASE 1
-// ⚠️ Auto-advance is disabled. Interns use confirmation-based movement instead.
 router.post('/:id/auto-advance', async (req, res) => {
-  return res.status(501).json({ 
-    error: 'Auto-advance is disabled in Phase 1. Use confirmation-based movement system instead.',
-    phase: 'PHASE 1: Confirmation-Based Movement'
-  });
+  try {
+    const autoAdvanced = await autoAdvanceRotation(req.params.id);
+    res.json({ success: true, autoAdvanced });
+  } catch (err) {
+    console.error('Error auto-advancing intern rotation:', err);
+    res.status(500).json({ success: false, error: 'Failed to auto-advance intern rotation' });
+  }
 });
 
 module.exports = router;

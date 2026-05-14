@@ -217,13 +217,19 @@ router.post('/:internId/reassign-next', async (req, res) => {
   }
 });
 
-// POST /api/rotations/auto-advance - DISABLED IN PHASE 1
-// ⚠️ Auto-advance is disabled. Interns use confirmation-based movement instead.
 router.post('/auto-advance', async (req, res) => {
-  return res.status(501).json({ 
-    error: 'Auto-advance is disabled in Phase 1. Use confirmation-based movement system instead.',
-    phase: 'PHASE 1: Confirmation-Based Movement'
-  });
+  try {
+    const { internId } = req.body;
+    if (!internId) {
+      return res.status(400).json({ error: 'internId is required' });
+    }
+
+    const autoAdvanced = await autoAdvanceRotation(internId);
+    res.json({ autoAdvanced });
+  } catch (err) {
+    console.error('Error auto-advancing rotation:', err);
+    res.status(500).json({ error: err.message || 'Failed to auto-advance rotation' });
+  }
 });
 
 module.exports = router;

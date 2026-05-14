@@ -45,13 +45,38 @@ async function getUpcomingRotations(daysAhead = 30) {
 }
 
 /**
- * Auto-advance rotations for an intern
- * ⚠️ PHASE 1 REDESIGN: This function is DISABLED as per new confirmation-based movement system.
- * Interns should NOT auto-move. Instead, they enter "awaiting_confirmation" status.
+ * Auto-advance rotations for an intern.
+ * In Phase 1, this completes an overdue active rotation and preserves the next planned
+ * rotation as awaiting_confirmation if one exists.
  */
 async function autoAdvanceRotation(internId) {
-  console.warn('[PHASE 1] autoAdvanceRotation is disabled. Interns no longer auto-advance.');
-  return false;
+  const today = startOfDay(new Date());
+
+  const currentRotation = await Rotation.findOne({ intern: internId, status: 'active' })
+    .populate('intern')
+    .populate('unit')
+    .sort({ startDate: -1 })
+    .exec();
+
+  if (!currentRotation) {
+    return false;
+  }
+
+  const endDate = startOfDay(currentRotation.endDate);
+  if (today <= endDate) {
+    return false;
+  }
+
+  // Preserve any next planned rotation in awaiting confirmation state before completing the current one.
+  await checkAndMarkAwaitingConfirmation(internId, today).catch((error) => {
+    console.warn('[PHASE 1] autoAdvanceRotation checkAndMarkAwaitingConfirmation warning:', error);
+  });
+
+  currentRotation.status = 'completed';
+  currentRotation.actualEndDate = today;
+  await currentRotation.save();
+
+  return true;
 }
 
 /**

@@ -23,7 +23,9 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
     reason: '',
   });
 
-  const currentExtensionDays = Number(intern?.extensionDays ?? intern?.extension_days) || 0;
+  const manualExtensionDays = Number(intern?.manualExtensionDays ?? intern?.manual_extension_days ?? 0);
+  const autoExtensionDays = Number(intern?.autoExtensionDays ?? intern?.auto_extension_days ?? 0);
+  const currentExtensionDays = manualExtensionDays + autoExtensionDays;
 
   const { toast } = useToast();
 
@@ -282,6 +284,16 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
               <p className="text-sm font-medium text-gray-700 mb-3">
                 Current Extension: <span className="text-yellow-600 font-bold">+{currentExtensionDays} days</span>
               </p>
+              {(manualExtensionDays > 0 || autoExtensionDays > 0) && (
+                <div className="text-sm text-gray-600 mb-3 space-y-1">
+                  {manualExtensionDays > 0 && (
+                    <div>Manual extension: +{manualExtensionDays} days</div>
+                  )}
+                  {autoExtensionDays > 0 && (
+                    <div>Overdue auto-extension: +{autoExtensionDays} days</div>
+                  )}
+                </div>
+              )}
               <form onSubmit={handleRemove} className="space-y-3">
                 <div>
                   <Label htmlFor="remove-days">Remove Days *</Label>

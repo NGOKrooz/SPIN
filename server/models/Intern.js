@@ -13,6 +13,8 @@ const InternSchema = new mongoose.Schema({
   startDate: { type: Date, required: true },
   currentUnit: { type: mongoose.Schema.Types.ObjectId, ref: 'Unit' },
   rotationHistory: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Rotation' }],
+  manualExtensionDays: { type: Number, default: 0 },
+  autoExtensionDays: { type: Number, default: 0 },
   extensionDays: { type: Number, default: 0 },
   totalExtensionDays: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now },

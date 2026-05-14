@@ -5,6 +5,8 @@ const RotationSchema = new mongoose.Schema({
   unit: { type: mongoose.Schema.Types.ObjectId, ref: 'Unit', required: true },
   startDate: { type: Date, required: true },
   baseDuration: { type: Number },
+  manualExtensionDays: { type: Number, default: 0 },
+  autoExtensionDays: { type: Number, default: 0 },
   extensionDays: { type: Number, default: 0 },
   duration: { type: Number, default: 20 },
   endDate: { type: Date },

@@ -37,6 +37,44 @@ const getRotationBaseDuration = (rotation, fallbackUnit = null) => {
   return Number.isFinite(rawFallbackDuration) && rawFallbackDuration > 0 ? rawFallbackDuration : 20;
 };
 
+const getRotationManualExtensionDays = (rotation) => {
+  const rawManual = Number(rotation?.manualExtensionDays);
+  const rawAuto = Number(rotation?.autoExtensionDays);
+  const totalExtensionDays = Number(rotation?.extensionDays);
+
+  if (Number.isFinite(rawManual) && rawManual >= 0 && Number.isFinite(rawAuto) && rawAuto >= 0) {
+    if (rawManual === 0 && rawAuto === 0 && Number.isFinite(totalExtensionDays) && totalExtensionDays > 0) {
+      return totalExtensionDays;
+    }
+    return rawManual;
+  }
+
+  if (Number.isFinite(rawManual) && rawManual >= 0) {
+    return rawManual;
+  }
+
+  if (Number.isFinite(totalExtensionDays) && totalExtensionDays >= 0) {
+    return totalExtensionDays;
+  }
+
+  return 0;
+};
+
+const getRotationAutoExtensionDays = (rotation) => {
+  const rawAuto = Number(rotation?.autoExtensionDays);
+  if (Number.isFinite(rawAuto) && rawAuto >= 0) {
+    return rawAuto;
+  }
+  return 0;
+};
+
+const getRotationTotalExtensionDays = (rotation, fallbackUnit = null) => {
+  if (rotation?.manualExtensionDays !== undefined || rotation?.autoExtensionDays !== undefined) {
+    return getRotationManualExtensionDays(rotation) + getRotationAutoExtensionDays(rotation);
+  }
+  return getRotationExtensionDays(rotation, fallbackUnit);
+};
+
 const getRotationExtensionDays = (rotation, fallbackUnit = null) => {
   const rawExtensionDays = Number(rotation?.extensionDays);
   if (Number.isFinite(rawExtensionDays) && rawExtensionDays >= 0) {
@@ -58,7 +96,7 @@ const getRotationTotalDuration = (rotation, fallbackUnit = null) => {
     return rawTotalDuration;
   }
 
-  return getRotationBaseDuration(rotation, fallbackUnit) + getRotationExtensionDays(rotation, fallbackUnit);
+  return getRotationBaseDuration(rotation, fallbackUnit) + getRotationTotalExtensionDays(rotation, fallbackUnit);
 };
 
 // Helper functions for status computation
@@ -129,7 +167,7 @@ const formatRotation = (rotation) => {
   const unitName = unit?.name || (rotation.unit_name || null);
 
   const rotationBaseDuration = getRotationBaseDuration(rotation, rotation.unit);
-  const rotationExtensionDays = getRotationExtensionDays(rotation, rotation.unit);
+  const rotationExtensionDays = getRotationTotalExtensionDays(rotation, rotation.unit);
   const rotationDuration = getRotationTotalDuration(rotation, rotation.unit);
 
   return {
@@ -141,6 +179,9 @@ const formatRotation = (rotation) => {
     duration: rotationDuration,
     baseDuration: rotationBaseDuration,
     extensionDays: rotationExtensionDays,
+    manualExtensionDays: getRotationManualExtensionDays(rotation),
+    autoExtensionDays: getRotationAutoExtensionDays(rotation),
+    totalExtensionDays: rotationExtensionDays,
     status,
     unitId,
     unit_id: unitId,
@@ -212,8 +253,10 @@ const formatIntern = (intern, rotations = []) => {
     status: intern.status || null,
     extensionDays: intern.extensionDays || intern.extension_days || 0,
     extension_days: intern.extensionDays || intern.extension_days || 0,
-    totalExtensionDays: intern.totalExtensionDays || intern.total_extension_days || 0,
-    total_extension_days: intern.totalExtensionDays || intern.total_extension_days || 0,
+    manualExtensionDays: intern.manualExtensionDays || 0,
+    autoExtensionDays: intern.autoExtensionDays || 0,
+    totalExtensionDays: intern.totalExtensionDays || intern.total_extension_days || totalExtensionDays,
+    total_extension_days: intern.totalExtensionDays || intern.total_extension_days || totalExtensionDays,
     phone: intern.phone || intern.phone_number || '',
     phone_number: intern.phone || intern.phone_number || '',
     // New computed status fields
