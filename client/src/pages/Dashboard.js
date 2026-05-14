@@ -82,18 +82,22 @@ export default function Dashboard() {
   const activeInterns = interns?.filter(intern => intern.currentUnit) || [];
   const unassignedInterns = interns?.filter(intern => !intern.currentUnit) || [];
 
-  const movementQueue = buildMovementQueue(interns || []);
+  const movementQueue = buildMovementQueue(interns || [], {
+    units: units || [],
+    referenceDate: new Date(),
+    leavingSoonDays: PREDICTIVE_WINDOW_DAYS,
+  });
   const nearingCompletionInterns = movementQueue.filter((item) => item.status === 'nearing_completion');
   const awaitingConfirmationInterns = movementQueue.filter((item) => item.status === 'awaiting_confirmation');
 
-  console.log('[PHASE 1] Movement Queue count:', movementQueue.length);
-  console.log('[PHASE 1] Nearing completion interns:', nearingCompletionInterns.map((item) => item.internName));
-  console.log('[PHASE 1] Awaiting confirmation interns:', awaitingConfirmationInterns.map((item) => item.internName));
+  console.log('[MOVEMENT QUEUE] Count:', movementQueue.length);
+  console.log('[MOVEMENT QUEUE] Nearing completion:', nearingCompletionInterns.map((item) => item.internName));
+  console.log('[MOVEMENT QUEUE] Awaiting confirmation:', awaitingConfirmationInterns.map((item) => item.internName));
   movementQueue.forEach((item) => {
     console.log('QUEUE ITEM:', item);
-    if (!item.nextAssignment) {
-      console.warn('QUEUE ITEM MISSING nextAssignment:', item.internId, item.internName);
-    }
+    console.log('  nextUnitPreview:', item.nextUnitPreview);
+    console.log('  nextUnit:', item.nextUnit);
+    console.log('  isAwaitingConfirmation:', item.isAwaitingConfirmation);
   });
 
   const stats = [
@@ -223,7 +227,7 @@ export default function Dashboard() {
                         <div>
                           <div className="text-sm text-gray-500 font-medium">Next Unit</div>
                           <div className="text-lg font-semibold text-gray-900">
-                            {item.nextAssignment?.unit?.name || item.nextUnit || 'Next unit not assigned'}
+                            {item.nextUnit || 'Next unit not assigned'}
                           </div>
                         </div>
 

@@ -111,7 +111,11 @@ describe('predictivePlanning', () => {
       endDate: '2026-04-30T00:00:00.000Z',
     });
 
-    const queue = buildMovementQueue([nearing, awaiting, notQueued], BASE_DATE);
+    const queue = buildMovementQueue([nearing, awaiting, notQueued], {
+      units,
+      referenceDate: BASE_DATE,
+      leavingSoonDays: PREDICTIVE_WINDOW_DAYS,
+    });
 
     expect(queue).toHaveLength(2);
     expect(queue.map((item) => item.internName)).toEqual(expect.arrayContaining(['Nearing Move', 'Awaiting Move']));
@@ -120,7 +124,8 @@ describe('predictivePlanning', () => {
     expect(nearingItem.status).toBe('nearing_completion');
     expect(nearingItem.remainingDays).toBe(5);
     expect(nearingItem.nextAssignment).toBeNull();
-    expect(nearingItem.nextUnit).toBeNull();
+    expect(nearingItem.nextUnit).toBeTruthy();
+    expect(nearingItem.nextUnitPreview).toBeTruthy();
 
     const awaitingItem = queue.find((item) => item.internName === 'Awaiting Move');
     expect(awaitingItem.status).toBe('awaiting_confirmation');

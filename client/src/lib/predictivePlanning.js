@@ -399,8 +399,15 @@ const getAssignmentRemainingDays = (assignment, referenceDate = new Date()) => {
 /**
  * PHASE 1: Build the Movement Queue
  * Returns interns nearing completion or already awaiting confirmation for movement
+ * Uses SAME next-assignment source as Dashboard (previewNextUnitForIntern)
  */
-export function buildMovementQueue(interns, referenceDate = new Date()) {
+export function buildMovementQueue(interns, options = {}) {
+  const {
+    units = [],
+    referenceDate = new Date(),
+    leavingSoonDays = PREDICTIVE_WINDOW_DAYS,
+  } = typeof options === 'object' && !Array.isArray(options) ? options : { referenceDate: options };
+
   const today = normalizeDate(referenceDate);
 
   return (interns || [])
@@ -408,15 +415,22 @@ export function buildMovementQueue(interns, referenceDate = new Date()) {
       const activeAssignment = getActiveAssignment(intern);
       if (!activeAssignment) return null;
 
-      const nextAssignment = getNextAssignment(intern);
       const remainingDays = getAssignmentRemainingDays(activeAssignment, today);
-      const isAwaitingConfirmation = nextAssignment?.status === 'awaiting_confirmation';
-      const nearingCompletion = remainingDays !== null && remainingDays >= 0 && remainingDays <= PREDICTIVE_WINDOW_DAYS;
+      const awaitingConfirmationRotation = getNextAssignment(intern);
+      const isAwaitingConfirmation = awaitingConfirmationRotation?.status === 'awaiting_confirmation';
+      const nearingCompletion = remainingDays !== null && remainingDays >= 0 && remainingDays <= leavingSoonDays;
 
       if (!nearingCompletion && !isAwaitingConfirmation) return null;
 
+      // Use SAME next-assignment source as Dashboard (previewNextUnitForIntern)
+      const nextUnitPreview = previewNextUnitForIntern(intern, {
+        interns: interns || [],
+        units: units || [],
+        referenceDate: today,
+        leavingSoonDays,
+      });
+
       const activeUnit = getAssignmentUnit(activeAssignment);
-      const nextUnit = getAssignmentUnit(nextAssignment);
       const plannedDuration = getAssignmentDuration(activeAssignment);
       const elapsedRaw = Math.floor((today.getTime() - getAssignmentStartDate(activeAssignment)?.getTime()) / DAY_IN_MS) + 1;
       const elapsedDays = Math.max(0, elapsedRaw);
@@ -424,19 +438,22 @@ export function buildMovementQueue(interns, referenceDate = new Date()) {
       return {
         intern,
         activeAssignment,
-        nextAssignment,
+        nextAssignment: awaitingConfirmationRotation,
+        nextUnitPreview,
         remainingDays,
         isAwaitingConfirmation,
         status: isAwaitingConfirmation ? 'awaiting_confirmation' : 'nearing_completion',
         internId: intern._id || intern.id,
         internName: intern.name || 'Unnamed Intern',
         currentUnit: activeUnit?.name || 'Unknown Unit',
-        nextUnit: nextUnit?.name || null,
+        nextUnit: isAwaitingConfirmation
+          ? getAssignmentUnit(awaitingConfirmationRotation)?.name || 'Unknown Unit'
+          : nextUnitPreview?.unit?.name || null,
         elapsedDays,
         plannedDuration,
         durationLabel: `${elapsedDays} / ${plannedDuration} days`,
         currentRotationId: activeAssignment._id || activeAssignment.id,
-        nextRotationId: nextAssignment ? nextAssignment._id || nextAssignment.id : null,
+        nextRotationId: awaitingConfirmationRotation ? awaitingConfirmationRotation._id || awaitingConfirmationRotation.id : null,
       };
     })
     .filter(Boolean)
