@@ -1,5 +1,6 @@
 import {
   buildBalancedBatchAssignments,
+  buildMovementQueue,
   buildUpcomingMovements,
   previewNextUnitForIntern,
   PREDICTIVE_WINDOW_DAYS,
@@ -16,6 +17,7 @@ const buildIntern = ({
   endDate,
   duration = 21,
   completedUnits = [],
+  rotations = null,
 }) => ({
   id,
   name,
@@ -28,7 +30,16 @@ const buildIntern = ({
     duration_days: duration,
   },
   completedUnits,
-  rotations: [],
+  rotations: rotations !== null ? rotations : [
+    {
+      status: 'active',
+      unit: { id: unitId, name: unitName },
+      startDate,
+      endDate,
+      duration,
+      duration_days: duration,
+    },
+  ],
 });
 
 const units = [
@@ -64,6 +75,55 @@ describe('predictivePlanning', () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0].internName).toBe('Near Move');
+  });
+
+  test('Test 1a: movement queue includes nearing completion and awaiting confirmation interns', () => {
+    const nearing = buildIntern({
+      id: 'i-10',
+      name: 'Nearing Move',
+      unitId: 'u-ortho',
+      unitName: 'Ortho',
+      startDate: '2026-03-20T00:00:00.000Z',
+      endDate: '2026-04-09T00:00:00.000Z',
+    });
+
+    const awaiting = {
+      ...buildIntern({
+        id: 'i-11',
+        name: 'Awaiting Move',
+        unitId: 'u-neuro',
+        unitName: 'Neuro',
+        startDate: '2026-03-01T00:00:00.000Z',
+        endDate: '2026-03-21T00:00:00.000Z',
+      }),
+      rotations: [
+        { status: 'active', unit: { id: 'u-neuro', name: 'Neuro' }, startDate: '2026-03-01T00:00:00.000Z', endDate: '2026-03-21T00:00:00.000Z', duration: 21 },
+        { status: 'awaiting_confirmation', unit: { id: 'u-geri', name: 'Geri' } },
+      ],
+    };
+
+    const notQueued = buildIntern({
+      id: 'i-12',
+      name: 'Not Queued',
+      unitId: 'u-geri',
+      unitName: 'Geri',
+      startDate: '2026-04-01T00:00:00.000Z',
+      endDate: '2026-04-30T00:00:00.000Z',
+    });
+
+    const queue = buildMovementQueue([nearing, awaiting, notQueued], BASE_DATE);
+
+    expect(queue).toHaveLength(2);
+    expect(queue.map((item) => item.internName)).toEqual(expect.arrayContaining(['Nearing Move', 'Awaiting Move']));
+
+    const nearingItem = queue.find((item) => item.internName === 'Nearing Move');
+    expect(nearingItem.status).toBe('nearing_completion');
+    expect(nearingItem.remainingDays).toBe(5);
+    expect(nearingItem.nextUnit).toBeNull();
+
+    const awaitingItem = queue.find((item) => item.internName === 'Awaiting Move');
+    expect(awaitingItem.status).toBe('awaiting_confirmation');
+    expect(awaitingItem.nextUnit).toBe('Geri');
   });
 
   test('Test 2: recently filled unit is deprioritized', () => {

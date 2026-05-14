@@ -343,62 +343,67 @@ export function getInternUnitTiming(internLike, referenceDate = new Date()) {
 }
 
 /**
- * PHASE 1: Build list of interns awaiting confirmation for movement
- * Returns interns whose current rotation has expired but they haven't been moved yet
- * They have a next assignment marked as "awaiting_confirmation"
+ * PHASE 1: Build the Movement Queue
+ * Returns interns nearing completion or already awaiting confirmation for movement
  */
-export function buildAwaitingConfirmations(interns, referenceDate = new Date()) {
+export function buildMovementQueue(interns, referenceDate = new Date()) {
   const today = normalizeDate(referenceDate);
   
   return (interns || [])
     .map((intern) => {
-      // Find the current active rotation
       const currentRotation = (intern.rotations || []).find(r => r.status === 'active');
       if (!currentRotation) return null;
-      
-      // Find the next awaiting_confirmation rotation
+
+      const startDate = toDate(currentRotation.startDate || currentRotation.start_date);
+      const endDate = toDate(currentRotation.endDate || currentRotation.end_date) || addDays(startDate, getRotationDuration(intern) - 1);
+      if (!startDate || !endDate) return null;
+
+      const remainingDays = Math.floor((endDate.getTime() - today.getTime()) / DAY_IN_MS);
+      const nearingCompletion = remainingDays >= 0 && remainingDays <= PREDICTIVE_WINDOW_DAYS;
+
       const nextRotation = (intern.rotations || []).find(r => r.status === 'awaiting_confirmation');
-      if (!nextRotation) return null;
-      
-      // Get current unit info
+      const awaitingConfirmation = Boolean(nextRotation);
+
+      if (!nearingCompletion && !awaitingConfirmation) return null;
+
       const currentUnit = currentRotation.unit || currentRotation.unitName || 'Unknown Unit';
       const currentUnitName = typeof currentUnit === 'string' ? currentUnit : currentUnit.name || 'Unknown Unit';
-      const currentUnitId = typeof currentUnit === 'string' ? null : (currentUnit._id || currentUnit.id);
-      
-      // Get next unit info
-      const nextUnit = nextRotation.unit || nextRotation.unitName || 'Unknown Unit';
-      const nextUnitName = typeof nextUnit === 'string' ? nextUnit : nextUnit.name || 'Unknown Unit';
-      const nextUnitId = typeof nextUnit === 'string' ? null : (nextUnit._id || nextUnit.id);
-      
-      // Calculate duration and elapsed days
-      const startDate = toDate(currentRotation.startDate || currentRotation.start_date);
-      const endDate = toDate(currentRotation.endDate || currentRotation.end_date);
-      
-      if (!startDate || !endDate) return null;
-      
-      const plannedDuration = Number(currentRotation.duration || currentRotation.baseDuration || 20);
+
+      const nextUnit = nextRotation ? nextRotation.unit || nextRotation.unitName || 'Unknown Unit' : null;
+      const nextUnitName = nextRotation ? (typeof nextUnit === 'string' ? nextUnit : nextUnit.name || 'Unknown Unit') : null;
+
+      const plannedDuration = Number(currentRotation.duration || currentRotation.baseDuration || getRotationDuration(intern));
       const elapsedRaw = Math.floor((today.getTime() - startDate.getTime()) / DAY_IN_MS) + 1;
       const elapsedDays = Math.max(0, elapsedRaw);
-      
+
+      const status = awaitingConfirmation ? 'awaiting_confirmation' : 'nearing_completion';
+
       return {
         internId: intern._id || intern.id,
         internName: intern.name || 'Unnamed Intern',
         currentUnit: currentUnitName,
-        currentUnitId,
-        nextUnit: nextUnitName,
-        nextUnitId,
         elapsedDays,
         plannedDuration,
         durationLabel: `${elapsedDays} / ${plannedDuration} days`,
+        remainingDays,
+        status,
+        nextUnit: nextUnitName,
         currentRotationId: currentRotation._id || currentRotation.id,
-        nextRotationId: nextRotation._id || nextRotation.id,
+        nextRotationId: nextRotation ? nextRotation._id || nextRotation.id : null,
       };
     })
     .filter(Boolean)
-    .sort((a, b) => {
-      // Sort by duration exceeded (longest first)
-      const aExcess = Math.max(0, a.elapsedDays - a.plannedDuration);
-      const bExcess = Math.max(0, b.elapsedDays - b.plannedDuration);
-      return bExcess - aExcess;
+    .sort((left, right) => {
+      if (left.status !== right.status) {
+        return left.status === 'awaiting_confirmation' ? -1 : 1;
+      }
+      if (left.status === 'awaiting_confirmation') {
+        const leftOverdue = Math.max(0, left.elapsedDays - left.plannedDuration);
+        const rightOverdue = Math.max(0, right.elapsedDays - right.plannedDuration);
+        return rightOverdue - leftOverdue;
+      }
+      return left.remainingDays - right.remainingDays;
     });
 }
+
+export const buildAwaitingConfirmations = buildMovementQueue;

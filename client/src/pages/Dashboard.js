@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { api } from '../services/api';
 import RecentUpdates from '../components/RecentUpdates';
 import ReassignNextModal from '../components/ReassignNextModal';
-import { buildAwaitingConfirmations, PREDICTIVE_WINDOW_DAYS } from '../lib/predictivePlanning';
+import { buildMovementQueue, PREDICTIVE_WINDOW_DAYS } from '../lib/predictivePlanning';
 
 export default function Dashboard() {
   const queryClient = useQueryClient();
@@ -82,8 +82,13 @@ export default function Dashboard() {
   const activeInterns = interns?.filter(intern => intern.currentUnit) || [];
   const unassignedInterns = interns?.filter(intern => !intern.currentUnit) || [];
 
-  // PHASE 1: Build awaiting confirmations instead of upcoming movements
-  const awaitingConfirmations = buildAwaitingConfirmations(interns || []);
+  const movementQueue = buildMovementQueue(interns || []);
+  const nearingCompletionInterns = movementQueue.filter((item) => item.status === 'nearing_completion');
+  const awaitingConfirmationInterns = movementQueue.filter((item) => item.status === 'awaiting_confirmation');
+
+  console.log('[PHASE 1] Movement Queue count:', movementQueue.length);
+  console.log('[PHASE 1] Nearing completion interns:', nearingCompletionInterns.map((item) => item.internName));
+  console.log('[PHASE 1] Awaiting confirmation interns:', awaitingConfirmationInterns.map((item) => item.internName));
 
   const stats = [
     {
@@ -103,9 +108,9 @@ export default function Dashboard() {
       bgColor: 'bg-green-100',
     },
     {
-      title: 'Awaiting Confirmation',
-      value: awaitingConfirmations.length,
-      description: 'Ready for movement',
+      title: 'Movement Queue',
+      value: movementQueue.length,
+      description: 'Interns nearing movement or awaiting confirmation',
       icon: AlertCircle,
       color: 'text-orange-600',
       bgColor: 'bg-orange-100',
@@ -146,88 +151,103 @@ export default function Dashboard() {
       <div className="space-y-6">
         <RecentUpdates />
 
-        {/* PHASE 1: Awaiting Confirmation Section */}
         <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <AlertCircle className="h-5 w-5 text-orange-600" />
-              Awaiting Confirmation for all the Upcoming Movements (Next 5 Days)
+              Movement Queue
             </CardTitle>
             <CardDescription>
-              Interns who have completed their planned duration and are awaiting confirmation before movement
+              Interns nearing completion or already awaiting confirmation for movement
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {awaitingConfirmations.length === 0 ? (
-              <div className="text-sm text-gray-500">No interns awaiting confirmation at this time.</div>
+            {movementQueue.length === 0 ? (
+              <div className="text-sm text-gray-500">No interns in the movement queue at this time.</div>
             ) : (
               <div className="space-y-4">
-                {awaitingConfirmations.map((confirmation) => (
+                {movementQueue.map((item) => (
                   <div 
-                    key={confirmation.internId} 
-                    className="border border-orange-200 rounded-lg p-4 bg-orange-50/50 hover:bg-orange-100/50 transition-colors"
+                    key={item.internId}
+                    className={`border rounded-lg p-4 transition-colors ${item.status === 'awaiting_confirmation' ? 'border-orange-200 bg-orange-50/50 hover:bg-orange-100/50' : 'border-slate-200 bg-slate-50 hover:bg-slate-100'}`}
                   >
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* Left Column */}
                       <div className="space-y-3">
                         <div>
                           <div className="text-sm text-gray-500 font-medium">Intern Name</div>
                           <div className="text-lg font-semibold text-gray-900">
-                            {confirmation.internName}
+                            {item.internName}
                           </div>
                         </div>
-                        
+
                         <div>
                           <div className="text-sm text-gray-500 font-medium">Current Unit</div>
                           <div className="text-base text-gray-900 font-medium">
-                            {confirmation.currentUnit}
+                            {item.currentUnit}
                           </div>
                         </div>
-                        
+
                         <div>
                           <div className="text-sm text-gray-500 font-medium">Duration</div>
-                          <div className="text-base text-orange-700 font-semibold">
-                            {confirmation.durationLabel}
-                          </div>
-                          <div className="text-xs text-orange-600 mt-1">
-                            {Math.max(0, confirmation.elapsedDays - confirmation.plannedDuration)} days exceeded
+                          <div className="text-base text-gray-900 font-semibold">
+                            {item.durationLabel}
                           </div>
                         </div>
+
+                        {item.status === 'nearing_completion' ? (
+                          <div>
+                            <div className="text-sm text-gray-500 font-medium">Status</div>
+                            <div className="text-base text-blue-700 font-semibold">Upcoming Movement</div>
+                            <div className="text-xs text-gray-600 mt-1">
+                              {item.remainingDays} day{item.remainingDays === 1 ? '' : 's'} remaining
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            <div className="text-sm text-gray-500 font-medium">Status</div>
+                            <div className="text-base text-orange-700 font-semibold">Awaiting Confirmation</div>
+                            <div className="text-xs text-orange-600 mt-1">
+                              OVERDUE: {Math.max(0, item.elapsedDays - item.plannedDuration)} day{Math.max(0, item.elapsedDays - item.plannedDuration) === 1 ? '' : 's'}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      
-                      {/* Right Column */}
+
                       <div className="space-y-3">
-                        <div>
-                          <div className="text-sm text-gray-500 font-medium">Next Unit</div>
-                          <div className="text-lg font-semibold text-gray-900">
-                            {confirmation.nextUnit}
-                          </div>
-                        </div>
-                        
-                        {/* Action Buttons */}
-                        <div className="flex gap-2 pt-2">
-                          <button 
-                            className="flex items-center gap-2 flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            title="Accept movement to next unit"
-                            onClick={() => acceptMovementMutation.mutate(confirmation.internId)}
-                            disabled={acceptMovementMutation.isPending}
-                          >
-                            <CheckCircle2 className="h-4 w-4" />
-                            {acceptMovementMutation.isPending ? 'Accepting...' : 'Accept'}
-                          </button>
-                          <button 
-                            className="flex items-center gap-2 flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            title="Reassign to different unit before movement"
-                            onClick={() => setReassignModalData(confirmation)}
-                            disabled={reassignNextMutation.isPending}
-                          >
-                            <RefreshCw className="h-4 w-4" />
-                            {reassignNextMutation.isPending ? 'Reassigning...' : 'Reassign'}
-                          </button>
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          Accept movement to activate next unit
-                        </div>
+                        {item.status === 'awaiting_confirmation' && (
+                          <>
+                            <div>
+                              <div className="text-sm text-gray-500 font-medium">Next Unit</div>
+                              <div className="text-lg font-semibold text-gray-900">
+                                {item.nextUnit || 'Pending Assignment'}
+                              </div>
+                            </div>
+
+                            <div className="flex gap-2 pt-2">
+                              <button
+                                className="flex items-center gap-2 flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Accept movement to next unit"
+                                onClick={() => acceptMovementMutation.mutate(item.internId)}
+                                disabled={acceptMovementMutation.isPending}
+                              >
+                                <CheckCircle2 className="h-4 w-4" />
+                                {acceptMovementMutation.isPending ? 'Accepting...' : 'Accept'}
+                              </button>
+                              <button
+                                className="flex items-center gap-2 flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Reassign to different unit before movement"
+                                onClick={() => setReassignModalData(item)}
+                                disabled={reassignNextMutation.isPending}
+                              >
+                                <RefreshCw className="h-4 w-4" />
+                                {reassignNextMutation.isPending ? 'Reassigning...' : 'Reassign'}
+                              </button>
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              Accept movement to activate next unit
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
