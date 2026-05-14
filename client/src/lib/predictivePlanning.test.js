@@ -123,7 +123,8 @@ describe('predictivePlanning', () => {
     const nearingItem = queue.find((item) => item.internName === 'Nearing Move');
     expect(nearingItem.status).toBe('nearing_completion');
     expect(nearingItem.remainingDays).toBe(5);
-    expect(nearingItem.nextAssignment).toBeNull();
+    expect(nearingItem.nextAssignment).toBeTruthy();
+    expect(nearingItem.nextAssignment.status).toBe('preview');
     expect(nearingItem.nextUnit).toBeTruthy();
     expect(nearingItem.nextUnitPreview).toBeTruthy();
 

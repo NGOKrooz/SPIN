@@ -416,6 +416,7 @@ export function buildMovementQueue(interns, options = {}) {
       if (!activeAssignment) return null;
 
       const remainingDays = getAssignmentRemainingDays(activeAssignment, today);
+      const isOverdue = remainingDays !== null && remainingDays < 0;
       const awaitingConfirmationRotation = getNextAssignment(intern);
       const isAwaitingConfirmation = awaitingConfirmationRotation?.status === 'awaiting_confirmation';
       const nearingCompletion = remainingDays !== null && remainingDays >= 0 && remainingDays <= leavingSoonDays;
@@ -435,20 +436,22 @@ export function buildMovementQueue(interns, options = {}) {
       const elapsedRaw = Math.floor((today.getTime() - getAssignmentStartDate(activeAssignment)?.getTime()) / DAY_IN_MS) + 1;
       const elapsedDays = Math.max(0, elapsedRaw);
 
+      const nextAssignment = awaitingConfirmationRotation || nextUnitPreview;
+      const nextUnit = nextAssignment?.unit?.name || null;
+
       return {
         intern,
         activeAssignment,
-        nextAssignment: awaitingConfirmationRotation,
+        nextAssignment,
         nextUnitPreview,
         remainingDays,
         isAwaitingConfirmation,
+        isOverdue,
         status: isAwaitingConfirmation ? 'awaiting_confirmation' : 'nearing_completion',
         internId: intern._id || intern.id,
         internName: intern.name || 'Unnamed Intern',
         currentUnit: activeUnit?.name || 'Unknown Unit',
-        nextUnit: isAwaitingConfirmation
-          ? getAssignmentUnit(awaitingConfirmationRotation)?.name || 'Unknown Unit'
-          : nextUnitPreview?.unit?.name || null,
+        nextUnit,
         elapsedDays,
         plannedDuration,
         durationLabel: `${elapsedDays} / ${plannedDuration} days`,
