@@ -103,14 +103,9 @@ export const rotationsAPI = {
   delete: (id) => http.delete(`/rotations/${id}`),
   generate: (startDate) => http.post('/rotations/generate', { start_date: startDate }),
   fixEndDates: () => http.post('/rotations/fix-end-dates'),
-  autoAdvance: () => http.post('/rotations/auto-advance'),
-  refreshUpcoming: () => http.post('/rotations/refresh-upcoming'),  acceptMovement: (internId) => http.post(`/rotations/${internId}/accept-movement`),
+  refreshUpcoming: () => http.post('/rotations/refresh-upcoming'),
+  acceptMovement: (internId) => http.post(`/rotations/${internId}/accept-movement`),
   reassignNext: (internId, newUnitId) => http.post(`/rotations/${internId}/reassign-next`, { newUnitId }),};
-
-// Auto-advance API for specific intern
-export const autoAdvanceAPI = {
-  triggerForIntern: (internId) => http.post(`/interns/${internId}/auto-advance`),
-};
 
 // Activity logs API
 export const activityAPI = {
@@ -174,7 +169,6 @@ export const api = {
   updateRotation: (id, data) => rotationsAPI.update(id, data),
   deleteRotation: (id) => rotationsAPI.delete(id),
   generateRotations: (startDate) => rotationsAPI.generate(startDate),
-  autoAdvanceRotations: () => rotationsAPI.autoAdvance(),
   refreshUpcomingRotations: () => rotationsAPI.refreshUpcoming(),
   acceptMovement: (internId) => rotationsAPI.acceptMovement(internId),
   reassignNext: (internId, newUnitId) => rotationsAPI.reassignNext(internId, newUnitId),

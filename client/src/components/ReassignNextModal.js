@@ -7,6 +7,12 @@ import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { api } from '../services/api';
 
+const getUnitId = (value) => {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  return String(value._id || value.id || value.unitId || value.unit_id || '').trim() || null;
+};
+
 export default function ReassignNextModal({ confirmation, onClose, onSuccess }) {
   const [selectedUnitId, setSelectedUnitId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -27,16 +33,39 @@ export default function ReassignNextModal({ confirmation, onClose, onSuccess }) 
     console.log(`[PHASE 3]    Next unit ID (will be replaced): ${confirmation.nextUnitId}`);
     console.log(`[PHASE 3]    Total units available: ${units.length}`);
 
-    // Get current unit ID
-    const currentUnitId = String(confirmation.currentUnitId || '');
+    const currentUnitId = getUnitId(confirmation.currentUnitId)
+      || getUnitId(confirmation.activeAssignment?.unit)
+      || getUnitId(confirmation.activeAssignment?.unitId)
+      || getUnitId(confirmation.activeAssignment?.unit_id)
+      || getUnitId(confirmation.intern?.currentUnit);
 
-    // Filter units: exclude current unit
+    const completedUnitIds = new Set();
+    const completedSources = [
+      ...(confirmation.intern?.rotations || []),
+      ...(confirmation.intern?.completedUnits || []),
+    ];
+
+    completedSources.forEach((assignment) => {
+      if (assignment?.status && assignment.status !== 'completed') return;
+      const unitId = getUnitId(assignment?.unit)
+        || getUnitId(assignment?.unitId)
+        || getUnitId(assignment?.unit_id);
+      if (unitId) completedUnitIds.add(unitId);
+    });
+
+    // Filter units: exclude current unit and units already completed by this intern.
     const filtered = units.filter(unit => {
       const unitId = String(unit._id || unit.id || '');
       const isCurrentUnit = unitId === currentUnitId;
+      const isCompletedUnit = completedUnitIds.has(unitId);
       
       if (isCurrentUnit) {
         console.log(`[PHASE 3]    ❌ Excluding current unit: ${unit.name} (${unitId})`);
+        return false;
+      }
+
+      if (isCompletedUnit) {
+        console.log(`[PHASE 3]    ❌ Excluding completed unit: ${unit.name} (${unitId})`);
         return false;
       }
       
@@ -46,7 +75,7 @@ export default function ReassignNextModal({ confirmation, onClose, onSuccess }) 
 
     console.log(`[PHASE 3] 🎯 Available units for reassignment: ${filtered.length}`);
     return filtered;
-  }, [units, confirmation.currentUnitId]);
+  }, [units, confirmation]);
 
   const selectedUnit = useMemo(
     () => availableUnits.find((unit) => String(unit._id || unit.id) === String(selectedUnitId)) || null,

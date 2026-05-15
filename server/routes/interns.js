@@ -9,7 +9,7 @@ const { ensureInternStatusIsCorrect } = require('../services/internService');
 const { ACTIVITY_TYPES, logActivityEventSafe } = require('../services/recentUpdatesService');
 const { createExtensionReason } = require('../services/extensionService');
 const { buildInternView, buildInternViews } = require('../services/internViewService');
-const { checkAndMarkAwaitingConfirmation, autoAdvanceRotation } = require('../services/rotationService');
+const { checkAndMarkAwaitingConfirmation } = require('../services/rotationService');
 const {
   getUnitDuration,
   recalculateEndDate,
@@ -1292,13 +1292,11 @@ router.post('/:id/remove-extension', async (req, res) => {
 });
 
 router.post('/:id/auto-advance', async (req, res) => {
-  try {
-    const autoAdvanced = await autoAdvanceRotation(req.params.id);
-    res.json({ success: true, autoAdvanced });
-  } catch (err) {
-    console.error('Error auto-advancing intern rotation:', err);
-    res.status(500).json({ success: false, error: 'Failed to auto-advance intern rotation' });
-  }
+  console.warn(`[MOVEMENT BLOCKED]\nsource: /api/interns/:id/auto-advance\nintern: ${req.params.id}\nreason: automatic transitions disabled`);
+  return res.status(501).json({ 
+    error: 'Auto-advance is disabled in Phase 1. Movement must be confirmed manually via accept movement.',
+    autoAdvanced: false,
+  });
 });
 
 module.exports = router;

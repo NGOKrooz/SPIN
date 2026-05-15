@@ -361,7 +361,14 @@ export function getNextAssignment(intern) {
 
 const getAssignmentDuration = (assignment) => {
   const duration = Number(
-    assignment?.duration || assignment?.duration_days || assignment?.durationDays || DEFAULT_DURATION_DAYS
+    assignment?.baseDuration
+    || assignment?.base_duration
+    || assignment?.plannedDuration
+    || assignment?.planned_duration
+    || assignment?.duration
+    || assignment?.duration_days
+    || assignment?.durationDays
+    || DEFAULT_DURATION_DAYS
   );
   return Number.isFinite(duration) && duration > 0 ? duration : DEFAULT_DURATION_DAYS;
 };
@@ -371,9 +378,14 @@ const getAssignmentStartDate = (assignment) => (
 );
 
 const getAssignmentEndDate = (assignment) => {
+  const start = getAssignmentStartDate(assignment);
+  const hasPlannedDuration = assignment?.baseDuration || assignment?.base_duration || assignment?.plannedDuration || assignment?.planned_duration;
+  if (start && hasPlannedDuration) {
+    return addDays(start, getAssignmentDuration(assignment) - 1);
+  }
+
   const explicitEnd = toDate(assignment?.endDate) || toDate(assignment?.end_date);
   if (explicitEnd) return explicitEnd;
-  const start = getAssignmentStartDate(assignment);
   if (!start) return null;
   return addDays(start, getAssignmentDuration(assignment) - 1);
 };

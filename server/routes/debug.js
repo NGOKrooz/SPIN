@@ -4,7 +4,6 @@ const express = require('express');
 const Intern = require('../models/Intern');
 const Unit = require('../models/Unit');
 const Rotation = require('../models/Rotation');
-const { autoAdvanceRotation } = require('../services/rotationService');
 
 const router = express.Router();
 
@@ -43,8 +42,8 @@ router.get('/units', async (req, res) => {
 router.get('/rotations', async (req, res) => {
   try {
     const rotations = await Rotation.find({})
-      .populate('internId')
-      .populate('unitId')
+      .populate('intern')
+      .populate('unit')
       .sort({ startDate: -1 })
       .limit(50)
       .exec();
@@ -58,20 +57,15 @@ router.get('/rotations', async (req, res) => {
 // GET /api/debug/rotations/:internId - Check specific intern's rotations
 router.get('/rotations/:internId', async (req, res) => {
   const { internId } = req.params;
+  const autoRotationEnabled = false;
 
-  const autoRotationEnabled = process.env.AUTO_ROTATION === 'true';
-  if (autoRotationEnabled) {
-    try {
-      console.log(`[Debug] Triggering auto-advance for intern ${internId}...`);
-      await autoAdvanceRotation(internId);
-    } catch (err) {
-      console.error(`[Debug] Error triggering auto-advance for intern ${internId}:`, err);
-    }
+  if (process.env.AUTO_ROTATION === 'true') {
+    console.warn(`[MOVEMENT BLOCKED]\nsource: debug rotations\nintern: ${internId}\nreason: automatic transitions disabled`);
   }
 
   try {
-    const rotations = await Rotation.find({ internId })
-      .populate('unitId')
+    const rotations = await Rotation.find({ intern: internId })
+      .populate('unit')
       .sort({ startDate: 1 })
       .exec();
 
@@ -85,12 +79,12 @@ router.get('/rotations/:internId', async (req, res) => {
       upcoming: rotations.filter(r => r.startDate.toISOString().split('T')[0] > today),
       current: rotations.filter(r => {
         const start = r.startDate.toISOString().split('T')[0];
-        const end = r.endDate.toISOString().split('T')[0];
+        const end = r.endDate ? r.endDate.toISOString().split('T')[0] : null;
         return start <= today && end >= today;
       }),
-      past: rotations.filter(r => r.endDate.toISOString().split('T')[0] < today),
+      past: rotations.filter(r => r.endDate && r.endDate.toISOString().split('T')[0] < today),
       autoRotationEnabled,
-      note: autoRotationEnabled ? 'Auto-advance was triggered before querying' : 'Auto-rotation is disabled',
+      note: 'Auto-rotation is disabled',
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

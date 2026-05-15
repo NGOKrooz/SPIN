@@ -3,6 +3,7 @@
 const Intern = require('../models/Intern');
 const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
+const { canAssignmentTransition } = require('./movementGuard');
 
 const DEFAULT_CAPACITY = 4;
 const DEFAULT_DURATION = 20;
@@ -448,6 +449,7 @@ async function buildGlobalBatchPlan(allUnits, options = {}) {
  * Creates exactly one 'active' Rotation starting on the intern's startDate.
  */
 async function assignFirstUnit(intern, allUnits) {
+  canAssignmentTransition('assignFirstUnit');
   const unit = await selectBestUnit(allUnits);
 
   if (!unit) {
@@ -472,6 +474,7 @@ async function assignFirstUnit(intern, allUnits) {
 }
 
 async function assignNextUnit(internOrId, options = {}) {
+  canAssignmentTransition('assignNextUnit');
   const { completeCurrent = true, now = new Date() } = options;
   const intern = typeof internOrId === 'object' && internOrId?._id
     ? internOrId
@@ -631,11 +634,12 @@ async function assignNextUnit(internOrId, options = {}) {
  * Marks current rotation as completed and creates a new active rotation.
  */
 async function advanceToNextUnit(internId) {
-  const { rotation } = await assignNextUnit(internId, { completeCurrent: true, now: new Date() });
-  return rotation;
+  canAssignmentTransition('advanceToNextUnit');
+  throw new Error('advanceToNextUnit is disabled in Phase 1. Movement must be confirmed manually via acceptMovement.');
 }
 
 async function ensureContinuousAssignment(internId, now = new Date()) {
+  canAssignmentTransition('ensureContinuousAssignment');
   const intern = await Intern.findById(internId).exec();
   if (!intern) throw new Error('Intern not found');
 
@@ -657,6 +661,7 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
     } else if (endDate && today > endDate) {
       // PHASE 4: Preserve overdue active assignments when a next movement is already staged.
       if (awaitingRotation) {
+        console.warn(`[MOVEMENT BLOCKED]\nsource: refresh\nintern: ${intern._id.toString()}\nreason: automatic transitions disabled`);
         const overdueDays = Math.max(0, Math.floor((today.getTime() - endDate.getTime()) / DAY_IN_MS));
         if (overdueDays > 0) {
           const manualExtensionDays = getRotationManualExtensionDays(activeRotation);
@@ -727,7 +732,10 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
     return { rotation, unit, wasReset: false, usedOverflow: false };
   }
 
-  return assignNextUnit(intern, { completeCurrent: false, now: today });
+  // PHASE 1: Do not auto-assign the next unit when an intern has existing rotations.
+  // Movement must only happen via explicit acceptance.
+  console.warn(`[MOVEMENT BLOCKED]\nsource: ensureContinuousAssignment\nintern: ${intern._id.toString()}\nreason: automatic transitions disabled`);
+  return { rotation: null, unit: null, wasReset: false, usedOverflow: false };
 }
 
 /**

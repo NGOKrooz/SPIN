@@ -5,7 +5,6 @@ const Rotation = require('../models/Rotation');
 const {
   getCurrentRotations,
   getUpcomingRotations,
-  autoAdvanceRotation,
   createManualRotation,
   updateRotation,
   deleteRotation,
@@ -218,18 +217,11 @@ router.post('/:internId/reassign-next', async (req, res) => {
 });
 
 router.post('/auto-advance', async (req, res) => {
-  try {
-    const { internId } = req.body;
-    if (!internId) {
-      return res.status(400).json({ error: 'internId is required' });
-    }
-
-    const autoAdvanced = await autoAdvanceRotation(internId);
-    res.json({ autoAdvanced });
-  } catch (err) {
-    console.error('Error auto-advancing rotation:', err);
-    res.status(500).json({ error: err.message || 'Failed to auto-advance rotation' });
-  }
+  console.warn(`[MOVEMENT BLOCKED]\nsource: /api/rotations/auto-advance\nreason: automatic transitions disabled`);
+  return res.status(501).json({ 
+    error: 'Auto-advance is disabled in Phase 1. Movement must be confirmed manually via accept movement.',
+    autoAdvanced: false,
+  });
 });
 
 module.exports = router;

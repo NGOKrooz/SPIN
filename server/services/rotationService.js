@@ -3,6 +3,7 @@ const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
 const Intern = require('../models/Intern');
 const ActivityLog = require('../models/ActivityLog');
+const { canAssignmentTransition, validateRotationIntegrity } = require('./movementGuard');
 
 const DEFAULT_ROTATION_DURATION_DAYS = 20;
 
@@ -50,39 +51,16 @@ async function getUpcomingRotations(daysAhead = 30) {
  * rotation as awaiting_confirmation if one exists.
  */
 async function autoAdvanceRotation(internId) {
-  const today = startOfDay(new Date());
-
-  const currentRotation = await Rotation.findOne({ intern: internId, status: 'active' })
-    .populate('intern')
-    .populate('unit')
-    .sort({ startDate: -1 })
-    .exec();
-
-  if (!currentRotation) {
-    return false;
-  }
-
-  const endDate = startOfDay(currentRotation.endDate);
-  if (today <= endDate) {
-    return false;
-  }
-
-  // Preserve any next planned rotation in awaiting confirmation state before completing the current one.
-  await checkAndMarkAwaitingConfirmation(internId, today).catch((error) => {
-    console.warn('[PHASE 1] autoAdvanceRotation checkAndMarkAwaitingConfirmation warning:', error);
-  });
-
-  currentRotation.status = 'completed';
-  currentRotation.actualEndDate = today;
-  await currentRotation.save();
-
-  return true;
+  canAssignmentTransition('autoAdvanceRotation');
+  console.warn(`[MOVEMENT BLOCKED]\nsource: autoAdvanceRotation\nintern: ${internId}\nreason: automatic transitions disabled`);
+  return false;
 }
 
 /**
  * Create a manual rotation assignment
  */
 async function createManualRotation(data) {
+  canAssignmentTransition('createManualRotation');
   const { internId, unitId } = data;
   const unit = await Unit.findById(unitId).exec();
   const duration = getDuration(unit);
@@ -136,6 +114,7 @@ async function deleteRotation(rotationId) {
  * instead of auto-activating it.
  */
 async function checkAndMarkAwaitingConfirmation(internId, today = new Date()) {
+  canAssignmentTransition('checkAndMarkAwaitingConfirmation');
   const normalizedToday = startOfDay(today);
   
   // Find the intern's current active rotation
@@ -187,6 +166,7 @@ async function checkAndMarkAwaitingConfirmation(internId, today = new Date()) {
  * This completes the current assignment and activates the next awaiting_confirmation assignment.
  */
 async function acceptMovement(internId) {
+  canAssignmentTransition('acceptMovement');
   const today = startOfDay(new Date());
   
   // 1. Find current active assignment
@@ -268,6 +248,7 @@ async function acceptMovement(internId) {
  * Only affects awaiting_confirmation rotations, NOT current active assignments.
  */
 async function reassignNextUnit(internId, newUnitId) {
+  canAssignmentTransition('reassignNextUnit');
   // 1. Find the awaiting_confirmation rotation (next assignment)
   const awaitingRotation = await Rotation.findOne({
     intern: internId,
@@ -364,6 +345,7 @@ module.exports = {
   checkAndMarkAwaitingConfirmation,
   acceptMovement,
   reassignNextUnit,
+  validateRotationIntegrity,
 };
 
 

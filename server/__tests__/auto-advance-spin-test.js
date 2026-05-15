@@ -54,21 +54,14 @@ beforeEach(async () => {
   await Rotation.deleteMany({});
 });
 
-describe('Auto-advance endpoints mark rotations as completed', () => {
-  let intern, unit1, unit2;
+describe('Auto-advance endpoints are disabled in Phase 1', () => {
+  let intern, unit1;
 
   beforeEach(async () => {
-    // Create test units
+    // Create test unit
     unit1 = await Unit.create({
       name: 'Unit 1',
       order: 1,
-      capacity: 2,
-      durationDays: 20
-    });
-
-    unit2 = await Unit.create({
-      name: 'Unit 2',
-      order: 2,
       capacity: 2,
       durationDays: 20
     });
@@ -99,31 +92,30 @@ describe('Auto-advance endpoints mark rotations as completed', () => {
     });
   });
 
-  test('POST /api/interns/:id/auto-advance marks rotation as completed', async () => {
+  test('POST /api/interns/:id/auto-advance is rejected as disabled', async () => {
     const response = await request(app)
       .post(`/api/interns/${intern._id}/auto-advance`)
-      .expect(200);
+      .expect(501);
 
-    expect(response.body.success).toBe(true);
-    expect(response.body.autoAdvanced).toBe(true);
+    expect(response.body.error).toContain('Auto-advance is disabled');
+    expect(response.body.autoAdvanced).toBe(false);
 
-    const completedRotations = await Rotation.find({ status: 'completed' });
-    expect(completedRotations).toHaveLength(1);
-    expect(completedRotations[0].intern.toString()).toBe(intern._id.toString());
-    expect(completedRotations[0].unit.toString()).toBe(unit1._id.toString());
+    const activeRotations = await Rotation.find({ status: 'active' });
+    expect(activeRotations).toHaveLength(1);
+    expect(activeRotations[0].intern.toString()).toBe(intern._id.toString());
   });
 
-  test('POST /api/rotations/auto-advance marks rotation as completed', async () => {
+  test('POST /api/rotations/auto-advance is rejected as disabled', async () => {
     const response = await request(app)
       .post('/api/rotations/auto-advance')
       .send({ internId: intern._id.toString() })
-      .expect(200);
+      .expect(501);
 
-    expect(response.body.autoAdvanced).toBe(true);
+    expect(response.body.error).toContain('Auto-advance is disabled');
+    expect(response.body.autoAdvanced).toBe(false);
 
-    const completedRotations = await Rotation.find({ status: 'completed' });
-    expect(completedRotations).toHaveLength(1);
-    expect(completedRotations[0].intern.toString()).toBe(intern._id.toString());
-    expect(completedRotations[0].unit.toString()).toBe(unit1._id.toString());
+    const activeRotations = await Rotation.find({ status: 'active' });
+    expect(activeRotations).toHaveLength(1);
+    expect(activeRotations[0].intern.toString()).toBe(intern._id.toString());
   });
 });

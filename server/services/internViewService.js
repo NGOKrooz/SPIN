@@ -176,6 +176,8 @@ const formatRotation = (rotation) => {
     endDate: toIsoString(rotation.endDate || rotation.end_date),
     start_date: toIsoString(rotation.startDate || rotation.start_date),
     end_date: toIsoString(rotation.endDate || rotation.end_date),
+    actualEndDate: toIsoString(rotation.actualEndDate || rotation.actual_end_date),
+    actual_end_date: toIsoString(rotation.actualEndDate || rotation.actual_end_date),
     duration: rotationDuration,
     baseDuration: rotationBaseDuration,
     extensionDays: rotationExtensionDays,

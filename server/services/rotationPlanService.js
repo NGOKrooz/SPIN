@@ -566,6 +566,9 @@ async function reshuffleAllUpcoming() {
     const awaitingRotations = await Rotation.find({ intern: intern._id, status: 'awaiting_confirmation' })
       .select('unit')
       .exec();
+    if (awaitingRotations.length > 0) {
+      console.warn(`[MOVEMENT BLOCKED]\nsource: reshuffle\nintern: ${intern._id.toString()}\nreason: automatic transitions disabled`);
+    }
     await Rotation.deleteMany({ intern: intern._id, status: 'upcoming' }).exec();
 
     const createdUpcoming = [];

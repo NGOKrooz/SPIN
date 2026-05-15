@@ -5,6 +5,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 
 const internsRouter = require('../routes/interns');
 const rotationsRouter = require('../routes/rotations');
+const debugRouter = require('../routes/debug');
 const { reshuffleAllUpcoming } = require('../services/rotationPlanService');
 const Intern = require('../models/Intern');
 const Rotation = require('../models/Rotation');
@@ -15,6 +16,7 @@ const app = express();
 app.use(express.json());
 app.use('/api/interns', internsRouter);
 app.use('/api/rotations', rotationsRouter);
+app.use('/api/debug', debugRouter);
 
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
 const normalizeDay = (dateLike) => {
@@ -96,6 +98,61 @@ describe('Phase 4 confirmation-based movement stability', () => {
     expect(awaiting.unit_name).toBe('Neurology');
     expect(rotations.filter((r) => r.status === 'active')).toHaveLength(1);
     expect(rotations.filter((r) => r.status === 'awaiting_confirmation')).toHaveLength(1);
+  });
+
+  test('GET /api/debug/rotations/:internId does not auto-advance when AUTO_ROTATION is enabled', async () => {
+    process.env.AUTO_ROTATION = 'true';
+    const today = normalizeDay(new Date());
+    const units = await Unit.create([
+      { name: 'Cardiology', order: 1, duration: 20, capacity: 4 },
+      { name: 'Neurology', order: 2, duration: 20, capacity: 4 },
+      { name: 'Pediatrics', order: 3, duration: 20, capacity: 4 },
+    ]);
+
+    const intern = await Intern.create({
+      name: 'Debug AutoAdvance Intern',
+      gender: 'Female',
+      batch: 'B',
+      startDate: addDays(today, -100),
+      status: 'active',
+    });
+
+    const activeStart = addDays(today, -25);
+    const activeEnd = addDays(activeStart, 19);
+
+    await Rotation.create({
+      intern: intern._id,
+      unit: units[0]._id,
+      startDate: activeStart,
+      endDate: activeEnd,
+      duration: 20,
+      status: 'active',
+    });
+
+    await Rotation.create({
+      intern: intern._id,
+      unit: units[1]._id,
+      startDate: addDays(activeEnd, 1),
+      endDate: addDays(activeEnd, 20),
+      duration: 20,
+      status: 'awaiting_confirmation',
+    });
+
+    const response = await request(app).get(`/api/debug/rotations/${intern._id}`);
+    expect(response.status).toBe(200);
+    expect(response.body.autoRotationEnabled).toBe(false);
+    expect(response.body.note).toContain('Auto-rotation is disabled');
+
+    const rotations = response.body.rotations || [];
+    const active = rotations.find((r) => r.status === 'active');
+    const awaiting = rotations.find((r) => r.status === 'awaiting_confirmation');
+
+    expect(active).toBeDefined();
+    expect(awaiting).toBeDefined();
+    expect(rotations.filter((r) => r.status === 'active')).toHaveLength(1);
+    expect(rotations.filter((r) => r.status === 'awaiting_confirmation')).toHaveLength(1);
+
+    delete process.env.AUTO_ROTATION;
   });
 
   test('reshuffleAllUpcoming preserves awaiting_confirmation units and avoids duplicate upcoming assignments', async () => {
@@ -193,7 +250,7 @@ describe('Phase 4 confirmation-based movement stability', () => {
     expect(internResponse.body.currentUnit).toBeDefined();
     expect(internResponse.body.currentUnit.name).toBe('Cardiology');
     expect(internResponse.body.currentUnit.elapsedDays).toBe(26);
-    expect(internResponse.body.dashboard.progress).toBe('26/20');
+    expect(internResponse.body.dashboard.progress).toBe('26/26');
 
     const reassignResponse = await request(app)
       .post(`/api/rotations/${intern._id}/reassign-next`)
