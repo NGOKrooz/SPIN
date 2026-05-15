@@ -112,7 +112,7 @@ const shiftFutureRotations = async (internId, pivotEndDate, dayDelta, excludeRot
  */
 async function getUnitOccupancy() {
   const today = startOfDay(new Date());
-  const active = await Rotation.find({ status: 'active' })
+  const active = await Rotation.find({ status: { $in: ['active', 'pending'] } })
     .select('unit startDate endDate')
     .exec();
 
@@ -135,7 +135,7 @@ async function getUnitOccupancy() {
 async function getUnitInternsLeavingSoon(windowDays = LEAVING_SOON_DAYS) {
   const today = startOfDay(new Date());
   const maxDate = startOfDay(addDays(today, windowDays));
-  const active = await Rotation.find({ status: 'active' })
+  const active = await Rotation.find({ status: { $in: ['active', 'pending'] } })
     .select('unit endDate extensionDays')
     .exec();
 
@@ -157,7 +157,7 @@ async function getUnitInternsLeavingSoon(windowDays = LEAVING_SOON_DAYS) {
  * Get the count of active interns in a unit.
  */
 async function getActiveInternsCount(unitId) {
-  const count = await Rotation.countDocuments({ unit: unitId, status: 'active' });
+  const count = await Rotation.countDocuments({ unit: unitId, status: { $in: ['active', 'pending'] } });
   return count;
 }
 
@@ -354,7 +354,7 @@ async function buildGlobalBatchPlan(allUnits, options = {}) {
   const today = startOfDay(options.now || new Date());
   const movementMaxDate = startOfDay(addDays(today, MOVEMENT_WINDOW_DAYS));
 
-  const activeRotations = await Rotation.find({ status: 'active' })
+  const activeRotations = await Rotation.find({ status: { $in: ['active', 'pending'] } })
     .select('intern unit startDate endDate')
     .exec();
 
@@ -495,7 +495,7 @@ async function assignNextUnit(internOrId, options = {}) {
   const today = startOfDay(now);
   let previousUnitId = intern.currentUnit?.toString?.() || null;
   let previousEndDate = null;
-  const currentRotation = await Rotation.findOne({ intern: intern._id, status: 'active' })
+  const currentRotation = await Rotation.findOne({ intern: intern._id, status: { $in: ['active', 'pending'] } })
     .sort({ startDate: -1, createdAt: -1 })
     .exec();
   const latestRotation = currentRotation || await Rotation.findOne({ intern: intern._id })
@@ -644,7 +644,7 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
   if (!intern) throw new Error('Intern not found');
 
   const today = startOfDay(now);
-  const activeRotation = await Rotation.findOne({ intern: internId, status: 'active' })
+  const activeRotation = await Rotation.findOne({ intern: internId, status: { $in: ['active', 'pending'] } })
     .sort({ startDate: -1, createdAt: -1 })
     .exec();
 
@@ -659,6 +659,10 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
       activeRotation.status = 'upcoming';
       await activeRotation.save();
     } else if (endDate && today > endDate) {
+      if (activeRotation.status !== 'pending') {
+        activeRotation.status = 'pending';
+        console.log(`[STATUS TRANSITION] intern ${intern._id.toString()}: ACTIVE -> PENDING`);
+      }
       // PHASE 4: Preserve overdue active assignments when a next movement is already staged.
       if (awaitingRotation) {
         console.warn(`[MOVEMENT BLOCKED]\nsource: refresh\nintern: ${intern._id.toString()}\nreason: automatic transitions disabled`);
@@ -676,7 +680,7 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
 
           if (intern) {
             intern.currentUnit = activeRotation.unit || null;
-            intern.status = 'extended';
+            intern.status = 'pending';
             intern.manualExtensionDays = manualExtensionDays;
             intern.autoExtensionDays = autoExtensionDays;
             intern.extensionDays = manualExtensionDays + autoExtensionDays;
@@ -689,6 +693,10 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
       }
 
       // PHASE 4: Do not auto-advance expired active rotations by default.
+      await activeRotation.save();
+      intern.currentUnit = activeRotation.unit || null;
+      intern.status = 'pending';
+      await intern.save();
       return { rotation: activeRotation, unit: activeRotation.unit, wasReset: false, usedOverflow: false };
     } else {
       const activeExtensionDays = getRotationTotalExtensionDays(activeRotation);

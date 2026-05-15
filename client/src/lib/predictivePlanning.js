@@ -350,7 +350,7 @@ const getInternAssignments = (intern) => {
 };
 
 export function getActiveAssignment(intern) {
-  return getInternAssignments(intern).find((assignment) => assignment?.status === 'active') || null;
+  return getInternAssignments(intern).find((assignment) => assignment?.status === 'active' || assignment?.status === 'pending') || null;
 }
 
 export function getNextAssignment(intern) {
@@ -431,9 +431,10 @@ export function buildMovementQueue(interns, options = {}) {
       const isOverdue = remainingDays !== null && remainingDays < 0;
       const awaitingConfirmationRotation = getNextAssignment(intern);
       const isAwaitingConfirmation = awaitingConfirmationRotation?.status === 'awaiting_confirmation';
+      const isPending = activeAssignment?.status === 'pending';
       const nearingCompletion = remainingDays !== null && remainingDays >= 0 && remainingDays <= leavingSoonDays;
 
-      if (!nearingCompletion && !isAwaitingConfirmation) return null;
+      if (!nearingCompletion && !isAwaitingConfirmation && !isPending) return null;
 
       // Use SAME next-assignment source as Dashboard (previewNextUnitForIntern)
       const nextUnitPreview = previewNextUnitForIntern(intern, {
@@ -459,7 +460,7 @@ export function buildMovementQueue(interns, options = {}) {
         remainingDays,
         isAwaitingConfirmation,
         isOverdue,
-        status: isAwaitingConfirmation ? 'awaiting_confirmation' : 'nearing_completion',
+        status: isAwaitingConfirmation || isPending ? 'awaiting_confirmation' : 'nearing_completion',
         internId: intern._id || intern.id,
         internName: intern.name || 'Unnamed Intern',
         currentUnit: activeUnit?.name || 'Unknown Unit',

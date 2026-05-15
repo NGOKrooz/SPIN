@@ -215,7 +215,7 @@ const syncRotationHistory = async (internId) => {
 
 const getActiveUnitLoadMap = async () => {
   const today = startOfDay(new Date());
-  const rotations = await Rotation.find({ status: 'active' }).select('unit startDate endDate').exec();
+  const rotations = await Rotation.find({ status: { $in: ['active', 'pending'] } }).select('unit startDate endDate').exec();
   const counts = new Map();
 
   for (const rotation of rotations) {
@@ -540,7 +540,7 @@ async function reshuffleAllUpcoming() {
   const today = startOfDay(new Date());
 
   for (const intern of interns) {
-    const activeRotation = await Rotation.findOne({ intern: intern._id, status: 'active' })
+    const activeRotation = await Rotation.findOne({ intern: intern._id, status: { $in: ['active', 'pending'] } })
       .sort({ startDate: -1 })
       .populate('unit')
       .exec();

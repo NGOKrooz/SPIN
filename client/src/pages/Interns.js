@@ -65,11 +65,14 @@ export default function Interns() {
 
   const mapWithDerivedStatus = (list) => (list || []).map((i) => {
     const extensionDays = Number(i.totalExtensionDays ?? i.total_extension_days ?? i.extensionDays ?? i.extension_days) || 0;
+    const rawStatus = String(i.status || 'Active').toLowerCase();
     const primaryStatus = i.primaryStatus
       ? String(i.primaryStatus).toUpperCase()
-      : String(i.status || 'Active').toLowerCase() === 'completed'
+      : rawStatus === 'completed'
         ? 'COMPLETED'
-        : 'ACTIVE';
+        : rawStatus === 'pending'
+          ? 'PENDING'
+          : 'ACTIVE';
     const hasExtension = extensionDays > 0 || Boolean(i.hasExtension);
 
     return {
@@ -78,7 +81,7 @@ export default function Interns() {
       startDate: i.startDate || i.start_date,
       extensionDays,
       primaryStatus,
-      displayStatus: titleCase(primaryStatus),
+      displayStatus: primaryStatus,
       hasExtension,
       internshipDays: i.internshipDays,
     };

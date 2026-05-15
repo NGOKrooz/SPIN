@@ -101,6 +101,8 @@ const getRotationTotalDuration = (rotation, fallbackUnit = null) => {
 
 // Helper functions for status computation
 const computePrimaryStatus = (rotations = []) => {
+  const hasPending = rotations.some(r => r.status === 'pending');
+  if (hasPending) return 'PENDING';
   const hasActive = rotations.some(r => r.status === 'active');
   const hasUpcoming = rotations.some(r => r.status === 'upcoming');
   return hasActive || hasUpcoming ? 'ACTIVE' : 'COMPLETED';
@@ -135,7 +137,7 @@ const toIsoString = (date) => {
 };
 
 const getRotationStatus = (rotation, today = new Date()) => {
-  if (rotation?.status === 'active' || rotation?.status === 'upcoming' || rotation?.status === 'completed' || rotation?.status === 'awaiting_confirmation') {
+  if (rotation?.status === 'active' || rotation?.status === 'pending' || rotation?.status === 'upcoming' || rotation?.status === 'completed' || rotation?.status === 'awaiting_confirmation') {
     return rotation.status;
   }
 
@@ -206,7 +208,7 @@ const formatRotation = (rotation) => {
 const formatIntern = (intern, rotations = []) => {
   const formattedRotations = (rotations || []).map(formatRotation);
 
-  const currentRotation = formattedRotations.find(r => r.status === 'active');
+  const currentRotation = formattedRotations.find(r => r.status === 'active' || r.status === 'pending');
   const upcomingRotations = formattedRotations.filter(r => r.status === 'upcoming');
   const awaitingConfirmationRotations = formattedRotations.filter(r => r.status === 'awaiting_confirmation');
   const completedRotations = formattedRotations.filter(r => r.status === 'completed');
@@ -277,7 +279,7 @@ const formatIntern = (intern, rotations = []) => {
 };
 
 const addUnitProgress = (internView, currentUnit, units = []) => {
-  const activeRotation = (internView.rotations || []).find((rotation) => rotation.status === 'active') || null;
+  const activeRotation = (internView.rotations || []).find((rotation) => rotation.status === 'active' || rotation.status === 'pending') || null;
   const currentUnitId = (
     currentUnit?._id?.toString?.()
     || currentUnit?.id

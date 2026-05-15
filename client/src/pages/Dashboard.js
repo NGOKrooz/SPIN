@@ -3,14 +3,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
   Users, 
   Building2,
-  AlertCircle,
-  CheckCircle2,
-  RefreshCw
+  AlertCircle
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { api } from '../services/api';
 import RecentUpdates from '../components/RecentUpdates';
 import ReassignNextModal from '../components/ReassignNextModal';
+import MovementControls from '../components/MovementControls';
+import ConfirmMovementModal from '../components/ConfirmMovementModal';
 import { buildMovementQueue, PREDICTIVE_WINDOW_DAYS } from '../lib/predictivePlanning';
 
 export default function Dashboard() {
@@ -233,26 +233,14 @@ export default function Dashboard() {
                         </div>
 
                         <>
-                          <div className="flex gap-2 pt-2">
-                            <button
-                              className="flex items-center gap-2 flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:cursor-not-allowed"
-                              title="Accept movement to next unit"
-                              onClick={() => item.isOverdue && setConfirmMovementData(item)}
-                              disabled={!item.isOverdue || acceptMovementMutation.isPending}
-                            >
-                              <CheckCircle2 className="h-4 w-4" />
-                              {acceptMovementMutation.isPending ? 'Accepting...' : 'Accept'}
-                            </button>
-                            <button
-                              className="flex items-center gap-2 flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:cursor-not-allowed"
-                              title="Reassign to different unit before movement"
-                              onClick={() => item.isOverdue && setReassignModalData(item)}
-                              disabled={!item.isOverdue || reassignNextMutation.isPending}
-                            >
-                              <RefreshCw className="h-4 w-4" />
-                              {reassignNextMutation.isPending ? 'Reassigning...' : 'Reassign'}
-                            </button>
-                          </div>
+                          <MovementControls
+                            item={item}
+                            className="pt-2"
+                            onAccept={setConfirmMovementData}
+                            onReassign={setReassignModalData}
+                            acceptPending={acceptMovementMutation.isPending}
+                            reassignPending={reassignNextMutation.isPending}
+                          />
                         </>
                       </div>
                     </div>
@@ -277,69 +265,16 @@ export default function Dashboard() {
         />
       )}
 
-      {/* PHASE 2: Confirm Movement Modal */}
-      {confirmMovementData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <Card className="w-full max-w-lg">
-            <CardHeader className="flex items-start justify-between gap-4">
-              <div>
-                <CardTitle>Confirm Movement</CardTitle>
-                <CardDescription>
-                  Review the movement details before execution.
-                </CardDescription>
-              </div>
-              <button
-                type="button"
-                className="text-gray-500 hover:text-gray-700"
-                onClick={() => setConfirmMovementData(null)}
-              >
-                Close
-              </button>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div>
-                  <div className="text-sm text-gray-500">Intern</div>
-                  <div className="text-lg font-semibold text-gray-900">{confirmMovementData.internName}</div>
-                </div>
-                <div>
-                  <div className="text-sm text-gray-500">Move from</div>
-                  <div className="text-lg font-semibold text-gray-900">{confirmMovementData.currentUnit}</div>
-                </div>
-                <div>
-                  <div className="text-sm text-gray-500">To</div>
-                  <div className="text-lg font-semibold text-gray-900">{confirmMovementData.nextUnit || 'Next unit not assigned'}</div>
-                </div>
-                <div>
-                  <div className="text-sm text-gray-500">Delayed By</div>
-                  <div className="text-lg font-semibold text-gray-900">{Math.max(0, -confirmMovementData.remainingDays)} day{Math.max(0, -confirmMovementData.remainingDays) === 1 ? '' : 's'}</div>
-                </div>
-                <div className="flex justify-end gap-3 pt-4">
-                  <button
-                    type="button"
-                    className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                    onClick={() => setConfirmMovementData(null)}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    onClick={() => {
-                      console.log(`[PHASE 2] ${confirmMovementData.internName} confirmed for movement from ${confirmMovementData.currentUnit} to ${confirmMovementData.nextUnit} after ${Math.max(0, -confirmMovementData.remainingDays)} delayed days`);
-                      acceptMovementMutation.mutate(confirmMovementData.internId);
-                      setConfirmMovementData(null);
-                    }}
-                    disabled={!confirmMovementData.isOverdue || acceptMovementMutation.isPending}
-                  >
-                    Confirm Move
-                  </button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      <ConfirmMovementModal
+        movement={confirmMovementData}
+        isPending={acceptMovementMutation.isPending}
+        onClose={() => setConfirmMovementData(null)}
+        onConfirm={(movement) => {
+          console.log(`[PHASE 2] ${movement.internName} confirmed for movement from ${movement.currentUnit} to ${movement.nextUnit}`);
+          acceptMovementMutation.mutate(movement.internId);
+          setConfirmMovementData(null);
+        }}
+      />
     </div>
   );
 }

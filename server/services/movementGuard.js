@@ -55,7 +55,7 @@ async function validateRotationIntegrity(internId) {
     .exec();
 
   const issues = [];
-  const active = rotations.filter((rotation) => rotation.status === 'active');
+  const active = rotations.filter((rotation) => rotation.status === 'active' || rotation.status === 'pending');
   const awaiting = rotations.filter((rotation) => rotation.status === 'awaiting_confirmation');
   const upcoming = rotations.filter((rotation) => rotation.status === 'upcoming');
 

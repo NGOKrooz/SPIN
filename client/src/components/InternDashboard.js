@@ -1,8 +1,11 @@
 import React from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { X, Calendar, User, Clock, MapPin, Award, Building2 } from 'lucide-react';
 import ExtensionModal from './ExtensionModal';
 import ReassignModal from './ReassignModal';
+import ReassignNextModal from './ReassignNextModal';
+import MovementControls from './MovementControls';
+import ConfirmMovementModal from './ConfirmMovementModal';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { exportToCSV, openPrintableWindow, formatDate, getBatchColor, getStatusColor, normalizeDate, calculateDaysBetween } from '../lib/utils';
@@ -84,6 +87,8 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   const queryClient = useQueryClient();
   const [showExtend, setShowExtend] = React.useState(false);
   const [showReassign, setShowReassign] = React.useState(false);
+  const [reassignNextData, setReassignNextData] = React.useState(null);
+  const [confirmMovementData, setConfirmMovementData] = React.useState(null);
   const [activeRotation, setActiveRotation] = React.useState(null);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [internState, setInternState] = React.useState(intern);
@@ -127,9 +132,10 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   const primaryStatus = currentIntern?.primaryStatus
     ? String(currentIntern.primaryStatus).toUpperCase()
     : String(currentIntern?.status || 'ACTIVE').toUpperCase();
-  const displayStatus = primaryStatus === 'ACTIVE' ? 'Active'
-    : primaryStatus === 'COMPLETED' ? 'Completed'
-    : `${primaryStatus.charAt(0).toUpperCase()}${primaryStatus.slice(1).toLowerCase()}`;
+  const displayStatus = primaryStatus === 'PENDING' ? 'PENDING'
+    : primaryStatus === 'ACTIVE' ? 'ACTIVE'
+      : primaryStatus === 'COMPLETED' ? 'COMPLETED'
+        : primaryStatus;
   const hasExtension = Boolean(currentIntern?.hasExtension) || extensionDays > 0;
 
   const { data: internSchedule } = useQuery({
@@ -161,6 +167,26 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   const rotationDurationWeeks = Number(systemSettings?.rotation_duration_weeks) || 4;
   const rotationDurationDays = rotationDurationWeeks * 7;
 
+  const refreshMovementData = React.useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: ['intern-schedule', intern.id] });
+    await queryClient.invalidateQueries({ queryKey: ['intern', intern.id] });
+    await queryClient.invalidateQueries({ queryKey: ['interns'] });
+  }, [intern.id, queryClient]);
+
+  const acceptMovementMutation = useMutation({
+    mutationFn: (internId) => api.acceptMovement(internId),
+    onSuccess: async (data) => {
+      console.log('[PHASE 2] Confirmation completion:', data);
+      setConfirmMovementData(null);
+      await refreshMovementData();
+      if (typeof onInternUpdated === 'function') onInternUpdated(data);
+    },
+    onError: (error) => {
+      console.error('[PHASE 2] Failed to accept movement:', error);
+      alert(`Failed to accept movement: ${error.message || 'Unknown error'}`);
+    },
+  });
+
   // Debug logging
   React.useEffect(() => {
     if (internSchedule) {
@@ -186,16 +212,13 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   // Separate completed and upcoming rotations using normalized dates to handle extensions correctly
   const completedRotations = React.useMemo(() => {
     if (schedulePayload?.completed) return schedulePayload.completed;
-    return scheduleRows.filter(r => normalizeDate(r.end_date) < normalizeDate(new Date()));
+    return scheduleRows.filter(r => r.status === 'completed');
   }, [schedulePayload, scheduleRows]);
 
   const currentRotations = React.useMemo(() => {
     if (schedulePayload?.current) return [schedulePayload.current];
     return scheduleRows.filter(r => {
-      const start = normalizeDate(r.start_date);
-      const end = normalizeDate(r.end_date);
-      const today = normalizeDate(new Date());
-      return start <= today && end >= today;
+      return r.status === 'active' || r.status === 'pending';
     });
   }, [schedulePayload, scheduleRows]);
 
@@ -285,6 +308,41 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
       leavingSoonDays: PREDICTIVE_WINDOW_DAYS,
     });
   }, [completedRotations, currentIntern, currentRotation, currentTime, interns, orderedUnits]);
+
+  const movementControlItem = React.useMemo(() => {
+    if (!currentRotation || !currentIntern) return null;
+    const awaitingAssignment = scheduleRows.find((row) => row.status === 'awaiting_confirmation') || null;
+    const startDate = parseDateValue(currentRotation.start_date || currentRotation.startDate);
+    const plannedDuration = Number(currentRotation.baseDuration || currentRotation.base_duration || currentRotation.duration || currentRotation.duration_days || 0);
+    const plannedEndDate = startDate && plannedDuration > 0 ? getUnitEndDate(startDate, plannedDuration) : parseDateValue(currentRotation.end_date || currentRotation.endDate);
+    const today = new Date(currentTime);
+    today.setHours(0, 0, 0, 0);
+    const remainingDays = plannedEndDate ? Math.floor((plannedEndDate.getTime() - today.getTime()) / DAY_IN_MS) : null;
+    const elapsedDays = startDate ? Math.floor((today.getTime() - startDate.getTime()) / DAY_IN_MS) + 1 : 0;
+    const nextUnit = awaitingAssignment?.unit_name || awaitingAssignment?.unit?.name || nextAssignmentPreview?.unit?.name || currentIntern?.upcomingUnit?.name || 'Pending Assignment';
+    const item = {
+      intern: {
+        ...currentIntern,
+        rotations: scheduleRows,
+        completedUnits: completedRotations,
+      },
+      activeAssignment: currentRotation,
+      nextAssignment: awaitingAssignment || null,
+      internId: currentIntern._id || currentIntern.id || intern.id,
+      internName: currentIntern.name || 'Unnamed Intern',
+      currentUnit: currentRotation.unit_name || currentIntern?.currentUnit?.name || 'Current Unit',
+      currentUnitId: currentRotation.unit_id || currentRotation.unitId || currentIntern?.currentUnit?.id || currentIntern?.currentUnit?._id,
+      nextUnit,
+      nextUnitId: awaitingAssignment?.unit_id || awaitingAssignment?.unitId || awaitingAssignment?.unit?.id || awaitingAssignment?.unit?._id,
+      elapsedDays,
+      plannedDuration,
+      remainingDays,
+      overdueDays: Math.max(0, elapsedDays - plannedDuration),
+      isOverdue: currentRotation.status === 'pending' || (remainingDays !== null && remainingDays < 0),
+    };
+    console.log('[InternDashboard] pending movement item:', item);
+    return item;
+  }, [completedRotations, currentIntern, currentRotation, currentTime, intern.id, nextAssignmentPreview, scheduleRows]);
 
   const getRotationDuration = React.useCallback((rotation) => {
     // NEVER use rotation.duration_days - backend doesn't update it after extension
@@ -602,7 +660,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
               <CardContent>
                 {!currentRotation ? (
                   <p className="text-center py-4 text-gray-500">No active unit assignment</p>
-                ) : !nextAssignmentPreview.shouldPreview ? (
+                ) : !nextAssignmentPreview.shouldPreview && !movementControlItem?.isOverdue ? (
                   <div className="text-center py-4 text-gray-500">
                     Preview appears when current unit has 5 days or less remaining
                   </div>
@@ -611,16 +669,29 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                     <p className="font-medium text-green-700">Rotation Complete</p>
                     <p className="text-xs text-gray-500 mt-1">All units have been completed.</p>
                   </div>
-                ) : nextAssignmentPreview.status === 'pending' ? (
+                ) : nextAssignmentPreview.status === 'pending' && !movementControlItem?.isOverdue ? (
                   <div className="text-center py-4">
                     <p className="font-medium text-amber-700">Pending Assignment</p>
                     <p className="text-xs text-gray-500 mt-1">No eligible unit available for preview.</p>
                   </div>
                 ) : (
                   <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
-                    <p className="text-sm text-blue-700 font-medium">Next Assignment (in &lt;=5 days)</p>
-                    <p className="text-lg font-semibold text-gray-900 mt-1">{nextAssignmentPreview?.unit?.name || 'Pending Assignment'}</p>
-                    <p className="text-sm text-gray-600 mt-1">Starts: {nextAssignmentPreview?.startsOnLabel || 'TBD'}</p>
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="text-sm text-blue-700 font-medium">Next Assignment (in &lt;=5 days)</p>
+                        <p className="text-lg font-semibold text-gray-900 mt-1">{movementControlItem?.nextUnit || nextAssignmentPreview?.unit?.name || 'Pending Assignment'}</p>
+                        <p className="text-sm text-gray-600 mt-1">Starts: {nextAssignmentPreview?.startsOnLabel || 'TBD'}</p>
+                      </div>
+                      {movementControlItem && (
+                        <MovementControls
+                          item={movementControlItem}
+                          className="md:w-72"
+                          onAccept={setConfirmMovementData}
+                          onReassign={setReassignNextData}
+                          acceptPending={acceptMovementMutation.isPending}
+                        />
+                      )}
+                    </div>
                   </div>
                 )}
               </CardContent>
@@ -726,6 +797,23 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
             }}
           />
         )}
+        {reassignNextData && (
+          <ReassignNextModal
+            confirmation={reassignNextData}
+            onClose={() => setReassignNextData(null)}
+            onSuccess={async () => {
+              console.log('[PHASE 3] Intern dashboard reassignment complete');
+              setReassignNextData(null);
+              await refreshMovementData();
+            }}
+          />
+        )}
+        <ConfirmMovementModal
+          movement={confirmMovementData}
+          isPending={acceptMovementMutation.isPending}
+          onClose={() => setConfirmMovementData(null)}
+          onConfirm={(movement) => acceptMovementMutation.mutate(movement.internId)}
+        />
       </div>
     </div>
   );

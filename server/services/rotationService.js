@@ -118,7 +118,7 @@ async function checkAndMarkAwaitingConfirmation(internId, today = new Date()) {
   const normalizedToday = startOfDay(today);
   
   // Find the intern's current active rotation
-  const currentRotation = await Rotation.findOne({ intern: internId, status: 'active' })
+  const currentRotation = await Rotation.findOne({ intern: internId, status: { $in: ['active', 'pending'] } })
     .sort({ startDate: -1 })
     .populate('intern')
     .exec();
@@ -133,6 +133,12 @@ async function checkAndMarkAwaitingConfirmation(internId, today = new Date()) {
   }
   
   // Current rotation has expired - look for next rotation (upcoming or not yet created)
+  if (currentRotation.status !== 'pending') {
+    currentRotation.status = 'pending';
+    await currentRotation.save();
+    console.log(`[STATUS TRANSITION] ${currentRotation.intern?.name || internId}: ACTIVE -> PENDING`);
+  }
+
   let nextRotation = await Rotation.findOne({ 
     intern: internId, 
     $or: [
@@ -172,7 +178,7 @@ async function acceptMovement(internId) {
   // 1. Find current active assignment
   const currentRotation = await Rotation.findOne({ 
     intern: internId, 
-    status: 'active' 
+    status: { $in: ['active', 'pending'] } 
   })
     .populate('intern')
     .populate('unit')
@@ -289,7 +295,7 @@ async function reassignNextUnit(internId, newUnitId) {
   // 5. Check if this is the current active unit
   const currentRotation = await Rotation.findOne({
     intern: internId,
-    status: 'active'
+    status: { $in: ['active', 'pending'] }
   })
     .populate('unit')
     .exec();

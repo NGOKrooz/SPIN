@@ -453,10 +453,10 @@ const syncInternRotationStates = async (internId) => {
     if (rotation.status === 'awaiting_confirmation') {
       nextStatus = 'awaiting_confirmation';
     } else if (activeRotationId && rotation._id.toString() === activeRotationId) {
-      nextStatus = 'active';
+      nextStatus = rotation.status === 'pending' ? 'pending' : 'active';
     } else if (startDate > now) {
       nextStatus = 'upcoming';
-    } else if (endDate < now) {
+    } else if (endDate < now && rotation.status !== 'pending') {
       nextStatus = 'completed';
     }
 
@@ -486,7 +486,7 @@ const syncInternRotationStates = async (internId) => {
   intern.currentUnit = current?.unit || null;
   if (current) {
     const activeExtensionDays = getRotationTotalExtensionDays(current, current.unit);
-    intern.status = activeExtensionDays > 0 ? 'extended' : 'active';
+    intern.status = current.status === 'pending' ? 'pending' : 'active';
     intern.manualExtensionDays = getRotationManualExtensionDays(current);
     intern.autoExtensionDays = getRotationAutoExtensionDays(current);
     intern.extensionDays = activeExtensionDays;
@@ -524,7 +524,7 @@ const mapInternWithUnits = (internDoc, units) => {
       return (leftDate?.getTime() || 0) - (rightDate?.getTime() || 0);
     })
     : [];
-  const activeRotation = rotations.find((rotation) => rotation?.status === 'active') || null;
+  const activeRotation = rotations.find((rotation) => rotation?.status === 'active' || rotation?.status === 'pending') || null;
   const upcomingRotations = rotations.filter((rotation) => rotation?.status === 'upcoming');
   const currentUnitId = (
     intern.currentUnit?._id?.toString()
@@ -684,7 +684,7 @@ router.get('/:id/schedule', async (req, res) => {
       .sort({ startDate: 1 })
       .exec();
 
-    const currentRotation = rawRotations.find((rotation) => rotation.status === 'active') || null;
+    const currentRotation = rawRotations.find((rotation) => rotation.status === 'active' || rotation.status === 'pending') || null;
     const upcomingRotations = rawRotations.filter((rotation) => rotation.status === 'upcoming');
     const completedRotations = rawRotations.filter((rotation) => rotation.status === 'completed');
 
@@ -1193,7 +1193,7 @@ router.post('/:id/remove-extension', async (req, res) => {
 
     await syncInternRotationStates(intern._id);
 
-    let rotation = await Rotation.findOne({ intern: intern._id, status: 'active' })
+    let rotation = await Rotation.findOne({ intern: intern._id, status: { $in: ['active', 'pending'] } })
       .populate('unit')
       .exec();
 

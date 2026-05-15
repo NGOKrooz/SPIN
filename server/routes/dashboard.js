@@ -12,7 +12,7 @@ const router = express.Router();
 async function updateBatchStats() {
   const totalInterns = await Intern.countDocuments();
   const totalUnits = await Unit.countDocuments();
-  const activeRotations = await Rotation.countDocuments({ status: 'active' });
+  const activeRotations = await Rotation.countDocuments({ status: { $in: ['active', 'pending'] } });
   const totalExtensions = await ExtensionReason.countDocuments();
 
     return { totalInterns, activeRotations, totalUnits, totalExtensions };

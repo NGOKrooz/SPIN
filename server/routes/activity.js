@@ -91,7 +91,7 @@ async function syncRotationMovementsForFeed() {
       await rotation.save();
     }
 
-    const currentRotation = rotations.find((rotation) => rotation.status === 'active') || null;
+    const currentRotation = rotations.find((rotation) => rotation.status === 'active' || rotation.status === 'pending') || null;
     const completedRotations = rotations.filter((rotation) => rotation.status === 'completed');
     const previousUnitId = intern.currentUnit?._id?.toString?.() || intern.currentUnit?.toString?.() || null;
     const nextUnitId = currentRotation?.unit?.toString?.() || null;

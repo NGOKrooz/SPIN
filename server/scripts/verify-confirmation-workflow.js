@@ -203,7 +203,7 @@ const updateRotationProgress = async (internId, elapsedDays) => {
   const currentStart = addDays(today, -(elapsedDays - 1));
   const currentEnd = addDays(currentStart, 20);
 
-  const currentRotation = await Rotation.findOne({ intern: internId, status: 'active' }).exec();
+  const currentRotation = await Rotation.findOne({ intern: internId, status: { $in: ['active', 'pending'] } }).exec();
   assert(currentRotation, 'Expected active rotation to exist to update progress');
 
   currentRotation.startDate = currentStart;
@@ -232,8 +232,12 @@ const findRotation = (internView, status) => {
   return (internView.rotations || []).find((rotation) => rotation.status === status) || null;
 };
 
+const findActiveLikeRotation = (internView) => (
+  (internView.rotations || []).find((rotation) => rotation.status === 'active' || rotation.status === 'pending') || null
+);
+
 const buildQueueStatus = (internView) => {
-  const activeRotation = findRotation(internView, 'active');
+  const activeRotation = findActiveLikeRotation(internView);
   assert(activeRotation, 'Active rotation missing from intern view');
   const nextRotation = findRotation(internView, 'awaiting_confirmation') || findRotation(internView, 'upcoming');
   assert(nextRotation, 'Next rotation missing from intern view');
@@ -269,7 +273,7 @@ const buildQueueStatus = (internView) => {
     },
     rotationHistoryCount: internView.rotations.length,
     awaitingCount: (internView.rotations || []).filter((r) => r.status === 'awaiting_confirmation').length,
-    activeCount: (internView.rotations || []).filter((r) => r.status === 'active').length,
+    activeCount: (internView.rotations || []).filter((r) => r.status === 'active' || r.status === 'pending').length,
   };
 };
 
@@ -417,7 +421,8 @@ const run = async () => {
     const afterAwaiting = afterRefreshUpcomingState.rotations.find((r) => r.status === 'awaiting_confirmation');
     assert(afterAwaiting, 'Awaiting confirmation rotation must still exist after refresh-upcoming');
     assert(afterAwaiting.unit?.name === 'Pediatrics' || afterAwaiting.unit_name === 'Pediatrics', 'Awaiting confirmation next unit should remain Pediatrics after refresh-upcoming');
-    assert(afterRefreshUpcomingState.rotations.find((r) => r.status === 'active').unit?.name === beforeCurrentUnit || afterRefreshUpcomingState.rotations.find((r) => r.status === 'active').unit_name === beforeCurrentUnit, 'Current unit changed after refresh-upcoming');
+    const activeLikeAfterRefreshUpcoming = findActiveLikeRotation(afterRefreshUpcomingState);
+    assert(activeLikeAfterRefreshUpcoming?.unit?.name === beforeCurrentUnit || activeLikeAfterRefreshUpcoming?.unit_name === beforeCurrentUnit, 'Current unit changed after refresh-upcoming');
     console.log('✅ Refresh upcoming preserved the overdue assignment without moving the intern');
 
     console.log('--- PHASE 7 — REASSIGN TEST ---');
@@ -433,7 +438,7 @@ const run = async () => {
     const nextRotationAfterReassign = stateAfterReassign.rotations.find((r) => r.status === 'awaiting_confirmation');
     assert(nextRotationAfterReassign, 'There should still be one awaiting_confirmation rotation after reassign');
     assert(nextRotationAfterReassign.unit?.name === 'Orthopedics' || nextRotationAfterReassign.unit_name === 'Orthopedics', 'Next unit did not update to Orthopedics after reassign');
-    assert(stateAfterReassign.rotations.filter((r) => r.status === 'active').length === 1, 'Multiple active rotations found after reassign');
+    assert(stateAfterReassign.rotations.filter((r) => r.status === 'active' || r.status === 'pending').length === 1, 'Multiple active-like rotations found after reassign');
     console.log('✅ Reassign changed the next unit only and did not move the intern yet');
 
     console.log('--- PHASE 8 — ACCEPT CONFIRMATION TEST ---');
@@ -474,7 +479,7 @@ const run = async () => {
     console.log('✅ Completed history preserved 27 total days and 6 extension days for Adult Neurology');
 
     console.log('--- PHASE 11 — DUPLICATE ASSIGNMENT VALIDATION ---');
-    assert(finalState.rotations.filter((r) => r.status === 'active').length === 1, 'Multiple active assignments found');
+    assert(finalState.rotations.filter((r) => r.status === 'active' || r.status === 'pending').length === 1, 'Multiple active-like assignments found');
     assert(finalState.rotations.filter((r) => r.status === 'awaiting_confirmation').length === 0, 'Multiple awaiting_confirmation assignments found');
     console.log('✅ No duplicate active or awaiting_confirmation assignments exist');
 

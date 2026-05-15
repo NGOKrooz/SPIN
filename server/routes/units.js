@@ -97,7 +97,7 @@ const formatUnitRotation = (rotationDoc, today = startOfDay(new Date())) => {
     endDate: toIsoString(endDate),
     end_date: toIsoString(endDate),
     status,
-    is_current: status === 'active',
+    is_current: status === 'active' || status === 'pending',
   };
 };
 
@@ -481,7 +481,7 @@ router.put('/:id', normalizeUnitPayload, validateUnitPayload, async (req, res) =
     if (durationChanged) {
       // Dynamic system: update baseDuration and endDate on active rotations for this unit.
       const newDuration = getUnitDuration(unit);
-      const activeRotations = await Rotation.find({ unit: unit._id, status: 'active' }).exec();
+      const activeRotations = await Rotation.find({ unit: unit._id, status: { $in: ['active', 'pending'] } }).exec();
       for (const rot of activeRotations) {
         if (!rot.extensionDays || rot.extensionDays === 0) {
           rot.baseDuration = newDuration;

@@ -7,7 +7,7 @@ const InternSchema = new mongoose.Schema({
   phone: { type: String, default: '' },
   status: {
     type: String,
-    enum: ['active', 'extended', 'completed', 'inactive', 'Active', 'Extended', 'Completed', 'Inactive', ''],
+    enum: ['active', 'pending', 'extended', 'completed', 'inactive', 'Active', 'Pending', 'Extended', 'Completed', 'Inactive', ''],
     default: 'active'
   },
   startDate: { type: Date, required: true },
