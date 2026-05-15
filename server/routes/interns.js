@@ -24,6 +24,7 @@ const {
   assignNextUnit,
   DEFAULT_CAPACITY,
 } = require('../services/dynamicAssignmentService');
+const { isActiveLikeAssignment } = require('../services/assignmentUtils');
 const { updateBatchStats } = require('./dashboard');
 
 const router = express.Router();
@@ -524,7 +525,7 @@ const mapInternWithUnits = (internDoc, units) => {
       return (leftDate?.getTime() || 0) - (rightDate?.getTime() || 0);
     })
     : [];
-  const activeRotation = rotations.find((rotation) => rotation?.status === 'active' || rotation?.status === 'pending') || null;
+  const activeRotation = rotations.find((rotation) => isActiveLikeAssignment(rotation)) || null;
   const upcomingRotations = rotations.filter((rotation) => rotation?.status === 'upcoming');
   const currentUnitId = (
     intern.currentUnit?._id?.toString()
@@ -684,7 +685,7 @@ router.get('/:id/schedule', async (req, res) => {
       .sort({ startDate: 1 })
       .exec();
 
-    const currentRotation = rawRotations.find((rotation) => rotation.status === 'active' || rotation.status === 'pending') || null;
+    const currentRotation = rawRotations.find((rotation) => isActiveLikeAssignment(rotation)) || null;
     const upcomingRotations = rawRotations.filter((rotation) => rotation.status === 'upcoming');
     const completedRotations = rawRotations.filter((rotation) => rotation.status === 'completed');
 

@@ -232,8 +232,10 @@ const findRotation = (internView, status) => {
   return (internView.rotations || []).find((rotation) => rotation.status === status) || null;
 };
 
+const isActiveLikeStatus = (status) => status === 'active' || status === 'pending';
+
 const findActiveLikeRotation = (internView) => (
-  (internView.rotations || []).find((rotation) => rotation.status === 'active' || rotation.status === 'pending') || null
+  (internView.rotations || []).find((rotation) => isActiveLikeStatus(rotation.status)) || null
 );
 
 const buildQueueStatus = (internView) => {
@@ -256,7 +258,7 @@ const buildQueueStatus = (internView) => {
 
   return {
     currentUnit: activeRotation.unit?.name || activeRotation.unit_name || activeRotation.unit,
-    currentStatus: activeRotation.status,
+    currentStatus: isActiveLikeStatus(activeRotation.status) ? 'active' : activeRotation.status,
     plannedDuration,
     activeDuration: totalDuration,
     activeExtensionDays: activeRotation.extensionDays,

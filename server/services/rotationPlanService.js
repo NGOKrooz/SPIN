@@ -8,6 +8,7 @@ const {
   selectNextUnit,
   DEFAULT_CAPACITY,
 } = require('./dynamicAssignmentService');
+const { isActiveLikeAssignment } = require('./assignmentUtils');
 
 const DEFAULT_ROTATION_DURATION_DAYS = 20;
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
@@ -396,7 +397,8 @@ const rebuildInternFutureRotations = async ({
 
     if (derivedStatus === 'completed') {
       completedRotations.push(rotation);
-    } else if (derivedStatus === 'active' && !activeRotation) {
+    } else if (isActiveLikeAssignment(derivedStatus) && !activeRotation) {
+      // Treat 'pending' as active-like for operational resolution
       activeRotation = rotation;
     } else {
       existingUpcomingRotations.push(rotation);

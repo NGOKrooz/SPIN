@@ -10,6 +10,7 @@ const { buildInternViews } = require('../services/internViewService');
 const {
   getActiveUnitLoadMap,
 } = require('../services/rotationPlanService');
+const { isActiveLikeAssignment } = require('../services/assignmentUtils');
 const { updateBatchStats } = require('./dashboard');
 
 const router = express.Router();
@@ -97,7 +98,7 @@ const formatUnitRotation = (rotationDoc, today = startOfDay(new Date())) => {
     endDate: toIsoString(endDate),
     end_date: toIsoString(endDate),
     status,
-    is_current: status === 'active' || status === 'pending',
+    is_current: isActiveLikeAssignment(status),
   };
 };
 

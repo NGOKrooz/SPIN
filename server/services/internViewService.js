@@ -1,6 +1,7 @@
 const Intern = require('../models/Intern');
 const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
+const { isActiveLikeAssignment } = require('./assignmentUtils');
 
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
 
@@ -208,7 +209,7 @@ const formatRotation = (rotation) => {
 const formatIntern = (intern, rotations = []) => {
   const formattedRotations = (rotations || []).map(formatRotation);
 
-  const currentRotation = formattedRotations.find(r => r.status === 'active' || r.status === 'pending');
+  const currentRotation = formattedRotations.find(r => isActiveLikeAssignment(r));
   const upcomingRotations = formattedRotations.filter(r => r.status === 'upcoming');
   const awaitingConfirmationRotations = formattedRotations.filter(r => r.status === 'awaiting_confirmation');
   const completedRotations = formattedRotations.filter(r => r.status === 'completed');
