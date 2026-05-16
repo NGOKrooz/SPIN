@@ -25,9 +25,6 @@ function withFallbackUnitName(rotation) {
 }
 
 function isCompletedRotation(rotation, today) {
-  if (rotation?.status === 'completed') return true;
-  if (rotation?.status === 'pending' || rotation?.status === 'active' || rotation?.status === 'awaiting_confirmation') return false;
-
   const endDate = parseDateSafe(rotation.end_date);
   if (!endDate) return false;
   return endDate < today;

@@ -953,7 +953,7 @@ router.post('/:id/reassign', async (req, res) => {
 
     const current = await Rotation.findOne({
       intern: intern._id,
-      status: { $in: ['active', 'pending'] },
+      status: 'active',
     })
       .populate('unit', 'name')
       .exec();
@@ -1076,7 +1076,7 @@ router.post('/:id/extend', async (req, res) => {
 
     let rotation = await Rotation.findOne({
       intern: intern._id,
-      status: { $in: ['active', 'pending'] },
+      status: 'active',
     })
       .populate('unit')
       .exec();
