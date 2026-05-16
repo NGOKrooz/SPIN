@@ -10,7 +10,7 @@ const {
   getRecentActivities,
   logActivityEventSafe,
 } = require('../services/recentUpdatesService');
-const { transitionAssignmentStatus } = require('../services/assignmentUtils');
+const { transitionAssignmentStatus, getLatestActiveLikeAssignment } = require('../services/assignmentUtils');
 
 const router = express.Router();
 
@@ -96,7 +96,7 @@ async function syncRotationMovementsForFeed() {
       await rotation.save();
     }
 
-    const currentRotation = rotations.find((rotation) => rotation.status === 'active' || rotation.status === 'pending') || null;
+    const currentRotation = getLatestActiveLikeAssignment(rotations) || null;
     const completedRotations = rotations.filter((rotation) => rotation.status === 'completed');
     const previousUnitId = intern.currentUnit?._id?.toString?.() || intern.currentUnit?.toString?.() || null;
     const nextUnitId = currentRotation?.unit?.toString?.() || null;

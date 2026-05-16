@@ -1203,6 +1203,7 @@ router.post('/:id/remove-extension', async (req, res) => {
     await syncInternRotationStates(intern._id);
 
     let rotation = await Rotation.findOne({ intern: intern._id, status: { $in: ['active', 'pending'] } })
+      .sort({ startDate: -1, createdAt: -1 })
       .populate('unit')
       .exec();
 

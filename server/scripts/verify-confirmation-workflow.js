@@ -203,7 +203,9 @@ const updateRotationProgress = async (internId, elapsedDays) => {
   const currentStart = addDays(today, -(elapsedDays - 1));
   const currentEnd = addDays(currentStart, 20);
 
-  const currentRotation = await Rotation.findOne({ intern: internId, status: { $in: ['active', 'pending'] } }).exec();
+  const currentRotation = await Rotation.findOne({ intern: internId, status: { $in: ['active', 'pending'] } })
+    .sort({ startDate: -1, createdAt: -1 })
+    .exec();
   assert(currentRotation, 'Expected active rotation to exist to update progress');
 
   currentRotation.startDate = currentStart;

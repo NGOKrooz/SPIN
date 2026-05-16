@@ -1,7 +1,7 @@
 const Intern = require('../models/Intern');
 const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
-const { isActiveLikeAssignment } = require('./assignmentUtils');
+const { isActiveLikeAssignment, getLatestActiveLikeAssignment } = require('./assignmentUtils');
 
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
 
@@ -209,7 +209,7 @@ const formatRotation = (rotation) => {
 const formatIntern = (intern, rotations = []) => {
   const formattedRotations = (rotations || []).map(formatRotation);
 
-  const currentRotation = formattedRotations.find(r => isActiveLikeAssignment(r));
+  const currentRotation = getLatestActiveLikeAssignment(formattedRotations);
   const upcomingRotations = formattedRotations.filter(r => r.status === 'upcoming');
   const awaitingConfirmationRotations = formattedRotations.filter(r => r.status === 'awaiting_confirmation');
   const completedRotations = formattedRotations.filter(r => r.status === 'completed');
@@ -280,7 +280,7 @@ const formatIntern = (intern, rotations = []) => {
 };
 
 const addUnitProgress = (internView, currentUnit, units = []) => {
-  const activeRotation = (internView.rotations || []).find((rotation) => rotation.status === 'active' || rotation.status === 'pending') || null;
+  const activeRotation = getLatestActiveLikeAssignment(internView.rotations || []) || null;
   const currentUnitId = (
     currentUnit?._id?.toString?.()
     || currentUnit?.id

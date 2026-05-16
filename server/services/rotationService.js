@@ -180,6 +180,7 @@ async function acceptMovement(internId) {
     intern: internId, 
     status: { $in: ['active', 'pending'] } 
   })
+    .sort({ startDate: -1, createdAt: -1 })
     .populate('intern')
     .populate('unit')
     .exec();
@@ -297,6 +298,7 @@ async function reassignNextUnit(internId, newUnitId) {
     intern: internId,
     status: { $in: ['active', 'pending'] }
   })
+    .sort({ startDate: -1, createdAt: -1 })
     .populate('unit')
     .exec();
 
