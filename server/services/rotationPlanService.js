@@ -87,13 +87,17 @@ const buildForwardSequenceKey = (anchorUnitId, upcomingUnits = []) => {
 };
 
 const getDerivedRotationStatus = (rotation, today = startOfDay(new Date())) => {
+  if (rotation?.status === 'completed' || rotation?.status === 'awaiting_confirmation') {
+    return rotation.status;
+  }
+
   const startDate = rotation?.startDate ? startOfDay(rotation.startDate) : null;
   const endDate = rotation?.endDate ? startOfDay(rotation.endDate) : null;
 
   if (!startDate) return 'upcoming';
   if (startDate > today) return 'upcoming';
   if (!endDate || endDate >= today) return 'active';
-  return 'completed';
+  return 'pending';
 };
 
 const computeDeterministicProgress = (internStartDate, orderedUnits = [], now = new Date()) => {

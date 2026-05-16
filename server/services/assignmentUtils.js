@@ -1,4 +1,5 @@
 const ACTIVE_LIKE = new Set(['active', 'pending']);
+const VISIBLE_STATUSES = ['active', 'pending'];
 
 function isActiveLikeAssignment(subject) {
   if (!subject) return false;
@@ -7,6 +8,40 @@ function isActiveLikeAssignment(subject) {
   return false;
 }
 
+function calculateOverdueDays(rotation, today = new Date()) {
+  if (!rotation || !rotation.endDate) return 0;
+  const endDate = new Date(rotation.endDate);
+  if (Number.isNaN(endDate.getTime())) return 0;
+  endDate.setHours(0, 0, 0, 0);
+  const current = new Date(today);
+  current.setHours(0, 0, 0, 0);
+  return Math.max(0, Math.floor((current.getTime() - endDate.getTime()) / (1000 * 60 * 60 * 24)));
+}
+
+function transitionAssignmentStatus(assignment, action) {
+  if (!assignment || typeof assignment !== 'object') return assignment;
+
+  if (action === 'auto-time-trigger') {
+    return {
+      ...assignment,
+      status: 'pending',
+      overdueDays: calculateOverdueDays(assignment),
+    };
+  }
+
+  if (action === 'admin-confirm') {
+    return {
+      ...assignment,
+      status: 'completed',
+    };
+  }
+
+  return assignment;
+}
+
 module.exports = {
   isActiveLikeAssignment,
+  transitionAssignmentStatus,
+  calculateOverdueDays,
+  VISIBLE_STATUSES,
 };

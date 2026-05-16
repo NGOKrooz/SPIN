@@ -229,7 +229,7 @@ async function ensureInternStatusIsCorrect(internId) {
 
   const activeRotation = await Rotation.findOne({
     intern: refreshedIntern._id,
-    status: 'active',
+    status: { $in: ['active', 'pending'] },
   })
     .sort({ startDate: -1, createdAt: -1 })
     .exec();
@@ -237,7 +237,11 @@ async function ensureInternStatusIsCorrect(internId) {
   let newStatus = 'completed';
   if (activeRotation) {
     const activeExtensionDays = Number(activeRotation.extensionDays || 0);
-    newStatus = activeExtensionDays > 0 ? 'extended' : 'active';
+    if (activeRotation.status === 'pending') {
+      newStatus = 'pending';
+    } else {
+      newStatus = activeExtensionDays > 0 ? 'extended' : 'active';
+    }
     refreshedIntern.extensionDays = activeExtensionDays;
   } else {
     refreshedIntern.extensionDays = 0;

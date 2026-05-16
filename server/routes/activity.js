@@ -10,6 +10,7 @@ const {
   getRecentActivities,
   logActivityEventSafe,
 } = require('../services/recentUpdatesService');
+const { transitionAssignmentStatus } = require('../services/assignmentUtils');
 
 const router = express.Router();
 
@@ -76,7 +77,11 @@ async function syncRotationMovementsForFeed() {
 
       let nextStatus = rotation.status;
       if (rotation.status !== 'completed' && now > endDate) {
-        nextStatus = 'completed';
+        console.log('AUTO COMPLETION BLOCKED');
+        const updated = transitionAssignmentStatus(rotation, 'auto-time-trigger');
+        rotation.status = updated.status;
+        rotation.overdueDays = updated.overdueDays;
+        nextStatus = updated.status;
       } else if (rotation.status !== 'completed' && !hasActiveRotation && startDate <= now && now <= endDate) {
         nextStatus = 'active';
         hasActiveRotation = true;

@@ -584,7 +584,11 @@ async function assignNextUnit(internOrId, options = {}) {
     const duration = getUnitDuration(unit);
     const startDate = getNextRotationStartDate(previousEndDate, intern.startDate || today);
     const { endDate } = getRotationWindow(startDate, duration);
-    const rotationStatus = endDate < today ? 'completed' : 'active';
+    const rotationStatus = endDate < today ? 'pending' : 'active';
+
+    if (rotationStatus === 'pending') {
+      console.log('AUTO COMPLETION BLOCKED');
+    }
 
     rotation = await Rotation.create({
       intern: intern._id,

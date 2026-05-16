@@ -25,12 +25,17 @@ function withFallbackUnitName(rotation) {
 }
 
 function isCompletedRotation(rotation, today) {
+  if (rotation?.status === 'completed') return true;
+  if (rotation?.status === 'pending' || rotation?.status === 'active' || rotation?.status === 'awaiting_confirmation') return false;
+
   const endDate = parseDateSafe(rotation.end_date);
   if (!endDate) return false;
   return endDate < today;
 }
 
 function isCurrentRotation(rotation, today) {
+  if (rotation?.status === 'pending') return true;
+
   const startDate = parseDateSafe(rotation.start_date);
   const endDate = parseDateSafe(rotation.end_date);
 

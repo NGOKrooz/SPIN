@@ -24,7 +24,10 @@ const {
   assignNextUnit,
   DEFAULT_CAPACITY,
 } = require('../services/dynamicAssignmentService');
-const { isActiveLikeAssignment } = require('../services/assignmentUtils');
+const {
+  isActiveLikeAssignment,
+  transitionAssignmentStatus,
+} = require('../services/assignmentUtils');
 const { updateBatchStats } = require('./dashboard');
 
 const router = express.Router();
@@ -458,7 +461,11 @@ const syncInternRotationStates = async (internId) => {
     } else if (startDate > now) {
       nextStatus = 'upcoming';
     } else if (endDate < now && rotation.status !== 'pending') {
-      nextStatus = 'completed';
+      console.log('AUTO COMPLETION BLOCKED');
+      const updated = transitionAssignmentStatus(rotation, 'auto-time-trigger');
+      rotation.status = updated.status;
+      rotation.overdueDays = updated.overdueDays;
+      nextStatus = updated.status;
     }
 
     if (rotation.status !== nextStatus) {
@@ -946,7 +953,7 @@ router.post('/:id/reassign', async (req, res) => {
 
     const current = await Rotation.findOne({
       intern: intern._id,
-      status: 'active',
+      status: { $in: ['active', 'pending'] },
     })
       .populate('unit', 'name')
       .exec();
@@ -1069,7 +1076,7 @@ router.post('/:id/extend', async (req, res) => {
 
     let rotation = await Rotation.findOne({
       intern: intern._id,
-      status: 'active',
+      status: { $in: ['active', 'pending'] },
     })
       .populate('unit')
       .exec();
@@ -1122,7 +1129,8 @@ router.post('/:id/extend', async (req, res) => {
     if (rotationStart > today) {
       rotation.status = 'upcoming';
     } else if (rotationEnd < today) {
-      rotation.status = 'completed';
+      console.log('AUTO COMPLETION BLOCKED');
+      rotation.status = rotation.status === 'completed' ? 'completed' : 'pending';
     } else {
       rotation.status = 'active';
     }
@@ -1137,7 +1145,7 @@ router.post('/:id/extend', async (req, res) => {
     intern.extensionDays = rotation.status !== 'completed' ? Number(rotation.extensionDays || 0) : 0;
     intern.status = rotation.status === 'completed'
       ? 'completed'
-      : (Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active');
+      : (rotation.status === 'pending' ? 'pending' : (Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active'));
     await intern.save();
 
     const reasonText = req.body.reason || 'No reason provided';
@@ -1252,7 +1260,8 @@ router.post('/:id/remove-extension', async (req, res) => {
     if (rotationStart > today) {
       rotation.status = 'upcoming';
     } else if (rotationEnd < today) {
-      rotation.status = 'completed';
+      console.log('AUTO COMPLETION BLOCKED');
+      rotation.status = rotation.status === 'completed' ? 'completed' : 'pending';
     } else {
       rotation.status = 'active';
     }
@@ -1267,7 +1276,7 @@ router.post('/:id/remove-extension', async (req, res) => {
     intern.extensionDays = rotation.status !== 'completed' ? Number(rotation.extensionDays || 0) : 0;
     intern.status = rotation.status === 'completed'
       ? 'completed'
-      : (Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active');
+      : (rotation.status === 'pending' ? 'pending' : (Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active'));
     await intern.save();
 
     const reasonText = req.body.reason || 'No reason provided';
