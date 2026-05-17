@@ -12,7 +12,12 @@ const router = express.Router();
 async function updateBatchStats() {
   const totalInterns = await Intern.countDocuments();
   const totalUnits = await Unit.countDocuments();
-  const activeRotations = await Rotation.countDocuments({ status: { $in: ['active', 'pending'] } });
+    const candidateRotations = await Rotation.find({}).select('status workflowState startDate endDate').exec();
+    const { normalizeRotation } = require('../services/assignmentUtils');
+    const activeRotations = candidateRotations.filter((r) => {
+      const norm = normalizeRotation(r);
+      return norm && norm.status === 'active';
+    }).length;
   const totalExtensions = await ExtensionReason.countDocuments();
 
     return { totalInterns, activeRotations, totalUnits, totalExtensions };

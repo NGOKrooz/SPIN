@@ -482,9 +482,11 @@ router.put('/:id', normalizeUnitPayload, validateUnitPayload, async (req, res) =
     if (durationChanged) {
       // Dynamic system: update baseDuration and endDate on active rotations for this unit.
       const newDuration = getUnitDuration(unit);
-      const activeRotations = await Rotation.find({ unit: unit._id, status: { $in: ['active', 'pending'] } }).exec();
+      const activeRotations = await Rotation.find({ unit: unit._id }).select('startDate endDate extensionDays baseDuration duration').exec();
+      const { normalizeRotation } = require('../services/assignmentUtils');
       for (const rot of activeRotations) {
-        if (!rot.extensionDays || rot.extensionDays === 0) {
+        const norm = normalizeRotation(rot) || rot;
+        if (!norm.extensionDays || norm.extensionDays === 0) {
           rot.baseDuration = newDuration;
           rot.duration = newDuration;
           rot.endDate = recalculateEndDate(rot.startDate, newDuration);

@@ -1,22 +1,83 @@
-const ACTIVE_LIKE = new Set(['active', 'pending']);
-const VISIBLE_STATUSES = ['active', 'pending'];
+const LEGACY_PENDING_STATUS = 'pending';
+const VALID_LIFECYCLE_STATUSES = new Set(['active', 'upcoming', 'completed', 'awaiting_confirmation']);
+const VALID_WORKFLOW_STATES = new Set(['normal', 'pending_confirmation']);
 
-function isActiveLikeAssignment(subject) {
-  if (!subject) return false;
-  if (typeof subject === 'string') return ACTIVE_LIKE.has(subject);
-  if (typeof subject === 'object' && subject.status) return ACTIVE_LIKE.has(String(subject.status));
-  return false;
+function parseRotationDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function normalizeRotation(rotation = {}) {
+  if (!rotation || typeof rotation !== 'object') return null;
+
+  const normalized = { ...rotation };
+  if (rotation._id !== undefined) {
+    normalized._id = rotation._id;
+  }
+
+  const rawStatus = String(rotation.status || '').trim().toLowerCase();
+  const rawWorkflow = String(rotation.workflowState || rotation.workflow_state || '').trim().toLowerCase();
+
+  if (rawStatus === LEGACY_PENDING_STATUS) {
+    normalized.status = 'active';
+    normalized.workflowState = rawWorkflow || 'pending_confirmation';
+  } else {
+    normalized.status = VALID_LIFECYCLE_STATUSES.has(rawStatus) ? rawStatus : 'upcoming';
+    normalized.workflowState = VALID_WORKFLOW_STATES.has(rawWorkflow) ? rawWorkflow : 'normal';
+  }
+
+  if (!normalized.workflowState) {
+    normalized.workflowState = 'normal';
+  }
+
+  return normalized;
+}
+
+function isActiveAssignment(rotation) {
+  const normalized = normalizeRotation(rotation);
+  return normalized ? normalized.status === 'active' : false;
+}
+
+function getRotationStartTime(rotation) {
+  const date = parseRotationDate(rotation?.startDate || rotation?.start_date);
+  return date ? date.getTime() : 0;
+}
+
+function resolveCurrentAssignment(subject = {}) {
+  const rotations = Array.isArray(subject.rotations)
+    ? subject.rotations
+    : Array.isArray(subject.assignments)
+      ? subject.assignments
+      : Array.isArray(subject) && typeof subject !== 'object'
+        ? subject
+        : [];
+
+  return [...rotations]
+    .map(normalizeRotation)
+    .filter((rotation) => isActiveAssignment(rotation))
+    .sort((a, b) => getRotationStartTime(b) - getRotationStartTime(a))[0] || null;
+}
+
+function resolveUpcomingAssignment(subject = {}) {
+  const rotations = Array.isArray(subject.rotations)
+    ? subject.rotations
+    : Array.isArray(subject.assignments)
+      ? subject.assignments
+      : Array.isArray(subject) && typeof subject !== 'object'
+        ? subject
+        : [];
+
+  return [...rotations]
+    .map(normalizeRotation)
+    .filter((rotation) => rotation.status === 'upcoming')
+    .sort((a, b) => getRotationStartTime(a) - getRotationStartTime(b))[0] || null;
 }
 
 function getLatestActiveLikeAssignment(rotations = []) {
-  if (!Array.isArray(rotations)) return null;
-  return [...rotations]
-    .filter((rotation) => isActiveLikeAssignment(rotation))
-    .sort((a, b) => {
-      const aDate = new Date(a.startDate || a.start_date || 0).getTime();
-      const bDate = new Date(b.startDate || b.start_date || 0).getTime();
-      return bDate - aDate;
-    })[0] || null;
+  return resolveCurrentAssignment({ rotations });
 }
 
 function calculateOverdueDays(rotation, today = new Date()) {
@@ -35,7 +96,8 @@ function transitionAssignmentStatus(assignment, action) {
   if (action === 'auto-time-trigger') {
     return {
       ...assignment,
-      status: 'pending',
+      status: 'active',
+      workflowState: 'pending_confirmation',
       overdueDays: calculateOverdueDays(assignment),
     };
   }
@@ -44,6 +106,7 @@ function transitionAssignmentStatus(assignment, action) {
     return {
       ...assignment,
       status: 'completed',
+      workflowState: 'normal',
     };
   }
 
@@ -51,9 +114,12 @@ function transitionAssignmentStatus(assignment, action) {
 }
 
 module.exports = {
-  isActiveLikeAssignment,
+  isActiveLikeAssignment: isActiveAssignment,
+  isActiveAssignment,
+  normalizeRotation,
+  resolveCurrentAssignment,
+  resolveUpcomingAssignment,
   getLatestActiveLikeAssignment,
   transitionAssignmentStatus,
   calculateOverdueDays,
-  VISIBLE_STATUSES,
 };

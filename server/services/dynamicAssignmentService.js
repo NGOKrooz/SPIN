@@ -4,6 +4,7 @@ const Intern = require('../models/Intern');
 const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
 const { canAssignmentTransition } = require('./movementGuard');
+const { normalizeRotation, resolveCurrentAssignment } = require('./assignmentUtils');
 
 const DEFAULT_CAPACITY = 4;
 const DEFAULT_DURATION = 20;
@@ -112,17 +113,19 @@ const shiftFutureRotations = async (internId, pivotEndDate, dayDelta, excludeRot
  */
 async function getUnitOccupancy() {
   const today = startOfDay(new Date());
-  const active = await Rotation.find({ status: { $in: ['active', 'pending'] } })
-    .select('unit startDate endDate')
+  const rotations = await Rotation.find({})
+    .select('unit startDate endDate status workflowState')
     .exec();
 
   const counts = new Map();
-  for (const rot of active) {
-    const start = rot.startDate ? startOfDay(rot.startDate) : null;
-    const end = rot.endDate ? startOfDay(rot.endDate) : null;
+  for (const rot of rotations) {
+    const norm = normalizeRotation(rot);
+    if (!norm || norm.status !== 'active') continue;
+    const start = norm.startDate ? startOfDay(norm.startDate) : null;
+    const end = norm.endDate ? startOfDay(norm.endDate) : null;
     if (start && start > today) continue;
     if (end && end < today) continue;
-    const uid = rot.unit?.toString?.() || null;
+    const uid = norm.unit?.toString?.() || norm.unit?._id?.toString?.() || null;
     if (uid) counts.set(uid, (counts.get(uid) || 0) + 1);
   }
   return counts;
@@ -135,15 +138,17 @@ async function getUnitOccupancy() {
 async function getUnitInternsLeavingSoon(windowDays = LEAVING_SOON_DAYS) {
   const today = startOfDay(new Date());
   const maxDate = startOfDay(addDays(today, windowDays));
-  const active = await Rotation.find({ status: { $in: ['active', 'pending'] } })
-    .select('unit endDate extensionDays')
+  const rotations = await Rotation.find({})
+    .select('unit endDate extensionDays status workflowState startDate')
     .exec();
 
   const counts = new Map();
-  for (const rot of active) {
-    const uid = rot.unit?.toString?.() || null;
-    const end = rot.endDate ? startOfDay(rot.endDate) : null;
-    const extensionDays = Number(rot.extensionDays || 0);
+  for (const rot of rotations) {
+    const norm = normalizeRotation(rot);
+    if (!norm || norm.status !== 'active') continue;
+    const uid = norm.unit?.toString?.() || norm.unit?._id?.toString?.() || null;
+    const end = norm.endDate ? startOfDay(norm.endDate) : null;
+    const extensionDays = Number(norm.extensionDays || 0);
     const finalEnd = end ? startOfDay(addDays(end, extensionDays)) : null;
     if (!uid || !finalEnd) continue;
     if (finalEnd < today || finalEnd > maxDate) continue;
@@ -157,7 +162,18 @@ async function getUnitInternsLeavingSoon(windowDays = LEAVING_SOON_DAYS) {
  * Get the count of active interns in a unit.
  */
 async function getActiveInternsCount(unitId) {
-  const count = await Rotation.countDocuments({ unit: unitId, status: { $in: ['active', 'pending'] } });
+  const rotations = await Rotation.find({ unit: unitId }).select('status workflowState startDate endDate unit extensionDays').exec();
+  let count = 0;
+  const today = startOfDay(new Date());
+  for (const rot of rotations) {
+    const norm = normalizeRotation(rot);
+    if (!norm || norm.status !== 'active') continue;
+    const start = norm.startDate ? startOfDay(norm.startDate) : null;
+    const end = norm.endDate ? startOfDay(norm.endDate) : null;
+    if (start && start > today) continue;
+    if (end && end < today) continue;
+    count += 1;
+  }
   return count;
 }
 
@@ -354,8 +370,8 @@ async function buildGlobalBatchPlan(allUnits, options = {}) {
   const today = startOfDay(options.now || new Date());
   const movementMaxDate = startOfDay(addDays(today, MOVEMENT_WINDOW_DAYS));
 
-  const activeRotations = await Rotation.find({ status: { $in: ['active', 'pending'] } })
-    .select('intern unit startDate endDate')
+  const activeRotations = await Rotation.find({})
+    .select('intern unit startDate endDate status workflowState')
     .exec();
 
   const occupancy = new Map();
@@ -363,12 +379,14 @@ async function buildGlobalBatchPlan(allUnits, options = {}) {
   const moving = [];
 
   for (const row of activeRotations) {
-    const unitId = row.unit?.toString?.() || null;
+    const norm = normalizeRotation(row);
+    if (!norm || norm.status !== 'active') continue;
+    const unitId = norm.unit?.toString?.() || null;
     if (!unitId) continue;
 
     occupancy.set(unitId, (occupancy.get(unitId) || 0) + 1);
 
-    const end = row.endDate ? startOfDay(row.endDate) : null;
+    const end = norm.endDate ? startOfDay(norm.endDate) : null;
     if (!end) continue;
 
     if (end >= today && end <= startOfDay(addDays(today, LEAVING_SOON_DAYS))) {
@@ -377,7 +395,7 @@ async function buildGlobalBatchPlan(allUnits, options = {}) {
 
     if (end >= today && end <= movementMaxDate) {
       moving.push({
-        internId: row.intern?.toString?.() || null,
+        internId: norm.intern?.toString?.() || null,
         currentUnitId: unitId,
         moveDate: end,
       });
@@ -495,12 +513,10 @@ async function assignNextUnit(internOrId, options = {}) {
   const today = startOfDay(now);
   let previousUnitId = intern.currentUnit?.toString?.() || null;
   let previousEndDate = null;
-  const currentRotation = await Rotation.findOne({ intern: intern._id, status: { $in: ['active', 'pending'] } })
-    .sort({ startDate: -1, createdAt: -1 })
-    .exec();
-  const latestRotation = currentRotation || await Rotation.findOne({ intern: intern._id })
-    .sort({ endDate: -1, startDate: -1, createdAt: -1 })
-    .exec();
+  const allRotationsForIntern = await Rotation.find({ intern: intern._id }).sort({ startDate: -1, createdAt: -1 }).exec();
+  const currentNorm = resolveCurrentAssignment({ rotations: allRotationsForIntern });
+  const currentRotation = currentNorm ? allRotationsForIntern.find((r) => String(r._id) === String(currentNorm._id)) : null;
+  const latestRotation = currentRotation || (allRotationsForIntern[0] || null);
 
   let completedRotation = null;
   const getUnitName = (unitRef) => {
@@ -644,9 +660,9 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
   if (!intern) throw new Error('Intern not found');
 
   const today = startOfDay(now);
-  const activeRotation = await Rotation.findOne({ intern: internId, status: { $in: ['active', 'pending'] } })
-    .sort({ startDate: -1, createdAt: -1 })
-    .exec();
+  const allRotationsForIntern = await Rotation.find({ intern: internId }).sort({ startDate: -1, createdAt: -1 }).exec();
+  const activeNorm = resolveCurrentAssignment({ rotations: allRotationsForIntern });
+  const activeRotation = activeNorm ? allRotationsForIntern.find((r) => String(r._id) === String(activeNorm._id)) : null;
 
   if (activeRotation) {
     const startDate = activeRotation.startDate ? startOfDay(activeRotation.startDate) : null;

@@ -1,6 +1,7 @@
 const { startOfDay } = require('date-fns');
 const Rotation = require('../models/Rotation');
 const Intern = require('../models/Intern');
+const { normalizeRotation } = require('./assignmentUtils');
 
 const ALLOWED_TRANSITIONS = new Set([
   'assignFirstUnit',
@@ -55,9 +56,10 @@ async function validateRotationIntegrity(internId) {
     .exec();
 
   const issues = [];
-  const active = rotations.filter((rotation) => rotation.status === 'active' || rotation.status === 'pending');
-  const awaiting = rotations.filter((rotation) => rotation.status === 'awaiting_confirmation');
-  const upcoming = rotations.filter((rotation) => rotation.status === 'upcoming');
+  const normalizedRotations = rotations.map(normalizeRotation);
+  const active = normalizedRotations.filter((rotation) => rotation?.status === 'active');
+  const awaiting = normalizedRotations.filter((rotation) => rotation?.status === 'awaiting_confirmation');
+  const upcoming = normalizedRotations.filter((rotation) => rotation?.status === 'upcoming');
 
   if (active.length > 1) {
     issues.push('Multiple active rotations found');

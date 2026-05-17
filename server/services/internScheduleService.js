@@ -1,3 +1,5 @@
+const { normalizeRotation } = require('./assignmentUtils');
+
 function parseDateSafe(value) {
   if (!value) return null;
 
@@ -31,7 +33,11 @@ function isCompletedRotation(rotation, today) {
 }
 
 function isCurrentRotation(rotation, today) {
-  if (rotation?.status === 'pending') return true;
+  const normalized = normalizeRotation(rotation);
+  if (normalized?.status === 'active' && normalized?.workflowState === 'pending_confirmation') return true;
+  if (normalized?.status === 'active') {
+    return true;
+  }
 
   const startDate = parseDateSafe(rotation.start_date);
   const endDate = parseDateSafe(rotation.end_date);

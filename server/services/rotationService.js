@@ -4,6 +4,7 @@ const Unit = require('../models/Unit');
 const Intern = require('../models/Intern');
 const ActivityLog = require('../models/ActivityLog');
 const { canAssignmentTransition, validateRotationIntegrity } = require('./movementGuard');
+const { resolveCurrentAssignment } = require('./assignmentUtils');
 
 const DEFAULT_ROTATION_DURATION_DAYS = 20;
 
@@ -117,26 +118,26 @@ async function checkAndMarkAwaitingConfirmation(internId, today = new Date()) {
   canAssignmentTransition('checkAndMarkAwaitingConfirmation');
   const normalizedToday = startOfDay(today);
   
-  // Find the intern's current active rotation
-  const currentRotation = await Rotation.findOne({ intern: internId, status: { $in: ['active', 'pending'] } })
-    .sort({ startDate: -1 })
-    .populate('intern')
-    .exec();
+  // Find the intern's current active rotation using resolver
+  const allRotations = await Rotation.find({ intern: internId }).sort({ startDate: -1 }).exec();
+  const currentNorm = resolveCurrentAssignment({ rotations: allRotations });
+  const currentRotation = currentNorm ? allRotations.find((r) => String(r._id) === String(currentNorm._id)) : null;
+  if (currentRotation) await currentRotation.populate('intern');
   
   if (!currentRotation) return null;
   
   // Check if the planned duration has been exceeded
   const endDate = startOfDay(currentRotation.endDate);
   if (normalizedToday <= endDate) {
-    // Not yet expired
     return null;
   }
   
-  // Current rotation has expired - look for next rotation (upcoming or not yet created)
-  if (currentRotation.status !== 'pending') {
-    currentRotation.status = 'pending';
+  // Current rotation has expired - mark it as awaiting review while keeping it active
+  if (currentRotation.workflowState !== 'pending_confirmation') {
+    currentRotation.status = 'active';
+    currentRotation.workflowState = 'pending_confirmation';
     await currentRotation.save();
-    console.log(`[STATUS TRANSITION] ${currentRotation.intern?.name || internId}: ACTIVE -> PENDING`);
+    console.log(`[STATUS TRANSITION] ${currentRotation.intern?.name || internId}: ACTIVE -> ACTIVE (pending confirmation)`);
   }
 
   let nextRotation = await Rotation.findOne({ 
@@ -176,14 +177,13 @@ async function acceptMovement(internId) {
   const today = startOfDay(new Date());
   
   // 1. Find current active assignment
-  const currentRotation = await Rotation.findOne({ 
-    intern: internId, 
-    status: { $in: ['active', 'pending'] } 
-  })
-    .sort({ startDate: -1, createdAt: -1 })
-    .populate('intern')
-    .populate('unit')
-    .exec();
+  const allRotations = await Rotation.find({ intern: internId }).sort({ startDate: -1, createdAt: -1 }).exec();
+  const currentNorm = resolveCurrentAssignment({ rotations: allRotations });
+  const currentRotation = currentNorm ? allRotations.find((r) => String(r._id) === String(currentNorm._id)) : null;
+  if (currentRotation) {
+    await currentRotation.populate('intern');
+    await currentRotation.populate('unit');
+  }
   
   if (!currentRotation) {
     throw new Error(`No active rotation found for intern ${internId}`);
@@ -294,13 +294,10 @@ async function reassignNextUnit(internId, newUnitId) {
   }
 
   // 5. Check if this is the current active unit
-  const currentRotation = await Rotation.findOne({
-    intern: internId,
-    status: { $in: ['active', 'pending'] }
-  })
-    .sort({ startDate: -1, createdAt: -1 })
-    .populate('unit')
-    .exec();
+  const allRotationsForCurrentCheck = await Rotation.find({ intern: internId }).sort({ startDate: -1, createdAt: -1 }).exec();
+  const currentNormForCheck = resolveCurrentAssignment({ rotations: allRotationsForCurrentCheck });
+  const currentRotationForCheck = currentNormForCheck ? allRotationsForCurrentCheck.find((r) => String(r._id) === String(currentNormForCheck._id)) : null;
+  const currentRotation = currentRotationForCheck ? await currentRotationForCheck.populate('unit') : null;
 
   if (currentRotation && currentRotation.unit._id.toString() === newUnitIdStr) {
     throw new Error(`Cannot reassign to current active unit ${newUnit.name}`);

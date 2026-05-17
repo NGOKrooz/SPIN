@@ -8,7 +8,7 @@ const {
   selectNextUnit,
   DEFAULT_CAPACITY,
 } = require('./dynamicAssignmentService');
-const { isActiveLikeAssignment } = require('./assignmentUtils');
+const { isActiveLikeAssignment, resolveCurrentAssignment } = require('./assignmentUtils');
 
 const DEFAULT_ROTATION_DURATION_DAYS = 20;
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
@@ -220,13 +220,14 @@ const syncRotationHistory = async (internId) => {
 
 const getActiveUnitLoadMap = async () => {
   const today = startOfDay(new Date());
-  const rotations = await Rotation.find({ status: { $in: ['active', 'pending'] } }).select('unit startDate endDate').exec();
+  const rotations = await Rotation.find({}).select('unit startDate endDate status workflowState').exec();
   const counts = new Map();
+  const { normalizeRotation } = require('./assignmentUtils');
 
   for (const rotation of rotations) {
-    const derivedStatus = getDerivedRotationStatus(rotation, today);
-    if (derivedStatus !== 'active') continue;
-    const unitId = rotation?.unit?.toString?.() || null;
+    const norm = normalizeRotation(rotation);
+    if (!norm || norm.status !== 'active') continue;
+    const unitId = norm?.unit?.toString?.() || null;
     if (!unitId) continue;
     counts.set(unitId, (counts.get(unitId) || 0) + 1);
   }
@@ -546,10 +547,8 @@ async function reshuffleAllUpcoming() {
   const today = startOfDay(new Date());
 
   for (const intern of interns) {
-    const activeRotation = await Rotation.findOne({ intern: intern._id, status: { $in: ['active', 'pending'] } })
-      .sort({ startDate: -1 })
-      .populate('unit')
-      .exec();
+    const allRotations = await Rotation.find({ intern: intern._id }).sort({ startDate: -1, createdAt: -1 }).populate('unit').exec();
+    const activeRotation = resolveCurrentAssignment({ rotations: allRotations }) || null;
 
     let nextStart = startOfDay(today);
     let currentUnitId = null;

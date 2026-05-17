@@ -102,7 +102,9 @@ async function syncRotationMovementsForFeed() {
     const nextUnitId = currentRotation?.unit?.toString?.() || null;
     const nextStatus = rotations.length > 0 && completedRotations.length === rotations.length
       ? 'completed'
-      : (Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active');
+      : (currentRotation?.workflowState === 'pending_confirmation'
+        ? 'pending'
+        : (Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active'));
 
     if (previousUnitId && nextUnitId && previousUnitId !== nextUnitId) {
       const nextUnit = await Unit.findById(nextUnitId).select('name').exec();

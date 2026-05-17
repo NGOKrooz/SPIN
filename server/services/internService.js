@@ -227,17 +227,15 @@ async function ensureInternStatusIsCorrect(internId) {
   const refreshedIntern = await Intern.findById(intern._id).exec();
   if (!refreshedIntern) return;
 
-  const activeRotation = await Rotation.findOne({
-    intern: refreshedIntern._id,
-    status: { $in: ['active', 'pending'] },
-  })
-    .sort({ startDate: -1, createdAt: -1 })
-    .exec();
+  const allRotations = await Rotation.find({ intern: refreshedIntern._id }).sort({ startDate: -1, createdAt: -1 }).exec();
+  const { resolveCurrentAssignment } = require('./assignmentUtils');
+  const currentNorm = resolveCurrentAssignment({ rotations: allRotations });
+  const activeRotation = currentNorm ? allRotations.find((r) => String(r._id) === String(currentNorm._id)) : null;
 
   let newStatus = 'completed';
   if (activeRotation) {
     const activeExtensionDays = Number(activeRotation.extensionDays || 0);
-    if (activeRotation.status === 'pending') {
+    if (activeRotation.workflowState === 'pending_confirmation') {
       newStatus = 'pending';
     } else {
       newStatus = activeExtensionDays > 0 ? 'extended' : 'active';

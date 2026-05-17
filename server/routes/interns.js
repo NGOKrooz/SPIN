@@ -28,6 +28,7 @@ const {
   isActiveLikeAssignment,
   transitionAssignmentStatus,
 } = require('../services/assignmentUtils');
+const { resolveCurrentAssignment } = require('../services/assignmentUtils');
 const { updateBatchStats } = require('./dashboard');
 
 const router = express.Router();
@@ -457,7 +458,7 @@ const syncInternRotationStates = async (internId) => {
     if (rotation.status === 'awaiting_confirmation') {
       nextStatus = 'awaiting_confirmation';
     } else if (activeRotationId && rotation._id.toString() === activeRotationId) {
-      nextStatus = rotation.status === 'pending' ? 'pending' : 'active';
+      nextStatus = rotation.workflowState === 'pending_confirmation' ? 'pending' : 'active';
     } else if (startDate > now) {
       nextStatus = 'upcoming';
     } else if (endDate < now && rotation.status !== 'pending') {
@@ -494,7 +495,7 @@ const syncInternRotationStates = async (internId) => {
   intern.currentUnit = current?.unit || null;
   if (current) {
     const activeExtensionDays = getRotationTotalExtensionDays(current, current.unit);
-    intern.status = current.status === 'pending' ? 'pending' : 'active';
+    intern.status = current.workflowState === 'pending_confirmation' ? 'pending' : 'active';
     intern.manualExtensionDays = getRotationManualExtensionDays(current);
     intern.autoExtensionDays = getRotationAutoExtensionDays(current);
     intern.extensionDays = activeExtensionDays;
@@ -1202,10 +1203,9 @@ router.post('/:id/remove-extension', async (req, res) => {
 
     await syncInternRotationStates(intern._id);
 
-    let rotation = await Rotation.findOne({ intern: intern._id, status: { $in: ['active', 'pending'] } })
-      .sort({ startDate: -1, createdAt: -1 })
-      .populate('unit')
-      .exec();
+    // Resolve current rotation via centralized resolver to handle workflowState semantics
+    const allRotations = await Rotation.find({ intern: intern._id }).populate('unit').sort({ startDate: -1, createdAt: -1 }).exec();
+    let rotation = resolveCurrentAssignment({ rotations: allRotations }) || null;
 
     if (!rotation) {
       const allRotations = await Rotation.find({ intern: intern._id })

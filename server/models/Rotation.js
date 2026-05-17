@@ -12,6 +12,7 @@ const RotationSchema = new mongoose.Schema({
   endDate: { type: Date },
   actualEndDate: { type: Date }, // PHASE 2: Records when admin actually accepted movement
   status: { type: String, enum: ['active', 'pending', 'upcoming', 'awaiting_confirmation', 'completed'], default: 'active' },
+  workflowState: { type: String, enum: ['normal', 'pending_confirmation'], default: 'normal' },
   createdAt: { type: Date, default: Date.now }
 });
 
