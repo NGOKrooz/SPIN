@@ -30,6 +30,12 @@ export default function InternDetailsModal({ intern, onClose }) {
     return () => { mounted = false; };
   }, [intern.id]);
 
+  const titleCase = (value) => {
+    if (!value) return '';
+    const normalized = String(value).toLowerCase();
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  };
+
   const allRotations = schedule.rotations || [];
   const completedUnits = (schedule.completed && schedule.completed.length > 0)
     ? schedule.completed
@@ -55,8 +61,8 @@ export default function InternDetailsModal({ intern, onClose }) {
             <div className="text-lg font-semibold text-gray-900">{intern.name}</div>
             <div className="text-sm text-gray-600">Batch {intern.batch} • Started {formatDate(intern.start_date)}</div>
             <div className="mt-2 flex items-center space-x-2">
-              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor((intern.primaryStatus || 'ACTIVE').toLowerCase())}`}>
-                {intern.primaryStatus || 'ACTIVE'}
+              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor((intern.primaryStatus || intern.status || 'active').toLowerCase())}`}>
+                {titleCase(intern.primaryStatus || intern.status || 'active')}
               </span>
               {intern.hasExtension && (
                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor('extension')}`}>

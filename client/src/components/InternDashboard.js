@@ -121,6 +121,12 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
     }
   }, [internDetails]);
 
+  const titleCase = (value) => {
+    if (!value) return '';
+    const normalized = String(value).toLowerCase();
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  };
+
   const currentIntern = internState || intern;
   const extensionDays = Number(
     currentIntern?.totalExtensionDays
@@ -129,13 +135,8 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
     ?? currentIntern?.extension_days
     ?? 0
   );
-  const primaryStatus = currentIntern?.primaryStatus
-    ? String(currentIntern.primaryStatus).toUpperCase()
-    : String(currentIntern?.status || 'ACTIVE').toUpperCase();
-  const displayStatus = primaryStatus === 'PENDING' ? 'PENDING'
-    : primaryStatus === 'ACTIVE' ? 'ACTIVE'
-      : primaryStatus === 'COMPLETED' ? 'COMPLETED'
-        : primaryStatus;
+  const primaryStatus = String(currentIntern?.primaryStatus || currentIntern?.status || 'active').toLowerCase();
+  const displayStatus = titleCase(primaryStatus);
   const hasExtension = Boolean(currentIntern?.hasExtension) || extensionDays > 0;
 
   const { data: internSchedule } = useQuery({

@@ -67,12 +67,12 @@ export default function Interns() {
     const extensionDays = Number(i.totalExtensionDays ?? i.total_extension_days ?? i.extensionDays ?? i.extension_days) || 0;
     const rawStatus = String(i.status || 'Active').toLowerCase();
     const primaryStatus = i.primaryStatus
-      ? String(i.primaryStatus).toUpperCase()
+      ? String(i.primaryStatus).toLowerCase()
       : rawStatus === 'completed'
-        ? 'COMPLETED'
+        ? 'completed'
         : rawStatus === 'pending'
-          ? 'PENDING'
-          : 'ACTIVE';
+          ? 'pending'
+          : 'active';
     const hasExtension = extensionDays > 0 || Boolean(i.hasExtension);
 
     return {
@@ -81,7 +81,7 @@ export default function Interns() {
       startDate: i.startDate || i.start_date,
       extensionDays,
       primaryStatus,
-      displayStatus: primaryStatus,
+      displayStatus: titleCase(primaryStatus),
       hasExtension,
       internshipDays: i.internshipDays,
     };
