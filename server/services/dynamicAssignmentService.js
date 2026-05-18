@@ -106,16 +106,39 @@ const shiftFutureRotations = async (internId, pivotEndDate, dayDelta, excludeRot
   }
 };
 
+async function getResolvedActiveRotations() {
+  const allRotations = await Rotation.find({})
+    .select('intern unit startDate endDate status workflowState extensionDays createdAt')
+    .exec();
+
+  const rotationsByIntern = new Map();
+  for (const rotation of allRotations) {
+    const internId = rotation.intern?.toString?.();
+    if (!internId) continue;
+    const list = rotationsByIntern.get(internId) || [];
+    list.push(rotation);
+    rotationsByIntern.set(internId, list);
+  }
+
+  const resolved = [];
+  for (const [, internRotations] of rotationsByIntern.entries()) {
+    const current = resolveCurrentAssignment({ rotations: internRotations });
+    if (current && current.unit) {
+      resolved.push(current);
+    }
+  }
+
+  return resolved;
+}
+
 /**
  * Count active interns per unit based on live Rotation records.
- * Only counts rotations whose date range includes today.
+ * Only counts resolved active assignments for each intern.
  * Returns Map<unitIdStr, number>
  */
 async function getUnitOccupancy() {
   const today = startOfDay(new Date());
-  const rotations = await Rotation.find({})
-    .select('unit startDate endDate status workflowState')
-    .exec();
+  const rotations = await getResolvedActiveRotations();
 
   const counts = new Map();
   for (const rot of rotations) {
@@ -138,17 +161,13 @@ async function getUnitOccupancy() {
 async function getUnitInternsLeavingSoon(windowDays = LEAVING_SOON_DAYS) {
   const today = startOfDay(new Date());
   const maxDate = startOfDay(addDays(today, windowDays));
-  const rotations = await Rotation.find({})
-    .select('unit endDate extensionDays status workflowState startDate')
-    .exec();
+  const rotations = await getResolvedActiveRotations();
 
   const counts = new Map();
   for (const rot of rotations) {
-    const norm = normalizeRotation(rot);
-    if (!norm || norm.status !== 'active') continue;
-    const uid = norm.unit?.toString?.() || norm.unit?._id?.toString?.() || null;
-    const end = norm.endDate ? startOfDay(norm.endDate) : null;
-    const extensionDays = Number(norm.extensionDays || 0);
+    const uid = rot.unit?.toString?.() || rot.unit?._id?.toString?.() || null;
+    const end = rot.endDate ? startOfDay(rot.endDate) : null;
+    const extensionDays = Number(rot.extensionDays || 0);
     const finalEnd = end ? startOfDay(addDays(end, extensionDays)) : null;
     if (!uid || !finalEnd) continue;
     if (finalEnd < today || finalEnd > maxDate) continue;
@@ -162,17 +181,12 @@ async function getUnitInternsLeavingSoon(windowDays = LEAVING_SOON_DAYS) {
  * Get the count of active interns in a unit.
  */
 async function getActiveInternsCount(unitId) {
-  const rotations = await Rotation.find({ unit: unitId }).select('status workflowState startDate endDate unit extensionDays').exec();
+  const rotations = await getResolvedActiveRotations();
   let count = 0;
-  const today = startOfDay(new Date());
   for (const rot of rotations) {
-    const norm = normalizeRotation(rot);
-    if (!norm || norm.status !== 'active') continue;
-    const start = norm.startDate ? startOfDay(norm.startDate) : null;
-    const end = norm.endDate ? startOfDay(norm.endDate) : null;
-    if (start && start > today) continue;
-    if (end && end < today) continue;
-    count += 1;
+    const uid = rot.unit?.toString?.() || rot.unit?._id?.toString?.() || null;
+    if (!uid) continue;
+    if (String(uid) === String(unitId)) count += 1;
   }
   return count;
 }
@@ -370,9 +384,7 @@ async function buildGlobalBatchPlan(allUnits, options = {}) {
   const today = startOfDay(options.now || new Date());
   const movementMaxDate = startOfDay(addDays(today, MOVEMENT_WINDOW_DAYS));
 
-  const activeRotations = await Rotation.find({})
-    .select('intern unit startDate endDate status workflowState')
-    .exec();
+  const activeRotations = await getResolvedActiveRotations();
 
   const occupancy = new Map();
   const leavingSoon = new Map();
@@ -381,7 +393,7 @@ async function buildGlobalBatchPlan(allUnits, options = {}) {
   for (const row of activeRotations) {
     const norm = normalizeRotation(row);
     if (!norm || norm.status !== 'active') continue;
-    const unitId = norm.unit?.toString?.() || null;
+    const unitId = norm.unit?.toString?.() || norm.unit?._id?.toString?.() || null;
     if (!unitId) continue;
 
     occupancy.set(unitId, (occupancy.get(unitId) || 0) + 1);

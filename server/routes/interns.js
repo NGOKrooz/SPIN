@@ -27,6 +27,7 @@ const {
 const {
   transitionAssignmentStatus,
   resolveCurrentAssignment,
+  collectRotationIntegrityIssues,
 } = require('../services/assignmentUtils');
 const { updateBatchStats } = require('./dashboard');
 
@@ -432,6 +433,17 @@ const syncInternRotationStates = async (internId) => {
     .sort({ startDate: 1, createdAt: 1 })
     .exec();
 
+  const issues = collectRotationIntegrityIssues(rotations);
+  if (issues.duplicateActiveAssignments || issues.missingUnits || issues.invalidStatuses || issues.missingDates) {
+    console.warn('[DATA CORRUPTION DETECTED]', {
+      internId,
+      duplicateActiveAssignments: issues.duplicateActiveAssignments,
+      missingUnits: issues.missingUnits,
+      invalidStatuses: issues.invalidStatuses,
+      missingDates: issues.missingDates,
+    });
+  }
+
   for (const rotation of rotations) {
     const baseDuration = getRotationBaseDuration(rotation, rotation.unit);
     const manualExtensionDays = getRotationManualExtensionDays(rotation);
@@ -808,14 +820,7 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
     await syncInternRotationStates(intern._id);
     console.log(`[POST /interns] Dynamically assigned first unit: "${unit.name}" for ${intern.name}`);
 
-    console.log('CREATED INTERN:', intern);
-
-    const check = await Intern.findById(intern._id)
-      .select('-email -phoneNumber')
-      .populate('currentUnit')
-      .exec();
-    console.log('VERIFIED INTERN:', check);
-
+    const internView = await buildInternView(intern._id);
     await logActivityEventSafe({
       type: ACTIVITY_TYPES.INTERN_CREATED,
       metadata: {
@@ -825,7 +830,7 @@ router.post('/', normalizeInternPayload, validateIntern, async (req, res) => {
     });
     await updateBatchStats().catch(() => {});
 
-    return res.status(201).json(mapInternWithUnits(check, units));
+    return res.status(201).json(internView);
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: error.message });

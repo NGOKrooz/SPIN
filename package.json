@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "audit-rotation-integrity": "node server/scripts/auditRotationIntegrity.js"
   }
 }

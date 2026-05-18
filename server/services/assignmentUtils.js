@@ -36,50 +36,88 @@ function normalizeRotation(rotation = {}) {
   return normalized;
 }
 
+function getRotationUnitId(rotation) {
+  if (!rotation || typeof rotation !== 'object') return null;
+  const unit = rotation.unitId || rotation.unit_id || rotation.unit;
+  if (!unit) return null;
+  if (typeof unit === 'string') return unit;
+  if (typeof unit === 'object') {
+    if (unit._id !== undefined) return String(unit._id);
+    if (unit.id !== undefined) return String(unit.id);
+    if (typeof unit.toString === 'function') return unit.toString();
+  }
+  return null;
+}
+
+function getAssignmentRecords(subject = {}) {
+  if (Array.isArray(subject)) return subject;
+  if (Array.isArray(subject.rotations)) return subject.rotations;
+  if (Array.isArray(subject.assignments)) return subject.assignments;
+  return [];
+}
+
 function isActiveAssignment(rotation) {
   const normalized = normalizeRotation(rotation);
-  return normalized ? normalized.status === 'active' : false;
+  return Boolean(normalized && normalized.status === 'active');
+}
+
+function isValidRotationStatus(rotation) {
+  if (!rotation) return false;
+  const rawStatus = String(rotation.status || '').trim().toLowerCase();
+  if (rawStatus === LEGACY_PENDING_STATUS) return true;
+  return VALID_LIFECYCLE_STATUSES.has(rawStatus);
 }
 
 function getRotationStartTime(rotation) {
   const date = parseRotationDate(rotation?.startDate || rotation?.start_date);
-  return date ? date.getTime() : 0;
+  if (date) return date.getTime();
+  const created = new Date(rotation?.createdAt || rotation?.created_at || 0);
+  return Number.isNaN(created.getTime()) ? 0 : created.getTime();
 }
 
 function resolveCurrentAssignment(subject = {}) {
-  const rotations = Array.isArray(subject)
-    ? subject
-    : Array.isArray(subject.rotations)
-      ? subject.rotations
-      : Array.isArray(subject.assignments)
-        ? subject.assignments
-        : [];
+  const rotations = getAssignmentRecords(subject);
 
-  return [...rotations]
+  const activeAssignments = [...rotations]
     .map(normalizeRotation)
-    .filter((rotation) => isActiveAssignment(rotation))
-    .sort((a, b) => {
-      const diff = getRotationStartTime(b) - getRotationStartTime(a);
-      if (diff !== 0) return diff;
-      const createdA = new Date(a.createdAt || a.created_at || 0).getTime();
-      const createdB = new Date(b.createdAt || b.created_at || 0).getTime();
-      return createdB - createdA;
-    })[0] || null;
+    .filter((rotation) => rotation && rotation.status === 'active' && getRotationUnitId(rotation));
+
+  if (!activeAssignments.length) return null;
+
+  return activeAssignments.sort((a, b) => {
+    const diff = getRotationStartTime(b) - getRotationStartTime(a);
+    if (diff !== 0) return diff;
+    const createdA = new Date(a.createdAt || a.created_at || 0).getTime();
+    const createdB = new Date(b.createdAt || b.created_at || 0).getTime();
+    return createdB - createdA;
+  })[0] || null;
 }
 
 function resolveUpcomingAssignment(subject = {}) {
-  const rotations = Array.isArray(subject)
-    ? subject
-    : Array.isArray(subject.rotations)
-      ? subject.rotations
-      : Array.isArray(subject.assignments)
-        ? subject.assignments
-        : [];
+  const rotations = getAssignmentRecords(subject);
 
   return [...rotations]
     .map(normalizeRotation)
-    .filter((rotation) => rotation.status === 'upcoming')
+    .filter((rotation) => rotation && rotation.status === 'upcoming' && getRotationUnitId(rotation))
     .sort((a, b) => getRotationStartTime(a) - getRotationStartTime(b))[0] || null;
+}
+
+function collectRotationIntegrityIssues(rotations = []) {
+  const assignments = [...rotations]
+    .map((rotation) => ({ original: rotation, normalized: normalizeRotation(rotation) }))
+    .filter(({ normalized }) => normalized);
+
+  const activeAssignments = assignments.filter(({ original }) => String(original.status || '').trim().toLowerCase() === 'active');
+  const missingUnits = assignments.filter(({ normalized }) => !getRotationUnitId(normalized)).length;
+  const missingDates = assignments.filter(({ normalized }) => !parseRotationDate(normalized.startDate || normalized.start_date)).length;
+  const invalidStatuses = assignments.filter(({ original }) => !isValidRotationStatus(original)).length;
+
+  return {
+    duplicateActiveAssignments: Math.max(0, activeAssignments.length - 1),
+    missingUnits,
+    missingDates,
+    invalidStatuses,
+  };
 }
 
 function getLatestActiveLikeAssignment(rotations = []) {
@@ -126,6 +164,9 @@ module.exports = {
   resolveCurrentAssignment,
   resolveUpcomingAssignment,
   getLatestActiveLikeAssignment,
+  collectRotationIntegrityIssues,
+  getRotationUnitId,
+  isValidRotationStatus,
   transitionAssignmentStatus,
   calculateOverdueDays,
 };
