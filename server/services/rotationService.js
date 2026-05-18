@@ -4,9 +4,41 @@ const Unit = require('../models/Unit');
 const Intern = require('../models/Intern');
 const ActivityLog = require('../models/ActivityLog');
 const { canAssignmentTransition, validateRotationIntegrity } = require('./movementGuard');
-const { resolveCurrentAssignment } = require('./assignmentUtils');
+const { resolveCurrentAssignment, normalizeRotation } = require('./assignmentUtils');
 
 const DEFAULT_ROTATION_DURATION_DAYS = 20;
+
+const getRotationStartTimestamp = (rotation) => {
+  if (!rotation || !rotation.startDate) return Number.MAX_SAFE_INTEGER;
+  const date = startOfDay(new Date(rotation.startDate));
+  return date.getTime();
+};
+
+const statusPriority = {
+  awaiting_confirmation: 0,
+  upcoming: 1,
+};
+
+const findNextPlannedRotation = (rotations = []) => {
+  return [...rotations]
+    .filter((rotation) => {
+      const status = String(rotation?.status || '').toLowerCase();
+      return status === 'upcoming' || status === 'awaiting_confirmation';
+    })
+    .sort((a, b) => {
+      const dateDiff = getRotationStartTimestamp(a) - getRotationStartTimestamp(b);
+      if (dateDiff !== 0) return dateDiff;
+      return (statusPriority[String(a.status).toLowerCase()] || 99) - (statusPriority[String(b.status).toLowerCase()] || 99);
+    })[0] || null;
+};
+
+const isAwaitingConfirmationState = (rotation, today = new Date()) => {
+  if (!rotation) return false;
+  const normalized = normalizeRotation(rotation);
+  const endDate = rotation.endDate ? startOfDay(new Date(rotation.endDate)) : null;
+  const normalizedToday = startOfDay(today);
+  return normalized.workflowState === 'pending_confirmation' || (endDate && normalizedToday > endDate);
+};
 
 const getDuration = (unitDoc) => {
   const raw = unitDoc?.duration ?? unitDoc?.durationDays ?? unitDoc?.duration_days;
@@ -170,7 +202,9 @@ async function checkAndMarkAwaitingConfirmation(internId, today = new Date()) {
 /**
  * PHASE 2: Accept movement for an intern
  * Admin confirms intern has reported and is ready to move to next unit.
- * This completes the current assignment and activates the next awaiting_confirmation assignment.
+ * This completes the current assignment and activates the next planned assignment.
+ * It derives confirmation eligibility from the current assignment state and does not require
+ * a persistent awaiting_confirmation record.
  */
 async function acceptMovement(internId) {
   canAssignmentTransition('acceptMovement');
@@ -188,19 +222,18 @@ async function acceptMovement(internId) {
   if (!currentRotation) {
     throw new Error(`No active rotation found for intern ${internId}`);
   }
-  
-  // 2. Find next awaiting assignment
-  const nextRotation = await Rotation.findOne({ 
-    intern: internId, 
-    status: 'awaiting_confirmation' 
-  })
-    .populate('unit')
-    .sort({ startDate: 1 })
-    .exec();
-  
-  if (!nextRotation) {
-    throw new Error(`No awaiting_confirmation rotation found for intern ${internId}`);
+
+  if (!isAwaitingConfirmationState(currentRotation, today)) {
+    throw new Error(`Intern ${internId} is not awaiting confirmation yet`);
   }
+  
+  // 2. Find next planned rotation without requiring an awaiting_confirmation record.
+  const nextRotation = findNextPlannedRotation(allRotations);
+  if (!nextRotation) {
+    throw new Error(`No next rotation found for intern ${internId}`);
+  }
+  
+  await nextRotation.populate('unit');
   
   // 3. Close current unit
   currentRotation.status = 'completed';
@@ -251,22 +284,29 @@ async function acceptMovement(internId) {
 
 /**
  * PHASE 3: Reassign next unit for an intern
- * Admin changes the upcoming unit assignment before movement is confirmed.
- * Only affects awaiting_confirmation rotations, NOT current active assignments.
+ * Admin changes the next planned assignment before movement is confirmed.
+ * Does not require a persisted awaiting_confirmation record.
  */
 async function reassignNextUnit(internId, newUnitId) {
   canAssignmentTransition('reassignNextUnit');
-  // 1. Find the awaiting_confirmation rotation (next assignment)
-  const awaitingRotation = await Rotation.findOne({
-    intern: internId,
-    status: 'awaiting_confirmation'
-  })
-    .populate('intern')
-    .populate('unit')
-    .exec();
+  // 1. Find the next planned rotation without requiring an awaiting_confirmation record.
+  const allRotations = await Rotation.find({ intern: internId }).sort({ startDate: 1 }).exec();
+  const nextRotation = findNextPlannedRotation(allRotations);
+  if (!nextRotation) {
+    throw new Error(`No next rotation found for intern ${internId}`);
+  }
 
-  if (!awaitingRotation) {
-    throw new Error(`No awaiting_confirmation rotation found for intern ${internId}`);
+  const nextPlannedRotation = await nextRotation.populate('intern').populate('unit');
+
+  const today = startOfDay(new Date());
+  const currentNorm = resolveCurrentAssignment({ rotations: allRotations });
+  const activeRotation = currentNorm ? allRotations.find((r) => String(r._id) === String(currentNorm._id)) : null;
+  if (!activeRotation) {
+    throw new Error(`No active rotation found for intern ${internId}`);
+  }
+
+  if (!isAwaitingConfirmationState(activeRotation, today)) {
+    throw new Error(`Intern ${internId} is not awaiting confirmation yet`);
   }
 
   // 2. Validate new unit exists
@@ -293,31 +333,25 @@ async function reassignNextUnit(internId, newUnitId) {
     throw new Error(`Intern has already completed unit ${newUnit.name}`);
   }
 
-  // 5. Check if this is the current active unit
-  const allRotationsForCurrentCheck = await Rotation.find({ intern: internId }).sort({ startDate: -1, createdAt: -1 }).exec();
-  const currentNormForCheck = resolveCurrentAssignment({ rotations: allRotationsForCurrentCheck });
-  const currentRotationForCheck = currentNormForCheck ? allRotationsForCurrentCheck.find((r) => String(r._id) === String(currentNormForCheck._id)) : null;
-  const currentRotation = currentRotationForCheck ? await currentRotationForCheck.populate('unit') : null;
-
-  if (currentRotation && currentRotation.unit._id.toString() === newUnitIdStr) {
+  if (activeRotation && activeRotation.unit?._id?.toString() === newUnitIdStr) {
     throw new Error(`Cannot reassign to current active unit ${newUnit.name}`);
   }
 
   // 6. Record previous unit for logging
-  const previousUnitName = awaitingRotation.unit?.name || 'Unknown Unit';
+  const previousUnitName = nextPlannedRotation.unit?.name || 'Unknown Unit';
   const newUnitName = newUnit.name;
 
-  // 7. Update the awaiting rotation with new unit
-  awaitingRotation.unit = newUnitId;
+  // 7. Update the next planned rotation with new unit
+  nextPlannedRotation.unit = newUnitId;
 
   // Recalculate end date based on unit duration
   const duration = getDuration(newUnit);
-  awaitingRotation.endDate = addDays(awaitingRotation.startDate, duration);
+  nextPlannedRotation.endDate = addDays(nextPlannedRotation.startDate, duration);
 
-  await awaitingRotation.save();
+  await nextPlannedRotation.save();
 
   // 8. History logging
-  const internName = awaitingRotation.intern?.name || 'Unknown Intern';
+  const internName = nextPlannedRotation.intern?.name || 'Unknown Intern';
 
   await ActivityLog.create({
     action_type: 'unit_reassigned',
@@ -332,7 +366,7 @@ async function reassignNextUnit(internId, newUnitId) {
   console.log(`[PHASE 3] 📥 New unit: ${newUnitName}`);
 
   return {
-    updatedRotation: awaitingRotation,
+    updatedRotation: nextPlannedRotation,
     internName,
     previousUnit: previousUnitName,
     newUnit: newUnitName,

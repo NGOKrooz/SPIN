@@ -568,10 +568,13 @@ async function reshuffleAllUpcoming() {
     }
 
     const completedIds = await getCompletedUnitIds(intern._id);
-    const awaitingRotations = await Rotation.find({ intern: intern._id, status: 'awaiting_confirmation' })
+    const plannedRotations = await Rotation.find({
+      intern: intern._id,
+      status: { $in: ['upcoming', 'awaiting_confirmation'] }
+    })
       .select('unit')
       .exec();
-    if (awaitingRotations.length > 0) {
+    if (plannedRotations.length > 0) {
       console.warn(`[MOVEMENT BLOCKED]\nsource: reshuffle\nintern: ${intern._id.toString()}\nreason: automatic transitions disabled`);
     }
     await Rotation.deleteMany({ intern: intern._id, status: 'upcoming' }).exec();
@@ -579,10 +582,10 @@ async function reshuffleAllUpcoming() {
     const createdUpcoming = [];
     const usedUnitIds = new Set(completedIds);
     if (currentUnitId) usedUnitIds.add(currentUnitId);
-    for (const awaiting of awaitingRotations) {
-      const awaitingUnitId = awaiting.unit?.toString?.() || null;
-      if (awaitingUnitId) {
-        usedUnitIds.add(awaitingUnitId);
+    for (const planned of plannedRotations) {
+      const plannedUnitId = planned.unit?.toString?.() || null;
+      if (plannedUnitId) {
+        usedUnitIds.add(plannedUnitId);
       }
     }
 

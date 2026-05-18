@@ -667,7 +667,10 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
   if (activeRotation) {
     const startDate = activeRotation.startDate ? startOfDay(activeRotation.startDate) : null;
     const endDate = activeRotation.endDate ? startOfDay(activeRotation.endDate) : null;
-    const awaitingRotation = await Rotation.findOne({ intern: intern._id, status: 'awaiting_confirmation' })
+    const nextPlannedRotation = await Rotation.findOne({
+      intern: intern._id,
+      status: { $in: ['upcoming', 'awaiting_confirmation'] }
+    })
       .sort({ startDate: 1, createdAt: 1 })
       .exec();
 
@@ -680,7 +683,7 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
         console.log(`[STATUS TRANSITION] intern ${intern._id.toString()}: ACTIVE -> PENDING`);
       }
       // PHASE 4: Preserve overdue active assignments when a next movement is already staged.
-      if (awaitingRotation) {
+      if (nextPlannedRotation) {
         console.warn(`[MOVEMENT BLOCKED]\nsource: refresh\nintern: ${intern._id.toString()}\nreason: automatic transitions disabled`);
         const overdueDays = Math.max(0, Math.floor((today.getTime() - endDate.getTime()) / DAY_IN_MS));
         if (overdueDays > 0) {
