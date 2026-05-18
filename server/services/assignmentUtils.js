@@ -80,7 +80,7 @@ function resolveCurrentAssignment(subject = {}) {
 
   const activeAssignments = [...rotations]
     .map(normalizeRotation)
-    .filter((rotation) => rotation && rotation.status === 'active' && getRotationUnitId(rotation));
+    .filter((rotation) => rotation && (rotation.status === 'active' || rotation.status === 'awaiting_confirmation') && getRotationUnitId(rotation));
 
   if (!activeAssignments.length) return null;
 

@@ -674,17 +674,13 @@ router.get('/', async (req, res) => {
   try {
     const sortDirection = getInternSortDirection(req.query.sort);
     const internIds = await Intern.find().select('_id').lean().exec();
-    
-    // PHASE 1: Check and mark awaiting confirmations for all interns
-    await Promise.all(internIds.map(({ _id }) => 
-      checkAndMarkAwaitingConfirmation(_id).catch((error) => {
-        console.error('❌ Error checking awaiting confirmation for intern:', _id?.toString?.() || _id, error);
-      })
-    ));
-    
-    await Promise.all(internIds.map(({ _id }) => syncInternRotationStates(_id).catch((error) => {
-      console.error('❌ Error syncing intern rotation state:', _id?.toString?.() || _id, error);
-    })));
+
+    console.log({
+      rawInternCount: internIds.length,
+      dbName: mongoose.connection?.name || null,
+      connectionState: mongoose.connection?.readyState,
+      internCollection: Intern.collection.name,
+    });
 
     const interns = await buildInternViews(internIds.map(({ _id }) => _id));
 
@@ -696,7 +692,6 @@ router.get('/', async (req, res) => {
       return sortDirection === 1 ? leftTime - rightTime : rightTime - leftTime;
     });
 
-    console.log('FETCHED INTERNS:', sortedInterns);
     return res.json(sortedInterns);
   } catch (err) {
     console.error('❌ Error fetching interns:', err);

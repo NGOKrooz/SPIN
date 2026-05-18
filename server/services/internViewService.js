@@ -171,13 +171,34 @@ const getRotationStatus = (rotation, today = new Date()) => {
 const formatRotation = (rotation) => {
   const status = getRotationStatus(rotation);
 
-  const unit = rotation.unitId || rotation.unit || rotation.unit_id || null;
-  const unitId = unit?._id?.toString() || unit?.id || null;
-  const unitName = unit?.name || (rotation.unit_name || null);
+  const unitReference = rotation.unitId || rotation.unit || rotation.unit_id || null;
+  const unitId = typeof unitReference === 'string'
+    ? unitReference
+    : unitReference?._id?.toString?.() || unitReference?.id || null;
+  const unitName = typeof unitReference === 'string'
+    ? (rotation.unit_name || rotation.unitName || null)
+    : unitReference?.name || (rotation.unit_name || rotation.unitName || null);
 
   const rotationBaseDuration = getRotationBaseDuration(rotation, rotation.unit);
   const rotationExtensionDays = getRotationTotalExtensionDays(rotation, rotation.unit);
   const rotationDuration = getRotationTotalDuration(rotation, rotation.unit);
+
+  const unitObject = unitReference
+    ? (typeof unitReference === 'string'
+      ? {
+        id: unitId,
+        name: unitName,
+      }
+      : {
+        id: unitId,
+        name: unitName,
+        durationDays: unitReference.durationDays || unitReference.duration_days || null,
+        duration_days: unitReference.durationDays || unitReference.duration_days || null,
+        duration: unitReference.duration || unitReference.durationDays || unitReference.duration_days || null,
+        position: unitReference.position || unitReference.order || null,
+        position_order: unitReference.position || unitReference.order || null,
+      })
+    : null;
 
   return {
     id: rotation._id?.toString(),
@@ -201,25 +222,29 @@ const formatRotation = (rotation) => {
     unit_name: unitName,
     isManualAssignment: Boolean(rotation.isManualAssignment || rotation.is_manual_assignment),
     is_manual_assignment: Boolean(rotation.isManualAssignment || rotation.is_manual_assignment),
-    unit: unit ? {
-      id: unitId,
-      name: unitName,
-      durationDays: unit.durationDays || unit.duration_days || null,
-      duration_days: unit.durationDays || unit.duration_days || null,
-      duration: unit.duration || unit.durationDays || unit.duration_days || null,
-      position: unit.position || unit.order || null,
-      position_order: unit.position || unit.order || null,
-    } : null,
+    unit: unitObject,
   };
 };
 
 const formatIntern = (intern, rotations = []) => {
   const formattedRotations = (rotations || []).map(formatRotation);
 
-    const currentRotation = resolveCurrentAssignment({ rotations: formattedRotations });
+  const currentRotation = resolveCurrentAssignment({ rotations: formattedRotations }) || [...formattedRotations]
+    .filter((rotation) => rotation && (rotation.status === 'active' || rotation.status === 'awaiting_confirmation'))
+    .sort((a, b) => {
+      const aTime = new Date(a.startDate || a.start_date).getTime() || 0;
+      const bTime = new Date(b.startDate || b.start_date).getTime() || 0;
+      return bTime - aTime;
+    })[0] || null;
   const upcomingRotations = formattedRotations.filter(r => r.status === 'upcoming');
   const awaitingConfirmationRotations = formattedRotations.filter(r => r.status === 'awaiting_confirmation');
-  const completedRotations = formattedRotations.filter(r => isCompletedRotation(r));
+  const completedRotations = formattedRotations
+    .filter((rotation) => rotation.status === 'completed')
+    .sort((a, b) => {
+      const aTime = new Date(a.startDate || a.start_date).getTime() || 0;
+      const bTime = new Date(b.startDate || b.start_date).getTime() || 0;
+      return aTime - bTime;
+    });
 
   // Compute status fields
   const primaryStatus = computePrimaryStatus(formattedRotations);
