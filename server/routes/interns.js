@@ -482,7 +482,12 @@ const syncInternRotationStates = async (internId) => {
     if (rotation.status === 'awaiting_confirmation') {
       nextStatus = 'awaiting_confirmation';
     } else if (activeRotationId && rotation._id.toString() === activeRotationId) {
-      nextStatus = rotation.workflowState === 'pending_confirmation' ? 'pending' : 'active';
+      // Respect explicit 'pending' lifecycle status OR the workflowState hint for pending confirmation.
+      if (String(rotation.status).toLowerCase() === 'pending' || rotation.workflowState === 'pending_confirmation') {
+        nextStatus = 'pending';
+      } else {
+        nextStatus = 'active';
+      }
     } else if (startDate > now) {
       nextStatus = 'upcoming';
     } else if (endDate < now && rotation.status !== 'pending') {

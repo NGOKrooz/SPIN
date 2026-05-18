@@ -679,6 +679,7 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
   if (activeRotation) {
     const startDate = activeRotation.startDate ? startOfDay(activeRotation.startDate) : null;
     const endDate = activeRotation.endDate ? startOfDay(activeRotation.endDate) : null;
+    console.log(`[DEBUG ensureContinuous] intern: ${intern._id.toString()}, start: ${startDate}, end: ${endDate}, today: ${today}`);
     const nextPlannedRotation = await Rotation.findOne({
       intern: intern._id,
       status: { $in: ['upcoming', 'awaiting_confirmation'] }

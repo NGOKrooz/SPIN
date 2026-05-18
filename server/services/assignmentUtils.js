@@ -23,7 +23,7 @@ function normalizeRotation(rotation = {}) {
 
   if (rawStatus === LEGACY_PENDING_STATUS) {
     normalized.status = 'active';
-    normalized.workflowState = rawWorkflow || 'pending_confirmation';
+    normalized.workflowState = rawWorkflow && rawWorkflow !== 'normal' ? rawWorkflow : 'pending_confirmation';
   } else {
     normalized.status = VALID_LIFECYCLE_STATUSES.has(rawStatus) ? rawStatus : 'upcoming';
     normalized.workflowState = VALID_WORKFLOW_STATES.has(rawWorkflow) ? rawWorkflow : 'normal';
