@@ -429,12 +429,12 @@ export function buildMovementQueue(interns, options = {}) {
 
       const remainingDays = getAssignmentRemainingDays(activeAssignment, today);
       const isOverdue = remainingDays !== null && remainingDays < 0;
+      const overdueDays = isOverdue ? Math.abs(remainingDays) : 0;
       const awaitingConfirmationRotation = getNextAssignment(intern);
       const isAwaitingConfirmation = awaitingConfirmationRotation?.status === 'awaiting_confirmation';
-      const isPending = activeAssignment?.status === 'pending';
-      const nearingCompletion = remainingDays !== null && remainingDays >= 0 && remainingDays <= leavingSoonDays;
+      const shouldQueue = remainingDays !== null && remainingDays <= leavingSoonDays;
 
-      if (!nearingCompletion && !isAwaitingConfirmation && !isPending) return null;
+      if (!shouldQueue) return null;
 
       // Use SAME next-assignment source as Dashboard (previewNextUnitForIntern)
       const nextUnitPreview = previewNextUnitForIntern(intern, {
@@ -458,9 +458,10 @@ export function buildMovementQueue(interns, options = {}) {
         nextAssignment,
         nextUnitPreview,
         remainingDays,
+        overdueDays,
         isAwaitingConfirmation,
         isOverdue,
-        status: isAwaitingConfirmation || isPending ? 'awaiting_confirmation' : 'nearing_completion',
+        status: isAwaitingConfirmation ? 'awaiting_confirmation' : (isOverdue ? 'overdue' : 'nearing_completion'),
         internId: intern._id || intern.id,
         internName: intern.name || 'Unnamed Intern',
         currentUnit: activeUnit?.name || 'Unknown Unit',
@@ -474,13 +475,8 @@ export function buildMovementQueue(interns, options = {}) {
     })
     .filter(Boolean)
     .sort((left, right) => {
-      if (left.status !== right.status) {
-        return left.status === 'awaiting_confirmation' ? -1 : 1;
-      }
-      if (left.status === 'awaiting_confirmation') {
-        const leftOverdue = Math.max(0, left.elapsedDays - left.plannedDuration);
-        const rightOverdue = Math.max(0, right.elapsedDays - right.plannedDuration);
-        return rightOverdue - leftOverdue;
+      if (left.isOverdue !== right.isOverdue) {
+        return left.isOverdue ? -1 : 1;
       }
       return (left.remainingDays ?? Number.MAX_SAFE_INTEGER) - (right.remainingDays ?? Number.MAX_SAFE_INTEGER);
     });

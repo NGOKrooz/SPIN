@@ -180,7 +180,7 @@ export default function Dashboard() {
                 {movementQueue.map((item) => (
                   <div 
                     key={item.internId}
-                    className={`border rounded-lg p-4 transition-colors ${item.status === 'awaiting_confirmation' ? 'border-orange-200 bg-orange-50/50 hover:bg-orange-100/50' : 'border-slate-200 bg-slate-50 hover:bg-slate-100'}`}
+                    className={`border rounded-lg p-4 transition-colors ${item.status === 'overdue' || item.status === 'awaiting_confirmation' ? 'border-orange-200 bg-orange-50/50 hover:bg-orange-100/50' : 'border-slate-200 bg-slate-50 hover:bg-slate-100'}`}
                   >
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-3">
@@ -213,12 +213,20 @@ export default function Dashboard() {
                               {item.remainingDays} day{item.remainingDays === 1 ? '' : 's'} remaining
                             </div>
                           </div>
+                        ) : item.status === 'overdue' ? (
+                          <div>
+                            <div className="text-sm text-gray-500 font-medium">Status</div>
+                            <div className="text-base text-orange-700 font-semibold">Overdue Movement</div>
+                            <div className="text-xs text-orange-600 mt-1">
+                              OVERDUE: {item.overdueDays} day{item.overdueDays === 1 ? '' : 's'}
+                            </div>
+                          </div>
                         ) : (
                           <div>
                             <div className="text-sm text-gray-500 font-medium">Status</div>
                             <div className="text-base text-orange-700 font-semibold">Awaiting Confirmation</div>
                             <div className="text-xs text-orange-600 mt-1">
-                              OVERDUE: {Math.max(0, item.elapsedDays - item.plannedDuration)} day{Math.max(0, item.elapsedDays - item.plannedDuration) === 1 ? '' : 's'}
+                              OVERDUE: {item.overdueDays} day{item.overdueDays === 1 ? '' : 's'}
                             </div>
                           </div>
                         )}

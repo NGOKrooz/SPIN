@@ -9,7 +9,7 @@ export default function MovementControls({
   reassignPending = false,
   className = '',
 }) {
-  const enabled = Boolean(item?.isOverdue || item?.activeAssignment?.status === 'pending');
+  const enabled = Boolean(item?.isOverdue);
 
   return (
     <div className={`flex gap-2 ${className}`}>

@@ -135,6 +135,36 @@ describe('predictivePlanning', () => {
     expect(awaitingItem.nextUnit).toBe('Geri');
   });
 
+  test('Test 1b: overdue items are ordered before nearing completion items', () => {
+    const overdue = buildIntern({
+      id: 'i-13',
+      name: 'Overdue Intern',
+      unitId: 'u-neuro',
+      unitName: 'Neuro',
+      startDate: '2026-03-01T00:00:00.000Z',
+      endDate: '2026-03-25T00:00:00.000Z',
+    });
+
+    const nearing = buildIntern({
+      id: 'i-14',
+      name: 'Soon Intern',
+      unitId: 'u-ortho',
+      unitName: 'Ortho',
+      startDate: '2026-03-20T00:00:00.000Z',
+      endDate: '2026-04-09T00:00:00.000Z',
+    });
+
+    const queue = buildMovementQueue([overdue, nearing], {
+      units,
+      referenceDate: BASE_DATE,
+      leavingSoonDays: PREDICTIVE_WINDOW_DAYS,
+    });
+
+    expect(queue[0].internName).toBe('Overdue Intern');
+    expect(queue[0].isOverdue).toBe(true);
+    expect(queue[1].internName).toBe('Soon Intern');
+  });
+
   test('Test 2: recently filled unit is deprioritized', () => {
     const target = buildIntern({
       id: 'i-3',
