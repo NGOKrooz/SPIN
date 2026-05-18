@@ -8,6 +8,7 @@ const Intern = require('../models/Intern');
 const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
 const ActivityLog = require('../models/ActivityLog');
+const { resolveCurrentAssignment } = require('../services/assignmentUtils');
 const internsRouter = require('../routes/interns');
 const rotationsRouter = require('../routes/rotations');
 
@@ -71,6 +72,17 @@ const createInternWithRotations = async (name, units, startOffsetDays = -26, del
   });
 
   return { intern, currentRotation, nextRotation };
+};
+
+const getCurrentRotation = async (internId) => {
+  const rotations = await Rotation.find({ intern: internId })
+    .populate('unit')
+    .sort({ startDate: 1, createdAt: 1 })
+    .exec();
+
+  const currentAssignment = resolveCurrentAssignment(rotations);
+  if (!currentAssignment || !currentAssignment._id) return null;
+  return rotations.find((rotation) => String(rotation._id) === String(currentAssignment._id)) || null;
 };
 
 const runScenario = async () => {
@@ -163,7 +175,7 @@ const runScenario = async () => {
     throw new Error('Awaiting confirmation units still present after acceptance');
   }
 
-  const activeRotation = await Rotation.findOne({ intern: intern._id, status: 'active' }).populate('unit').exec();
+  const activeRotation = await getCurrentRotation(intern._id);
   if (!activeRotation || activeRotation.unit.name !== newUnit.name) {
     throw new Error('Active rotation did not switch to reassigned unit after acceptance');
   }

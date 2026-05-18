@@ -25,10 +25,9 @@ const {
   DEFAULT_CAPACITY,
 } = require('../services/dynamicAssignmentService');
 const {
-  isActiveLikeAssignment,
   transitionAssignmentStatus,
+  resolveCurrentAssignment,
 } = require('../services/assignmentUtils');
-const { resolveCurrentAssignment } = require('../services/assignmentUtils');
 const { updateBatchStats } = require('./dashboard');
 
 const router = express.Router();
@@ -132,6 +131,18 @@ const getRotationTotalDuration = (rotation, fallbackUnit = null) => {
   }
 
   return getRotationBaseDuration(rotation, fallbackUnit) + getRotationExtensionDays(rotation, fallbackUnit);
+};
+
+const getCurrentRotationForIntern = async (internId) => {
+  const rotations = await Rotation.find({ intern: internId })
+    .populate('unit')
+    .sort({ startDate: 1, createdAt: 1 })
+    .exec();
+
+  const currentAssignment = resolveCurrentAssignment(rotations);
+  if (!currentAssignment || !currentAssignment._id) return null;
+
+  return rotations.find((rotation) => String(rotation._id) === String(currentAssignment._id)) || null;
 };
 
 const shiftFutureRotations = async (internId, pivotEndDate, dayDelta) => {
@@ -952,12 +963,7 @@ router.post('/:id/reassign', async (req, res) => {
 
     await syncInternRotationStates(intern._id);
 
-    const current = await Rotation.findOne({
-      intern: intern._id,
-      status: 'active',
-    })
-      .populate('unit', 'name')
-      .exec();
+    const current = await getCurrentRotationForIntern(intern._id);
 
     if (!current) {
       return res.status(400).json({ error: 'No active rotation found for this intern' });
@@ -977,8 +983,11 @@ router.post('/:id/reassign', async (req, res) => {
     }
     const occupancy = await getUnitOccupancy();
     const currentOccupancy = occupancy.get(String(unitId)) || 0;
-    if (currentOccupancy >= DEFAULT_CAPACITY) {
-      return res.status(400).json({ error: `Unit "${selectedUnit.name}" is at full capacity (${DEFAULT_CAPACITY} interns)` });
+    const unitCapacity = Number.isFinite(Number(selectedUnit.capacity)) && selectedUnit.capacity > 0
+      ? Number(selectedUnit.capacity)
+      : DEFAULT_CAPACITY;
+    if (currentOccupancy >= unitCapacity) {
+      return res.status(400).json({ error: `Unit "${selectedUnit.name}" is at full capacity (${unitCapacity} interns)` });
     }
 
     const preservedStartDate = toValidDate(current.startDate) || startOfDay(new Date());
@@ -1075,12 +1084,7 @@ router.post('/:id/extend', async (req, res) => {
 
     await syncInternRotationStates(intern._id);
 
-    let rotation = await Rotation.findOne({
-      intern: intern._id,
-      status: 'active',
-    })
-      .populate('unit')
-      .exec();
+    let rotation = await getCurrentRotationForIntern(intern._id);
 
     const allRotations = await Rotation.find({ intern: intern._id })
       .populate('unit')

@@ -6,7 +6,7 @@ const Unit = require('../models/Unit');
 const { canAssignmentTransition } = require('./movementGuard');
 const { normalizeRotation, resolveCurrentAssignment } = require('./assignmentUtils');
 
-const DEFAULT_CAPACITY = 4;
+const DEFAULT_CAPACITY = 5;
 const DEFAULT_DURATION = 20;
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
 const LEAVING_SOON_DAYS = 5;
