@@ -28,6 +28,7 @@ const {
   transitionAssignmentStatus,
   resolveCurrentAssignment,
   collectRotationIntegrityIssues,
+  isCompletedRotation,
 } = require('../services/assignmentUtils');
 const { updateBatchStats } = require('./dashboard');
 
@@ -567,7 +568,7 @@ const mapInternWithUnits = (internDoc, units) => {
 
   const completedUnitIds = new Set(
     rotations
-      .filter((rotation) => rotation?.status === 'completed')
+      .filter((rotation) => isCompletedRotation(rotation))
       .map((rotation) => (
         rotation?.unit?._id?.toString?.()
         || rotation?.unit?.toString?.()
@@ -718,7 +719,7 @@ router.get('/:id/schedule', async (req, res) => {
 
     const currentRotation = resolveCurrentAssignment({ rotations: rawRotations }) || null;
     const upcomingRotations = rawRotations.filter((rotation) => rotation.status === 'upcoming');
-    const completedRotations = rawRotations.filter((rotation) => rotation.status === 'completed');
+    const completedRotations = rawRotations.filter((rotation) => isCompletedRotation(rotation));
 
     let progress = 'Not started';
     if (currentRotation) {
@@ -1099,7 +1100,7 @@ router.post('/:id/extend', async (req, res) => {
     const lastRotation = allRotations[allRotations.length - 1] || null;
 
     // Edge case: completed intern with no active rotation can extend the final unit only.
-    const completedAllRotations = allRotations.length > 0 && allRotations.every((row) => row.status === 'completed');
+    const completedAllRotations = allRotations.length > 0 && allRotations.every((row) => isCompletedRotation(row));
     if (!rotation) {
       if (completedAllRotations && lastRotation) {
         rotation = lastRotation;
@@ -1152,8 +1153,8 @@ router.post('/:id/extend', async (req, res) => {
     intern.totalExtensionDays = Math.max(0, Number(intern.totalExtensionDays || 0) + days);
     intern.manualExtensionDays = getRotationManualExtensionDays(rotation);
     intern.autoExtensionDays = getRotationAutoExtensionDays(rotation);
-    intern.extensionDays = rotation.status !== 'completed' ? Number(rotation.extensionDays || 0) : 0;
-    intern.status = rotation.status === 'completed'
+    intern.extensionDays = isCompletedRotation(rotation) ? 0 : Number(rotation.extensionDays || 0);
+    intern.status = isCompletedRotation(rotation)
       ? 'completed'
       : (rotation.status === 'pending' ? 'pending' : (Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active'));
     await intern.save();
@@ -1222,7 +1223,7 @@ router.post('/:id/remove-extension', async (req, res) => {
         .sort({ startDate: -1 })
         .exec();
       const lastRotation = allRotations[0] || null;
-      const completedAllRotations = allRotations.length > 0 && allRotations.every((row) => row.status === 'completed');
+      const completedAllRotations = allRotations.length > 0 && allRotations.every((row) => isCompletedRotation(row));
       if (completedAllRotations && lastRotation) {
         rotation = lastRotation;
       } else {
@@ -1283,8 +1284,8 @@ router.post('/:id/remove-extension', async (req, res) => {
     intern.totalExtensionDays = Math.max(0, Number(intern.totalExtensionDays || 0) - removeDays);
     intern.manualExtensionDays = rotation.manualExtensionDays || 0;
     intern.autoExtensionDays = rotation.autoExtensionDays || 0;
-    intern.extensionDays = rotation.status !== 'completed' ? Number(rotation.extensionDays || 0) : 0;
-    intern.status = rotation.status === 'completed'
+    intern.extensionDays = isCompletedRotation(rotation) ? 0 : Number(rotation.extensionDays || 0);
+    intern.status = isCompletedRotation(rotation)
       ? 'completed'
       : (rotation.status === 'pending' ? 'pending' : (Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active'));
     await intern.save();

@@ -1,7 +1,7 @@
 const Intern = require('../models/Intern');
 const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
-const { normalizeRotation, resolveCurrentAssignment, getLatestActiveLikeAssignment } = require('./assignmentUtils');
+const { normalizeRotation, resolveCurrentAssignment, getLatestActiveLikeAssignment, isCompletedRotation } = require('./assignmentUtils');
 
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
 
@@ -145,6 +145,7 @@ const getRotationStatus = (rotation, today = new Date()) => {
 
   const normalized = normalizeRotation(rotation);
   if (normalized) {
+    if (normalized.workflowState === 'pending_confirmation') return 'pending';
     return normalized.status;
   }
 
@@ -215,11 +216,22 @@ const formatRotation = (rotation) => {
 
 const formatIntern = (intern, rotations = []) => {
   const formattedRotations = (rotations || []).map(formatRotation);
+  _debugFormattedRotations(formattedRotations, intern._id?.toString?.());
 
     const currentRotation = resolveCurrentAssignment({ rotations: formattedRotations });
   const upcomingRotations = formattedRotations.filter(r => r.status === 'upcoming');
   const awaitingConfirmationRotations = formattedRotations.filter(r => r.status === 'awaiting_confirmation');
-  const completedRotations = formattedRotations.filter(r => r.status === 'completed');
+  const completedRotations = formattedRotations
+    .filter((r) => isCompletedRotation(r))
+    .sort((a, b) => {
+      const aTime = a.startDate ? new Date(a.startDate).getTime() : Number.MAX_SAFE_INTEGER;
+      const bTime = b.startDate ? new Date(b.startDate).getTime() : Number.MAX_SAFE_INTEGER;
+      return aTime - bTime;
+    });
+
+  if (completedRotations.length === 0 && (formattedRotations || []).length > 0) {
+    console.log({ completed: completedRotations, allAssignments: rotations || [] });
+  }
 
   // Compute status fields
   const primaryStatus = computePrimaryStatus(formattedRotations);
@@ -419,6 +431,16 @@ const addUnitProgress = (internView, currentUnit, units = []) => {
     internshipDays,
   };
 };
+
+// DEBUG: log formatted rotations statuses when building intern views
+// This helps diagnose why pending/awaiting states may not appear in the view
+function _debugFormattedRotations(formattedRotations, internId) {
+  try {
+    console.log('[DEBUG] formattedRotations:', formattedRotations.map(r => ({ id: r.id, status: r.status, workflowState: r.workflowState, startDate: r.startDate })), 'intern:', internId);
+  } catch (e) {
+    // ignore
+  }
+}
 
 /**
  * Central data builder for intern views
