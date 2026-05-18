@@ -47,27 +47,33 @@ function getRotationStartTime(rotation) {
 }
 
 function resolveCurrentAssignment(subject = {}) {
-  const rotations = Array.isArray(subject.rotations)
-    ? subject.rotations
-    : Array.isArray(subject.assignments)
-      ? subject.assignments
-      : Array.isArray(subject) && typeof subject !== 'object'
-        ? subject
+  const rotations = Array.isArray(subject)
+    ? subject
+    : Array.isArray(subject.rotations)
+      ? subject.rotations
+      : Array.isArray(subject.assignments)
+        ? subject.assignments
         : [];
 
   return [...rotations]
     .map(normalizeRotation)
     .filter((rotation) => isActiveAssignment(rotation))
-    .sort((a, b) => getRotationStartTime(b) - getRotationStartTime(a))[0] || null;
+    .sort((a, b) => {
+      const diff = getRotationStartTime(b) - getRotationStartTime(a);
+      if (diff !== 0) return diff;
+      const createdA = new Date(a.createdAt || a.created_at || 0).getTime();
+      const createdB = new Date(b.createdAt || b.created_at || 0).getTime();
+      return createdB - createdA;
+    })[0] || null;
 }
 
 function resolveUpcomingAssignment(subject = {}) {
-  const rotations = Array.isArray(subject.rotations)
-    ? subject.rotations
-    : Array.isArray(subject.assignments)
-      ? subject.assignments
-      : Array.isArray(subject) && typeof subject !== 'object'
-        ? subject
+  const rotations = Array.isArray(subject)
+    ? subject
+    : Array.isArray(subject.rotations)
+      ? subject.rotations
+      : Array.isArray(subject.assignments)
+        ? subject.assignments
         : [];
 
   return [...rotations]

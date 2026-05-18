@@ -9,7 +9,7 @@ import ConfirmMovementModal from './ConfirmMovementModal';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { exportToCSV, openPrintableWindow, formatDate, getBatchColor, getStatusColor, normalizeDate, calculateDaysBetween } from '../lib/utils';
-import { previewNextUnitForIntern, PREDICTIVE_WINDOW_DAYS } from '../lib/predictivePlanning';
+import { getActiveAssignment, previewNextUnitForIntern, PREDICTIVE_WINDOW_DAYS } from '../lib/predictivePlanning';
 import { api } from '../services/api';
 
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
@@ -216,27 +216,25 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
     return scheduleRows.filter(r => r.status === 'completed');
   }, [schedulePayload, scheduleRows]);
 
-  const currentRotations = React.useMemo(() => {
-    if (schedulePayload?.current) return [schedulePayload.current];
-    return scheduleRows.filter(r => {
-      return r.status === 'active' || r.status === 'pending';
-    });
-  }, [schedulePayload, scheduleRows]);
+  const currentRotation = React.useMemo(() => {
+    if (schedulePayload?.current) return schedulePayload.current;
+    return getActiveAssignment({ ...currentIntern, rotations: scheduleRows }) || null;
+  }, [schedulePayload, scheduleRows, currentIntern]);
 
   const upcomingRotations = React.useMemo(() => {
     if (Array.isArray(schedulePayload?.upcomingRotations) && schedulePayload.upcomingRotations.length > 0) {
       return schedulePayload.upcomingRotations;
     }
-    if (schedulePayload?.upcoming) return schedulePayload.upcoming;
+    if (schedulePayload?.upcoming) return schedulePayload?.upcoming;
     return scheduleRows.filter(r => normalizeDate(r.start_date) > normalizeDate(new Date()));
   }, [schedulePayload, scheduleRows]);
 
   // Debug logging for filtered results
   React.useEffect(() => {
     console.log('[InternDashboard] Completed:', completedRotations.length);
-    console.log('[InternDashboard] Current:', currentRotations.length);
+    console.log('[InternDashboard] Current:', currentRotation ? 1 : 0);
     console.log('[InternDashboard] Upcoming:', upcomingRotations.length);
-  }, [completedRotations.length, currentRotations.length, upcomingRotations.length]);
+  }, [completedRotations.length, currentRotation, upcomingRotations.length]);
 
   const orderedUnits = React.useMemo(() => {
     return [...(units || [])].sort((a, b) => {
@@ -255,7 +253,6 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   }, [completedRotations]);
 
   const currentUnitId = React.useMemo(() => {
-    const currentRotation = currentRotations[0] || null;
     return (
       currentRotation?.unit_id
       || currentRotation?.unitId
@@ -263,7 +260,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
       || currentIntern?.currentUnit?._id
       || null
     );
-  }, [currentIntern, currentRotations]);
+  }, [currentIntern, currentRotation]);
 
   const remainingUnits = React.useMemo(() => {
     return orderedUnits.filter((unit) => {
@@ -273,8 +270,6 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
       return !completedUnitIds.has(unitId);
     });
   }, [orderedUnits, currentUnitId, completedUnitIds]);
-
-  const currentRotation = currentRotations[0] || null;
 
   const nextAssignmentPreview = React.useMemo(() => {
     if (!currentRotation || !currentIntern) {
@@ -435,7 +430,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   }, [intern.id, internState?.extension_days, invalidateInternLists, onInternUpdated, queryClient]);
 
   const handleReassign = React.useCallback(() => {
-    const current = currentRotations[0] || {
+    const current = currentRotation || {
       id: 'fallback-current-rotation',
       unit_name: currentIntern?.currentUnit?.name || 'Current Unit',
       start_date: currentIntern?.start_date || currentIntern?.startDate || new Date().toISOString(),
@@ -443,7 +438,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
     };
     setActiveRotation(current);
     setShowReassign(true);
-  }, [currentIntern?.currentUnit?.name, currentIntern?.startDate, currentIntern?.start_date, currentRotations]);
+  }, [currentIntern?.currentUnit?.name, currentIntern?.startDate, currentIntern?.start_date, currentRotation]);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
@@ -590,38 +585,32 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
               </Card>
             </div>
 
-            {/* Current Units */}
-            {currentRotations.length > 0 && (
+            {/* Current Unit */}
+            {currentRotation && (
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center space-x-2">
                     <MapPin className="h-5 w-5" />
-                    <span>Current Units</span>
+                    <span>Current Unit</span>
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {currentRotations.map((rotation) => {
-                      const progressDisplay = getCurrentUnitProgressDisplay(rotation, currentTime);
-
-                      return (
-                        <div key={rotation.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 bg-blue-50 rounded-lg">
-                          <div>
-                            <h4 className="font-medium">{rotation.unit_name}</h4>
-                            <p className="text-sm text-gray-600">
-                              {formatDate(rotation.start_date)} - {formatDate(rotation.end_date)}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            {progressDisplay && (
-                              <p className="text-sm font-medium text-blue-600">
-                                {progressDisplay}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 bg-blue-50 rounded-lg">
+                      <div>
+                        <h4 className="font-medium">{currentRotation.unit_name}</h4>
+                        <p className="text-sm text-gray-600">
+                          {formatDate(currentRotation.start_date)} - {formatDate(currentRotation.end_date)}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        {getCurrentUnitProgressDisplay(currentRotation, currentTime) && (
+                          <p className="text-sm font-medium text-blue-600">
+                            {getCurrentUnitProgressDisplay(currentRotation, currentTime)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </CardContent>
               </Card>

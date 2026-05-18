@@ -4,6 +4,7 @@ import {
   buildUpcomingMovements,
   previewNextUnitForIntern,
   PREDICTIVE_WINDOW_DAYS,
+  getActiveAssignment,
 } from './predictivePlanning';
 
 const BASE_DATE = new Date('2026-04-04T00:00:00.000Z');
@@ -163,6 +164,25 @@ describe('predictivePlanning', () => {
     expect(queue[0].internName).toBe('Overdue Intern');
     expect(queue[0].isOverdue).toBe(true);
     expect(queue[1].internName).toBe('Soon Intern');
+  });
+
+  test('Test 1c: active assignment resolver picks the newest active rotation', () => {
+    const multiActive = buildIntern({
+      id: 'i-15',
+      name: 'Multiple Actives',
+      unitId: 'u-ortho',
+      unitName: 'Ortho',
+      startDate: '2026-03-01T00:00:00.000Z',
+      endDate: '2026-03-21T00:00:00.000Z',
+      rotations: [
+        { status: 'active', unit: { id: 'u-ortho', name: 'Ortho' }, startDate: '2026-03-01T00:00:00.000Z', endDate: '2026-03-21T00:00:00.000Z' },
+        { status: 'active', unit: { id: 'u-ortho', name: 'Ortho' }, startDate: '2026-03-05T00:00:00.000Z', endDate: '2026-03-25T00:00:00.000Z' },
+      ],
+    });
+
+    const activeAssignment = getActiveAssignment(multiActive);
+    expect(activeAssignment).not.toBeNull();
+    expect(activeAssignment.startDate).toBe('2026-03-05T00:00:00.000Z');
   });
 
   test('Test 2: recently filled unit is deprioritized', () => {

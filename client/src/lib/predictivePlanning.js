@@ -349,14 +349,54 @@ const getInternAssignments = (intern) => {
   return Array.isArray(intern?.rotations) ? intern.rotations : [];
 };
 
+const normalizeAssignmentStatus = (assignment) => {
+  const rawStatus = String(assignment?.status || assignment?.status?.toString?.() || '').trim().toLowerCase();
+  if (rawStatus === 'pending') return 'active';
+  if (['active', 'upcoming', 'completed', 'awaiting_confirmation'].includes(rawStatus)) {
+    return rawStatus;
+  }
+  return 'upcoming';
+};
+
+const normalizeAssignment = (assignment) => ({
+  ...assignment,
+  status: normalizeAssignmentStatus(assignment),
+});
+
+export function resolveCurrentAssignment(intern) {
+  return [...getInternAssignments(intern)]
+    .map(normalizeAssignment)
+    .filter((assignment) => assignment?.status === 'active')
+    .sort((a, b) => {
+      const aStart = getAssignmentStartDate(a)?.getTime() || 0;
+      const bStart = getAssignmentStartDate(b)?.getTime() || 0;
+      if (aStart !== bStart) return bStart - aStart;
+      const createdA = new Date(a.createdAt || a.created_at || 0).getTime();
+      const createdB = new Date(b.createdAt || b.created_at || 0).getTime();
+      return createdB - createdA;
+    })[0] || null;
+}
+
+export function resolveUpcomingAssignment(intern) {
+  return [...getInternAssignments(intern)]
+    .map(normalizeAssignment)
+    .filter((assignment) => assignment?.status === 'upcoming' || assignment?.status === 'awaiting_confirmation')
+    .sort((a, b) => {
+      const aStart = getAssignmentStartDate(a)?.getTime() || Number.MAX_SAFE_INTEGER;
+      const bStart = getAssignmentStartDate(b)?.getTime() || Number.MAX_SAFE_INTEGER;
+      if (aStart !== bStart) return aStart - bStart;
+      const createdA = new Date(a.createdAt || a.created_at || 0).getTime();
+      const createdB = new Date(b.createdAt || b.created_at || 0).getTime();
+      return createdA - createdB;
+    })[0] || null;
+}
+
 export function getActiveAssignment(intern) {
-  return getInternAssignments(intern).find((assignment) => assignment?.status === 'active' || assignment?.status === 'pending') || null;
+  return resolveCurrentAssignment(intern);
 }
 
 export function getNextAssignment(intern) {
-  return getInternAssignments(intern).find((assignment) =>
-    assignment?.status === 'upcoming' || assignment?.status === 'awaiting_confirmation'
-  ) || null;
+  return resolveUpcomingAssignment(intern);
 }
 
 const getAssignmentDuration = (assignment) => {
