@@ -11,7 +11,6 @@ const {
   getRotationUnitId,
   isValidRotationStatus,
   collectRotationIntegrityIssues,
-  isCompletedRotation,
 } = require('../services/assignmentUtils');
 
 const REPORT_PATH = path.resolve(__dirname, '../../ROTATION_DATA_RECOVERY_REPORT.md');
@@ -55,7 +54,7 @@ async function auditRotationIntegrity() {
     const totalAssignments = rotations.length;
     const normalized = rotations.map(normalizeRotation).filter(Boolean);
     const activeAssignments = normalized.filter((rotation) => rotation.status === 'active' && getRotationUnitId(rotation)).length;
-    const completedAssignments = normalized.filter((rotation) => isCompletedRotation(rotation)).length;
+    const completedAssignments = normalized.filter((rotation) => rotation.status === 'completed').length;
     const missingUnits = rotations.filter((rotation) => !getRotationUnitId(rotation)).length;
     const missingDates = rotations.filter((rotation) => {
       const start = new Date(rotation.startDate || rotation.start_date);

@@ -23,7 +23,7 @@ function normalizeRotation(rotation = {}) {
 
   if (rawStatus === LEGACY_PENDING_STATUS) {
     normalized.status = 'active';
-    normalized.workflowState = rawWorkflow && rawWorkflow !== 'normal' ? rawWorkflow : 'pending_confirmation';
+    normalized.workflowState = rawWorkflow || 'pending_confirmation';
   } else {
     normalized.status = VALID_LIFECYCLE_STATUSES.has(rawStatus) ? rawStatus : 'upcoming';
     normalized.workflowState = VALID_WORKFLOW_STATES.has(rawWorkflow) ? rawWorkflow : 'normal';
@@ -134,6 +134,28 @@ function calculateOverdueDays(rotation, today = new Date()) {
   return Math.max(0, Math.floor((current.getTime() - endDate.getTime()) / (1000 * 60 * 60 * 24)));
 }
 
+function isCompletedRotation(rotation, today = new Date()) {
+  if (!rotation || typeof rotation !== 'object') return false;
+
+  const status = String(rotation.status || '').trim().toLowerCase();
+  if (status === 'completed') return true;
+
+  const workflowState = String(rotation.workflowState || '').trim().toLowerCase();
+  if (workflowState === 'completed') return true;
+
+  if (rotation.endDate) {
+    const endDate = new Date(rotation.endDate);
+    const todayDate = new Date(today);
+    if (!Number.isNaN(endDate.getTime()) && !Number.isNaN(todayDate.getTime())) {
+      endDate.setHours(0, 0, 0, 0);
+      todayDate.setHours(0, 0, 0, 0);
+      return endDate < todayDate;
+    }
+  }
+
+  return false;
+}
+
 function transitionAssignmentStatus(assignment, action) {
   if (!assignment || typeof assignment !== 'object') return assignment;
 
@@ -157,30 +179,10 @@ function transitionAssignmentStatus(assignment, action) {
   return assignment;
 }
 
-function isCompletedRotation(rotation, today = new Date()) {
-  if (!rotation || typeof rotation !== 'object') return false;
-
-  const rawStatus = String(rotation.status || '').trim().toLowerCase();
-  if (rawStatus === 'completed') return true;
-
-  const rawWorkflow = String(rotation.workflowState || rotation.workflow_state || '').trim().toLowerCase();
-  if (rawWorkflow === 'completed') return true;
-
-  const endRaw = rotation.endDate || rotation.end_date || rotation.actualEndDate || rotation.actual_end_date;
-  if (endRaw) {
-    const end = parseRotationDate(endRaw);
-    if (end) {
-      const now = new Date(today);
-      now.setHours(0, 0, 0, 0);
-      return end.getTime() < now.getTime();
-    }
-  }
-
-  return false;
-}
 module.exports = {
   isActiveLikeAssignment: isActiveAssignment,
   isActiveAssignment,
+  isCompletedRotation,
   normalizeRotation,
   resolveCurrentAssignment,
   resolveUpcomingAssignment,
@@ -190,5 +192,4 @@ module.exports = {
   isValidRotationStatus,
   transitionAssignmentStatus,
   calculateOverdueDays,
-  isCompletedRotation,
 };

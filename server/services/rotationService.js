@@ -150,42 +150,16 @@ async function checkAndMarkAwaitingConfirmation(internId, today = new Date()) {
   canAssignmentTransition('checkAndMarkAwaitingConfirmation');
   const normalizedToday = startOfDay(today);
   
-  // Find the intern's current active rotation using resolver (robust fallback)
+  // Find the intern's current active rotation using resolver
   const allRotations = await Rotation.find({ intern: internId }).sort({ startDate: -1 }).exec();
-
-  let currentRotation = null;
-  try {
-    const currentNorm = resolveCurrentAssignment({ rotations: allRotations });
-    if (currentNorm) {
-      currentRotation = allRotations.find((r) => String(r._id) === String(currentNorm._id)) || null;
-    }
-  } catch (e) {
-    // ignore and fallback
-  }
-
-  // Fallback: find rotation spanning today
-  if (!currentRotation) {
-    for (const rot of allRotations) {
-      const start = rot.startDate ? startOfDay(rot.startDate) : null;
-      const end = rot.endDate ? startOfDay(rot.endDate) : null;
-      if (start && end && start <= normalizedToday && end >= normalizedToday) {
-        currentRotation = rot;
-        break;
-      }
-    }
-  }
-
-  // Fallback: find first with status 'active' or legacy 'pending'
-  if (!currentRotation) {
-    currentRotation = allRotations.find((r) => String(r.status || '').toLowerCase() === 'active' || String(r.status || '').toLowerCase() === 'pending') || null;
-  }
-
+  const currentNorm = resolveCurrentAssignment({ rotations: allRotations });
+  const currentRotation = currentNorm ? allRotations.find((r) => String(r._id) === String(currentNorm._id)) : null;
   if (currentRotation) await currentRotation.populate('intern');
+  
   if (!currentRotation) return null;
   
   // Check if the planned duration has been exceeded
   const endDate = startOfDay(currentRotation.endDate);
-  console.log(`[DEBUG checkAndMarkAwaiting] intern: ${currentRotation.intern?._id || internId}, endDate: ${endDate}, today: ${normalizedToday}`);
   if (normalizedToday <= endDate) {
     return null;
   }
@@ -207,7 +181,6 @@ async function checkAndMarkAwaitingConfirmation(internId, today = new Date()) {
   })
     .sort({ startDate: 1 })
     .exec();
-  console.log('[DEBUG checkAndMarkAwaiting] nextRotation found:', nextRotation && nextRotation._id ? nextRotation._id.toString() : null, 'status:', nextRotation && nextRotation.status ? nextRotation.status : null);
   
   if (!nextRotation) {
     // No upcoming rotation exists yet - this will be created by the batch assignment process
@@ -239,22 +212,8 @@ async function acceptMovement(internId) {
   
   // 1. Find current active assignment
   const allRotations = await Rotation.find({ intern: internId }).sort({ startDate: -1, createdAt: -1 }).exec();
-  
-  // Try to find current rotation using resolver
-  let currentRotation = null;
   const currentNorm = resolveCurrentAssignment({ rotations: allRotations });
-  if (currentNorm) {
-    currentRotation = allRotations.find((r) => String(r._id) === String(currentNorm._id)) || null;
-  }
-  
-  // Fallback: find first with status 'active' or legacy 'pending'
-  if (!currentRotation) {
-    currentRotation = allRotations.find((r) => {
-      const status = String(r.status || '').toLowerCase();
-      return status === 'active' || status === 'pending';
-    }) || null;
-  }
-  
+  const currentRotation = currentNorm ? allRotations.find((r) => String(r._id) === String(currentNorm._id)) : null;
   if (currentRotation) {
     await currentRotation.populate('intern');
     await currentRotation.populate('unit');
@@ -274,13 +233,7 @@ async function acceptMovement(internId) {
     throw new Error(`No next rotation found for intern ${internId}`);
   }
   
-  const nextRotationFull = await Rotation.findById(nextRotation._id)
-    .populate('unit')
-    .exec();
-  
-  if (!nextRotationFull) {
-    throw new Error(`Failed to load next rotation for intern ${internId}`);
-  }
+  await nextRotation.populate('unit');
   
   // 3. Close current unit
   currentRotation.status = 'completed';
@@ -288,29 +241,29 @@ async function acceptMovement(internId) {
   await currentRotation.save();
   
   // 4. Activate next unit
-  nextRotationFull.status = 'active';
-  nextRotationFull.startDate = today; // Set new unit start date = TODAY
+  nextRotation.status = 'active';
+  nextRotation.startDate = today; // Set new unit start date = TODAY
   
   // Recalculate end date based on new start date
-  const duration = getDuration(nextRotationFull.unit);
-  nextRotationFull.endDate = addDays(today, duration);
-  await nextRotationFull.save();
+  const duration = getDuration(nextRotation.unit);
+  nextRotation.endDate = addDays(today, duration);
+  await nextRotation.save();
   
   // 5. Update intern's currentUnit reference
   await Intern.findByIdAndUpdate(internId, { 
-    currentUnit: nextRotationFull.unit._id 
+    currentUnit: nextRotation.unit._id 
   }).exec();
   
   // 6. History logging
   const internName = currentRotation.intern?.name || 'Unknown Intern';
   const fromUnitName = currentRotation.unit?.name || 'Unknown Unit';
-  const toUnitName = nextRotationFull.unit?.name || 'Unknown Unit';
+  const toUnitName = nextRotation.unit?.name || 'Unknown Unit';
   
   await ActivityLog.create({
     action_type: 'movement_accepted',
     description: `${internName} moved from ${fromUnitName} to ${toUnitName}`,
     intern: internId,
-    unit: nextRotationFull.unit._id,
+    unit: nextRotation.unit._id,
   });
   
   // 7. Debugging
@@ -320,7 +273,7 @@ async function acceptMovement(internId) {
   
   return {
     completedRotation: currentRotation,
-    activatedRotation: nextRotationFull,
+    activatedRotation: nextRotation,
     internName,
     fromUnit: fromUnitName,
     toUnit: toUnitName,
@@ -343,32 +296,11 @@ async function reassignNextUnit(internId, newUnitId) {
     throw new Error(`No next rotation found for intern ${internId}`);
   }
 
-  const nextPlannedRotation = await Rotation.findById(nextRotation._id)
-    .populate('intern')
-    .populate('unit')
-    .exec();
-
-  if (!nextPlannedRotation) {
-    throw new Error(`Failed to load next planned rotation for intern ${internId}`);
-  }
+  const nextPlannedRotation = await nextRotation.populate('intern').populate('unit');
 
   const today = startOfDay(new Date());
-  
-  // Find current active/pending rotation
-  let activeRotation = null;
   const currentNorm = resolveCurrentAssignment({ rotations: allRotations });
-  if (currentNorm) {
-    activeRotation = allRotations.find((r) => String(r._id) === String(currentNorm._id)) || null;
-  }
-  
-  // Fallback: find first with status 'active' or legacy 'pending'
-  if (!activeRotation) {
-    activeRotation = allRotations.find((r) => {
-      const status = String(r.status || '').toLowerCase();
-      return status === 'active' || status === 'pending';
-    }) || null;
-  }
-  
+  const activeRotation = currentNorm ? allRotations.find((r) => String(r._id) === String(currentNorm._id)) : null;
   if (!activeRotation) {
     throw new Error(`No active rotation found for intern ${internId}`);
   }
@@ -453,7 +385,6 @@ module.exports = {
   acceptMovement,
   reassignNextUnit,
   validateRotationIntegrity,
-  isAwaitingConfirmationState,
 };
 
 

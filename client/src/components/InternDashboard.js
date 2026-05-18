@@ -213,7 +213,14 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   // Separate completed and upcoming rotations using normalized dates to handle extensions correctly
   const completedRotations = React.useMemo(() => {
     if (schedulePayload?.completed) return schedulePayload.completed;
-    return scheduleRows.filter(r => r.status === 'completed');
+    const today = normalizeDate(new Date());
+    return scheduleRows.filter(r => {
+      // Check status first
+      if (r.status === 'completed') return true;
+      // Check if end_date is before today
+      const endDate = normalizeDate(r.end_date);
+      return endDate && endDate < today;
+    });
   }, [schedulePayload, scheduleRows]);
 
   const currentRotation = React.useMemo(() => {
@@ -334,7 +341,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
       plannedDuration,
       remainingDays,
       overdueDays: Math.max(0, elapsedDays - plannedDuration),
-      isOverdue: currentRotation.status === 'pending' || (remainingDays !== null && remainingDays < 0),
+      isOverdue: currentRotation.status === 'awaiting_confirmation' || currentRotation.workflowState === 'pending_confirmation' || (remainingDays !== null && remainingDays < 0),
     };
     console.log('[InternDashboard] pending movement item:', item);
     return item;
