@@ -235,11 +235,9 @@ async function ensureInternStatusIsCorrect(internId) {
   let newStatus = 'completed';
   if (activeRotation) {
     const activeExtensionDays = Number(activeRotation.extensionDays || 0);
-    if (activeRotation.workflowState === 'pending_confirmation') {
-      newStatus = 'pending';
-    } else {
-      newStatus = activeExtensionDays > 0 ? 'extended' : 'active';
-    }
+    // Always return 'active' as lifecycle status
+    // Use workflowState to track pending confirmation
+    newStatus = activeExtensionDays > 0 ? 'extended' : 'active';
     refreshedIntern.extensionDays = activeExtensionDays;
   } else {
     refreshedIntern.extensionDays = 0;

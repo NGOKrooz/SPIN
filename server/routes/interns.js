@@ -482,10 +482,11 @@ const syncInternRotationStates = async (internId) => {
     if (rotation.status === 'awaiting_confirmation') {
       nextStatus = 'awaiting_confirmation';
     } else if (activeRotationId && rotation._id.toString() === activeRotationId) {
-      nextStatus = rotation.workflowState === 'pending_confirmation' ? 'pending' : 'active';
+      // Keep status as 'active' - workflowState tracks pending confirmation
+      nextStatus = 'active';
     } else if (startDate > now) {
       nextStatus = 'upcoming';
-    } else if (endDate < now && rotation.status !== 'pending') {
+    } else if (endDate < now && rotation.status !== 'active') {
       console.log('AUTO COMPLETION BLOCKED');
       const updated = transitionAssignmentStatus(rotation, 'auto-time-trigger');
       rotation.status = updated.status;
@@ -519,7 +520,8 @@ const syncInternRotationStates = async (internId) => {
   intern.currentUnit = current?.unit || null;
   if (current) {
     const activeExtensionDays = getRotationTotalExtensionDays(current, current.unit);
-    intern.status = current.workflowState === 'pending_confirmation' ? 'pending' : 'active';
+    // Always return 'active' as lifecycle status - use workflowState to detect pending confirmation
+    intern.status = activeExtensionDays > 0 ? 'extended' : 'active';
     intern.manualExtensionDays = getRotationManualExtensionDays(current);
     intern.autoExtensionDays = getRotationAutoExtensionDays(current);
     intern.extensionDays = activeExtensionDays;
@@ -1135,8 +1137,11 @@ router.post('/:id/extend', async (req, res) => {
     if (rotationStart > today) {
       rotation.status = 'upcoming';
     } else if (rotationEnd < today) {
-      console.log('AUTO COMPLETION BLOCKED');
-      rotation.status = rotation.status === 'completed' ? 'completed' : 'pending';
+      console.log('AUTO COMPLETION BLOCKED - keeping status as active');
+      // Keep status as 'active' - let admin explicitly accept when ready
+      if (rotation.status !== 'completed') {
+        rotation.status = 'active';
+      }
     } else {
       rotation.status = 'active';
     }
@@ -1151,7 +1156,7 @@ router.post('/:id/extend', async (req, res) => {
     intern.extensionDays = rotation.status !== 'completed' ? Number(rotation.extensionDays || 0) : 0;
     intern.status = rotation.status === 'completed'
       ? 'completed'
-      : (rotation.status === 'pending' ? 'pending' : (Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active'));
+      : (Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active');
     await intern.save();
 
     const reasonText = req.body.reason || 'No reason provided';
@@ -1266,8 +1271,11 @@ router.post('/:id/remove-extension', async (req, res) => {
     if (rotationStart > today) {
       rotation.status = 'upcoming';
     } else if (rotationEnd < today) {
-      console.log('AUTO COMPLETION BLOCKED');
-      rotation.status = rotation.status === 'completed' ? 'completed' : 'pending';
+      console.log('AUTO COMPLETION BLOCKED - keeping status as active');
+      // Keep status as 'active' - let admin explicitly accept when ready
+      if (rotation.status !== 'completed') {
+        rotation.status = 'active';
+      }
     } else {
       rotation.status = 'active';
     }
@@ -1282,7 +1290,7 @@ router.post('/:id/remove-extension', async (req, res) => {
     intern.extensionDays = rotation.status !== 'completed' ? Number(rotation.extensionDays || 0) : 0;
     intern.status = rotation.status === 'completed'
       ? 'completed'
-      : (rotation.status === 'pending' ? 'pending' : (Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active'));
+      : (Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active');
     await intern.save();
 
     const reasonText = req.body.reason || 'No reason provided';

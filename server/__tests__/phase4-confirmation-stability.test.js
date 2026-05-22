@@ -89,14 +89,16 @@ describe('Phase 4 confirmation-based movement stability', () => {
     expect(response.status).toBe(200);
 
     const rotations = response.body.rotations || [];
-    const active = rotations.find((r) => r.status === 'pending');
+    // After fix: current rotation status is 'active' with workflowState 'pending_confirmation'
+    const active = rotations.find((r) => r.status === 'active' && r.workflowState === 'pending_confirmation');
     const awaiting = rotations.find((r) => r.status === 'awaiting_confirmation');
 
     expect(active).toBeDefined();
     expect(active.unit_name).toBe('Cardiology');
     expect(awaiting).toBeDefined();
     expect(awaiting.unit_name).toBe('Neurology');
-    expect(rotations.filter((r) => r.status === 'pending')).toHaveLength(1);
+    // After fix: no more 'pending' status persisted to database
+    expect(rotations.filter((r) => r.status === 'active' && r.workflowState === 'pending_confirmation')).toHaveLength(1);
     expect(rotations.filter((r) => r.status === 'awaiting_confirmation')).toHaveLength(1);
   });
 

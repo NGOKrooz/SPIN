@@ -223,6 +223,16 @@ async function acceptMovement(internId) {
     throw new Error(`No active rotation found for intern ${internId}`);
   }
 
+  // Debug logging BEFORE accept
+  console.log(`\n[DEBUG ACCEPT] Before transition:`, {
+    intern: currentRotation.intern?.name || 'Unknown',
+    currentStatus: currentRotation.status,
+    currentWorkflowState: currentRotation.workflowState,
+    currentUnit: currentRotation.unit?.name || 'Unknown',
+    currentStartDate: currentRotation.startDate?.toISOString().split('T')[0],
+    currentEndDate: currentRotation.endDate?.toISOString().split('T')[0],
+  });
+
   if (!isAwaitingConfirmationState(currentRotation, today)) {
     throw new Error(`Intern ${internId} is not awaiting confirmation yet`);
   }
@@ -234,6 +244,15 @@ async function acceptMovement(internId) {
   }
   
   await nextRotation.populate('unit');
+  
+  // Debug logging for next rotation BEFORE accept
+  console.log(`[DEBUG ACCEPT] Next rotation before accept:`, {
+    nextStatus: nextRotation.status,
+    nextWorkflowState: nextRotation.workflowState,
+    nextUnit: nextRotation.unit?.name || 'Unknown',
+    nextStartDate: nextRotation.startDate?.toISOString().split('T')[0],
+    nextEndDate: nextRotation.endDate?.toISOString().split('T')[0],
+  });
   
   // 3. Close current unit
   currentRotation.status = 'completed';
@@ -248,6 +267,16 @@ async function acceptMovement(internId) {
   const duration = getDuration(nextRotation.unit);
   nextRotation.endDate = addDays(today, duration);
   await nextRotation.save();
+  
+  // Debug logging AFTER accept
+  console.log(`[DEBUG ACCEPT] After transition:`, {
+    currentNewStatus: currentRotation.status,
+    currentNewWorkflowState: currentRotation.workflowState,
+    nextNewStatus: nextRotation.status,
+    nextNewWorkflowState: nextRotation.workflowState,
+    newCurrentStartDate: nextRotation.startDate?.toISOString().split('T')[0],
+    newCurrentEndDate: nextRotation.endDate?.toISOString().split('T')[0],
+  });
   
   // 5. Update intern's currentUnit reference
   await Intern.findByIdAndUpdate(internId, { 
@@ -297,6 +326,15 @@ async function reassignNextUnit(internId, newUnitId) {
   }
 
   const nextPlannedRotation = await nextRotation.populate('intern').populate('unit');
+
+  // Debug logging BEFORE reassign
+  console.log(`\n[DEBUG REASSIGN] Before reassignment:`, {
+    intern: nextPlannedRotation.intern?.name || 'Unknown',
+    nextStatus: nextPlannedRotation.status,
+    nextWorkflowState: nextPlannedRotation.workflowState,
+    currentUnit: nextPlannedRotation.unit?.name || 'Unknown',
+    newUnitId: newUnitId,
+  });
 
   const today = startOfDay(new Date());
   const currentNorm = resolveCurrentAssignment({ rotations: allRotations });
@@ -349,6 +387,14 @@ async function reassignNextUnit(internId, newUnitId) {
   nextPlannedRotation.endDate = addDays(nextPlannedRotation.startDate, duration);
 
   await nextPlannedRotation.save();
+
+  // Debug logging AFTER reassign
+  console.log(`[DEBUG REASSIGN] After reassignment:`, {
+    nextNewStatus: nextPlannedRotation.status,
+    nextNewWorkflowState: nextPlannedRotation.workflowState,
+    newUnit: newUnitName,
+    newEndDate: nextPlannedRotation.endDate?.toISOString().split('T')[0],
+  });
 
   // 8. History logging
   const internName = nextPlannedRotation.intern?.name || 'Unknown Intern';

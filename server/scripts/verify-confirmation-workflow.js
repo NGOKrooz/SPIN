@@ -233,10 +233,10 @@ const findRotation = (internView, status) => {
   return (internView.rotations || []).find((rotation) => rotation.status === status) || null;
 };
 
-const isActiveLikeStatus = (status) => status === 'active' || status === 'pending';
-
+// After fix: 'pending' is no longer a database status
+// Only 'active', 'upcoming', 'awaiting_confirmation', 'completed' exist
 const findActiveLikeRotation = (internView) => (
-  (internView.rotations || []).find((rotation) => isActiveLikeStatus(rotation.status)) || null
+  (internView.rotations || []).find((rotation) => rotation.status === 'active') || null
 );
 
 const buildQueueStatus = (internView) => {
@@ -259,7 +259,7 @@ const buildQueueStatus = (internView) => {
 
   return {
     currentUnit: activeRotation.unit?.name || activeRotation.unit_name || activeRotation.unit,
-    currentStatus: isActiveLikeStatus(activeRotation.status) ? 'active' : activeRotation.status,
+    currentStatus: activeRotation.status === 'active' ? 'active' : activeRotation.status,
     plannedDuration,
     activeDuration: totalDuration,
     activeExtensionDays: activeRotation.extensionDays,
@@ -276,7 +276,7 @@ const buildQueueStatus = (internView) => {
     },
     rotationHistoryCount: internView.rotations.length,
     awaitingCount: (internView.rotations || []).filter((r) => r.status === 'awaiting_confirmation').length,
-    activeCount: (internView.rotations || []).filter((r) => r.status === 'active' || r.status === 'pending').length,
+    activeCount: (internView.rotations || []).filter((r) => r.status === 'active').length,
   };
 };
 
@@ -441,7 +441,7 @@ const run = async () => {
     const nextRotationAfterReassign = stateAfterReassign.rotations.find((r) => r.status === 'awaiting_confirmation');
     assert(nextRotationAfterReassign, 'There should still be one awaiting_confirmation rotation after reassign');
     assert(nextRotationAfterReassign.unit?.name === 'Orthopedics' || nextRotationAfterReassign.unit_name === 'Orthopedics', 'Next unit did not update to Orthopedics after reassign');
-    assert(stateAfterReassign.rotations.filter((r) => r.status === 'active' || r.status === 'pending').length === 1, 'Multiple active-like rotations found after reassign');
+    assert(stateAfterReassign.rotations.filter((r) => r.status === 'active').length === 1, 'Multiple active rotations found after reassign');
     console.log('✅ Reassign changed the next unit only and did not move the intern yet');
 
     console.log('--- PHASE 8 — ACCEPT CONFIRMATION TEST ---');
@@ -482,7 +482,7 @@ const run = async () => {
     console.log('✅ Completed history preserved 27 total days and 6 extension days for Adult Neurology');
 
     console.log('--- PHASE 11 — DUPLICATE ASSIGNMENT VALIDATION ---');
-    assert(finalState.rotations.filter((r) => r.status === 'active' || r.status === 'pending').length === 1, 'Multiple active-like assignments found');
+    assert(finalState.rotations.filter((r) => r.status === 'active').length === 1, 'Multiple active assignments found');
     assert(finalState.rotations.filter((r) => r.status === 'awaiting_confirmation').length === 0, 'Multiple awaiting_confirmation assignments found');
     console.log('✅ No duplicate active or awaiting_confirmation assignments exist');
 

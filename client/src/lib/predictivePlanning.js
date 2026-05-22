@@ -342,6 +342,47 @@ export function getInternUnitTiming(internLike, referenceDate = new Date()) {
   };
 }
 
+/**
+ * Compute derived UI state: isPending
+ * Shows "PENDING" badge when rotation.status === "active" && elapsedDays >= plannedDuration
+ * (i.e., the rotation has passed its planned duration but admin hasn't accepted yet)
+ */
+export function getIsPending(rotation, referenceDate = new Date()) {
+  if (!rotation) return false;
+  const today = normalizeDate(referenceDate);
+  const startDate = getAssignmentStartDate(rotation);
+  const endDate = getAssignmentEndDate(rotation);
+  const plannedDuration = getAssignmentDuration(rotation);
+
+  if (!startDate || !endDate) return false;
+
+  // isPending = rotation is active AND has elapsed its planned duration
+  const elapsedDays = Math.floor((today.getTime() - startDate.getTime()) / DAY_IN_MS) + 1;
+  const isPending = rotation?.status === 'active' && elapsedDays >= plannedDuration;
+
+  return isPending;
+}
+
+/**
+ * Compute derived UI state: overdueDays
+ * Shows "+X overdue days" when rotation has exceeded its planned duration
+ * Do NOT persist this to database - it's purely a display metric
+ */
+export function getOverdueDays(rotation, referenceDate = new Date()) {
+  if (!rotation) return 0;
+  const today = normalizeDate(referenceDate);
+  const startDate = getAssignmentStartDate(rotation);
+  const endDate = getAssignmentEndDate(rotation);
+  const plannedDuration = getAssignmentDuration(rotation);
+
+  if (!startDate || !endDate) return 0;
+
+  const elapsedDays = Math.floor((today.getTime() - startDate.getTime()) / DAY_IN_MS) + 1;
+  const overdueDays = Math.max(0, elapsedDays - plannedDuration);
+
+  return overdueDays;
+}
+
 const getInternAssignments = (intern) => {
   if (Array.isArray(intern?.assignments) && intern.assignments.length > 0) {
     return intern.assignments;

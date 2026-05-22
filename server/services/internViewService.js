@@ -140,7 +140,7 @@ const toIsoString = (date) => {
 
 const getRotationStatus = (rotation, today = new Date()) => {
   const rawStatus = String(rotation?.status || '').trim().toLowerCase();
-  if (rawStatus === 'pending') return 'pending';
+  // Return the actual database status without treating 'pending' as a lifecycle state
   if (rawStatus === 'awaiting_confirmation') return 'awaiting_confirmation';
 
   const normalized = normalizeRotation(rotation);

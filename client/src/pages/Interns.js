@@ -66,13 +66,13 @@ export default function Interns() {
   const mapWithDerivedStatus = (list) => (list || []).map((i) => {
     const extensionDays = Number(i.totalExtensionDays ?? i.total_extension_days ?? i.extensionDays ?? i.extension_days) || 0;
     const rawStatus = String(i.status || 'Active').toLowerCase();
+    // After the fix, database status is ONLY: active, extended, completed
+    // No more 'pending' persisted to database
     const primaryStatus = i.primaryStatus
       ? String(i.primaryStatus).toLowerCase()
       : rawStatus === 'completed'
         ? 'completed'
-        : rawStatus === 'pending'
-          ? 'pending'
-          : 'active';
+        : 'active';  // Default to 'active' instead of checking for 'pending'
     const hasExtension = extensionDays > 0 || Boolean(i.hasExtension);
 
     return {

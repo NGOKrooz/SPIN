@@ -690,9 +690,10 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
       activeRotation.status = 'upcoming';
       await activeRotation.save();
     } else if (endDate && today > endDate) {
-      if (activeRotation.status !== 'pending') {
-        activeRotation.status = 'pending';
-        console.log(`[STATUS TRANSITION] intern ${intern._id.toString()}: ACTIVE -> PENDING`);
+      // Keep rotation as 'active' with workflowState tracking for pending confirmation
+      if (activeRotation.workflowState !== 'pending_confirmation') {
+        activeRotation.workflowState = 'pending_confirmation';
+        console.log(`[WORKFLOW STATE] intern ${intern._id.toString()}: workflowState set to pending_confirmation (elapsedDays >= plannedDuration)`);
       }
       // PHASE 4: Preserve overdue active assignments when a next movement is already staged.
       if (nextPlannedRotation) {
@@ -711,7 +712,7 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
 
           if (intern) {
             intern.currentUnit = activeRotation.unit || null;
-            intern.status = 'pending';
+            intern.status = 'active';
             intern.manualExtensionDays = manualExtensionDays;
             intern.autoExtensionDays = autoExtensionDays;
             intern.extensionDays = manualExtensionDays + autoExtensionDays;
@@ -724,9 +725,10 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
       }
 
       // PHASE 4: Do not auto-advance expired active rotations by default.
+      // Keep status as 'active' - admin must explicitly accept to transition
       await activeRotation.save();
       intern.currentUnit = activeRotation.unit || null;
-      intern.status = 'pending';
+      intern.status = 'active';
       await intern.save();
       return { rotation: activeRotation, unit: activeRotation.unit, wasReset: false, usedOverflow: false };
     } else {
