@@ -14,30 +14,11 @@ const getRotationStartTimestamp = (rotation) => {
   return date.getTime();
 };
 
-const statusPriority = {
-  awaiting_confirmation: 0,
-  upcoming: 1,
-};
-
+// Strict next rotation resolution: only consider rotations with status === 'upcoming'
 const findNextPlannedRotation = (rotations = []) => {
   return [...rotations]
-    .filter((rotation) => {
-      const status = String(rotation?.status || '').toLowerCase();
-      return status === 'upcoming' || status === 'awaiting_confirmation';
-    })
-    .sort((a, b) => {
-      const dateDiff = getRotationStartTimestamp(a) - getRotationStartTimestamp(b);
-      if (dateDiff !== 0) return dateDiff;
-      return (statusPriority[String(a.status).toLowerCase()] || 99) - (statusPriority[String(b.status).toLowerCase()] || 99);
-    })[0] || null;
-};
-
-const isAwaitingConfirmationState = (rotation, today = new Date()) => {
-  if (!rotation) return false;
-  const normalized = normalizeRotation(rotation);
-  const endDate = rotation.endDate ? startOfDay(new Date(rotation.endDate)) : null;
-  const normalizedToday = startOfDay(today);
-  return normalized.workflowState === 'pending_confirmation' || (endDate && normalizedToday > endDate);
+    .filter((rotation) => String(rotation?.status || '').toLowerCase() === 'upcoming')
+    .sort((a, b) => getRotationStartTimestamp(a) - getRotationStartTimestamp(b))[0] || null;
 };
 
 const getDuration = (unitDoc) => {
@@ -148,55 +129,10 @@ async function deleteRotation(rotationId) {
  */
 async function checkAndMarkAwaitingConfirmation(internId, today = new Date()) {
   canAssignmentTransition('checkAndMarkAwaitingConfirmation');
-  const normalizedToday = startOfDay(today);
-  
-  // Find the intern's current active rotation using resolver
-  const allRotations = await Rotation.find({ intern: internId }).sort({ startDate: -1 }).exec();
-  const currentNorm = resolveCurrentAssignment({ rotations: allRotations });
-  const currentRotation = currentNorm ? allRotations.find((r) => String(r._id) === String(currentNorm._id)) : null;
-  if (currentRotation) await currentRotation.populate('intern');
-  
-  if (!currentRotation) return null;
-  
-  // Check if the planned duration has been exceeded
-  const endDate = startOfDay(currentRotation.endDate);
-  if (normalizedToday <= endDate) {
-    return null;
-  }
-  
-  // Current rotation has expired - mark it as awaiting review while keeping it active
-  if (currentRotation.workflowState !== 'pending_confirmation') {
-    currentRotation.status = 'active';
-    currentRotation.workflowState = 'pending_confirmation';
-    await currentRotation.save();
-    console.log(`[STATUS TRANSITION] ${currentRotation.intern?.name || internId}: ACTIVE -> ACTIVE (pending confirmation)`);
-  }
-
-  let nextRotation = await Rotation.findOne({ 
-    intern: internId, 
-    $or: [
-      { status: 'upcoming' },
-      { status: 'awaiting_confirmation' }
-    ]
-  })
-    .sort({ startDate: 1 })
-    .exec();
-  
-  if (!nextRotation) {
-    // No upcoming rotation exists yet - this will be created by the batch assignment process
-    // For now, just log
-    console.log(`[PHASE 1] No upcoming rotation found for intern ${currentRotation.intern?.name || internId}`);
-    return null;
-  }
-  
-  // Mark the next rotation as awaiting_confirmation if not already
-  if (nextRotation.status !== 'awaiting_confirmation') {
-    nextRotation.status = 'awaiting_confirmation';
-    await nextRotation.save();
-    console.log(`[PHASE 1] Awaiting Confirmation: ${currentRotation.intern?.name || internId} - Next unit: ${nextRotation.unit}`);
-  }
-  
-  return nextRotation;
+  // Under strict single-source-of-truth rules there is no 'awaiting_confirmation' workflow.
+  // This function is intentionally a no-op and will not modify rotation statuses.
+  // Keep for compatibility but do not perform any state changes.
+  return null;
 }
 
 /**
@@ -209,74 +145,37 @@ async function checkAndMarkAwaitingConfirmation(internId, today = new Date()) {
 async function acceptMovement(internId) {
   canAssignmentTransition('acceptMovement');
   const today = startOfDay(new Date());
-  
-  // 1. Find current active assignment
+  // Strict acceptance flow: require exact `active` and `upcoming` rotations
   const allRotations = await Rotation.find({ intern: internId }).sort({ startDate: -1, createdAt: -1 }).exec();
-  const currentNorm = resolveCurrentAssignment({ rotations: allRotations });
-  const currentRotation = currentNorm ? allRotations.find((r) => String(r._id) === String(currentNorm._id)) : null;
-  if (currentRotation) {
-    await currentRotation.populate('intern');
-    await currentRotation.populate('unit');
-  }
-  
-  if (!currentRotation) {
-    throw new Error(`No active rotation found for intern ${internId}`);
-  }
+  const currentRotation = allRotations.find((r) => String(r.status || '').trim().toLowerCase() === 'active') || null;
+  const nextRotation = allRotations.find((r) => String(r.status || '').trim().toLowerCase() === 'upcoming') || null;
 
-  // Debug logging BEFORE accept
-  console.log(`\n[DEBUG ACCEPT] Before transition:`, {
-    intern: currentRotation.intern?.name || 'Unknown',
-    currentStatus: currentRotation.status,
-    currentWorkflowState: currentRotation.workflowState,
-    currentUnit: currentRotation.unit?.name || 'Unknown',
-    currentStartDate: currentRotation.startDate?.toISOString().split('T')[0],
-    currentEndDate: currentRotation.endDate?.toISOString().split('T')[0],
+  console.log({
+    activeRotation: currentRotation,
+    nextRotation: nextRotation,
   });
 
-  if (!isAwaitingConfirmationState(currentRotation, today)) {
-    throw new Error(`Intern ${internId} is not awaiting confirmation yet`);
+  if (!currentRotation || !nextRotation) {
+    console.error('[ROTATION ERROR] Missing active or upcoming rotation', { internId, currentRotation: !!currentRotation, nextRotation: !!nextRotation });
+    throw new Error('[ROTATION ERROR] Missing active or upcoming rotation');
   }
-  
-  // 2. Find next planned rotation without requiring an awaiting_confirmation record.
-  const nextRotation = findNextPlannedRotation(allRotations);
-  if (!nextRotation) {
-    throw new Error(`No next rotation found for intern ${internId}`);
-  }
-  
+
+  // Populate necessary refs
+  await currentRotation.populate('intern');
+  await currentRotation.populate('unit');
   await nextRotation.populate('unit');
-  
-  // Debug logging for next rotation BEFORE accept
-  console.log(`[DEBUG ACCEPT] Next rotation before accept:`, {
-    nextStatus: nextRotation.status,
-    nextWorkflowState: nextRotation.workflowState,
-    nextUnit: nextRotation.unit?.name || 'Unknown',
-    nextStartDate: nextRotation.startDate?.toISOString().split('T')[0],
-    nextEndDate: nextRotation.endDate?.toISOString().split('T')[0],
-  });
-  
+
   // 3. Close current unit
   currentRotation.status = 'completed';
-  currentRotation.actualEndDate = today; // Record ACTUAL completion date (preserves delayed reporting)
+  currentRotation.actualEndDate = today; // Record ACTUAL completion date
   await currentRotation.save();
-  
+
   // 4. Activate next unit
   nextRotation.status = 'active';
   nextRotation.startDate = today; // Set new unit start date = TODAY
-  
-  // Recalculate end date based on new start date
   const duration = getDuration(nextRotation.unit);
   nextRotation.endDate = addDays(today, duration);
   await nextRotation.save();
-  
-  // Debug logging AFTER accept
-  console.log(`[DEBUG ACCEPT] After transition:`, {
-    currentNewStatus: currentRotation.status,
-    currentNewWorkflowState: currentRotation.workflowState,
-    nextNewStatus: nextRotation.status,
-    nextNewWorkflowState: nextRotation.workflowState,
-    newCurrentStartDate: nextRotation.startDate?.toISOString().split('T')[0],
-    newCurrentEndDate: nextRotation.endDate?.toISOString().split('T')[0],
-  });
   
   // 5. Update intern's currentUnit reference
   await Intern.findByIdAndUpdate(internId, { 
@@ -325,26 +224,19 @@ async function reassignNextUnit(internId, newUnitId) {
     throw new Error(`No next rotation found for intern ${internId}`);
   }
 
-  const nextPlannedRotation = await nextRotation.populate('intern').populate('unit');
-
-  // Debug logging BEFORE reassign
-  console.log(`\n[DEBUG REASSIGN] Before reassignment:`, {
-    intern: nextPlannedRotation.intern?.name || 'Unknown',
-    nextStatus: nextPlannedRotation.status,
-    nextWorkflowState: nextPlannedRotation.workflowState,
-    currentUnit: nextPlannedRotation.unit?.name || 'Unknown',
-    newUnitId: newUnitId,
-  });
-
-  const today = startOfDay(new Date());
-  const currentNorm = resolveCurrentAssignment({ rotations: allRotations });
-  const activeRotation = currentNorm ? allRotations.find((r) => String(r._id) === String(currentNorm._id)) : null;
-  if (!activeRotation) {
-    throw new Error(`No active rotation found for intern ${internId}`);
+  let nextPlannedRotation = nextRotation;
+  if (typeof nextPlannedRotation.populate === 'function') {
+    await nextPlannedRotation.populate([{ path: 'intern' }, { path: 'unit' }]);
+  } else {
+    nextPlannedRotation = await Rotation.populate(nextPlannedRotation, [{ path: 'intern' }, { path: 'unit' }]);
   }
 
-  if (!isAwaitingConfirmationState(activeRotation, today)) {
-    throw new Error(`Intern ${internId} is not awaiting confirmation yet`);
+  const today = startOfDay(new Date());
+  const activeRotation = allRotations.find((r) => String(r.status || '').trim().toLowerCase() === 'active') || null;
+  const upcomingRotation = allRotations.find((r) => String(r.status || '').trim().toLowerCase() === 'upcoming') || null;
+  if (!activeRotation || !upcomingRotation) {
+    console.error('[ROTATION ERROR] Missing active or upcoming rotation', { internId, active: !!activeRotation, upcoming: !!upcomingRotation });
+    throw new Error('[ROTATION ERROR] Missing active or upcoming rotation');
   }
 
   // 2. Validate new unit exists
@@ -391,7 +283,6 @@ async function reassignNextUnit(internId, newUnitId) {
   // Debug logging AFTER reassign
   console.log(`[DEBUG REASSIGN] After reassignment:`, {
     nextNewStatus: nextPlannedRotation.status,
-    nextNewWorkflowState: nextPlannedRotation.workflowState,
     newUnit: newUnitName,
     newEndDate: nextPlannedRotation.endDate?.toISOString().split('T')[0],
   });

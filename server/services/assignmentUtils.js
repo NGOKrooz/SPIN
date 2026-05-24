@@ -1,6 +1,5 @@
-const LEGACY_PENDING_STATUS = 'pending';
-const VALID_LIFECYCLE_STATUSES = new Set(['active', 'upcoming', 'completed', 'awaiting_confirmation']);
-const VALID_WORKFLOW_STATES = new Set(['normal', 'pending_confirmation']);
+// Strict allowed lifecycle statuses
+const VALID_LIFECYCLE_STATUSES = new Set(['active', 'upcoming', 'completed']);
 
 function parseRotationDate(value) {
   if (!value) return null;
@@ -10,30 +9,11 @@ function parseRotationDate(value) {
   return date;
 }
 
+// normalizeRotation is intentionally a no-op under strict single-source-of-truth rules.
+// Do NOT reinterpret or map status values. Return the rotation object as-is.
 function normalizeRotation(rotation = {}) {
   if (!rotation || typeof rotation !== 'object') return null;
-
-  const normalized = { ...rotation };
-  if (rotation._id !== undefined) {
-    normalized._id = rotation._id;
-  }
-
-  const rawStatus = String(rotation.status || '').trim().toLowerCase();
-  const rawWorkflow = String(rotation.workflowState || rotation.workflow_state || '').trim().toLowerCase();
-
-  if (rawStatus === LEGACY_PENDING_STATUS) {
-    normalized.status = 'active';
-    normalized.workflowState = rawWorkflow || 'pending_confirmation';
-  } else {
-    normalized.status = VALID_LIFECYCLE_STATUSES.has(rawStatus) ? rawStatus : 'upcoming';
-    normalized.workflowState = VALID_WORKFLOW_STATES.has(rawWorkflow) ? rawWorkflow : 'normal';
-  }
-
-  if (!normalized.workflowState) {
-    normalized.workflowState = 'normal';
-  }
-
-  return normalized;
+  return rotation;
 }
 
 function getRotationUnitId(rotation) {
@@ -57,14 +37,13 @@ function getAssignmentRecords(subject = {}) {
 }
 
 function isActiveAssignment(rotation) {
-  const normalized = normalizeRotation(rotation);
-  return Boolean(normalized && normalized.status === 'active');
+  if (!rotation) return false;
+  return String(rotation.status || '').trim().toLowerCase() === 'active';
 }
 
 function isValidRotationStatus(rotation) {
   if (!rotation) return false;
   const rawStatus = String(rotation.status || '').trim().toLowerCase();
-  if (rawStatus === LEGACY_PENDING_STATUS) return true;
   return VALID_LIFECYCLE_STATUSES.has(rawStatus);
 }
 
@@ -77,40 +56,26 @@ function getRotationStartTime(rotation) {
 
 function resolveCurrentAssignment(subject = {}) {
   const rotations = getAssignmentRecords(subject);
-
-  const activeAssignments = [...rotations]
-    .map(normalizeRotation)
-    .filter((rotation) => rotation && (rotation.status === 'active' || rotation.status === 'awaiting_confirmation') && getRotationUnitId(rotation));
-
-  if (!activeAssignments.length) return null;
-
-  return activeAssignments.sort((a, b) => {
-    const diff = getRotationStartTime(b) - getRotationStartTime(a);
-    if (diff !== 0) return diff;
-    const createdA = new Date(a.createdAt || a.created_at || 0).getTime();
-    const createdB = new Date(b.createdAt || b.created_at || 0).getTime();
-    return createdB - createdA;
-  })[0] || null;
+  if (!Array.isArray(rotations) || rotations.length === 0) return null;
+  // Strict resolution: return first rotation with status === 'active'
+  const found = rotations.find((r) => String(r.status || '').trim().toLowerCase() === 'active');
+  return found || null;
 }
 
 function resolveUpcomingAssignment(subject = {}) {
   const rotations = getAssignmentRecords(subject);
-
-  return [...rotations]
-    .map(normalizeRotation)
-    .filter((rotation) => rotation && rotation.status === 'upcoming' && getRotationUnitId(rotation))
-    .sort((a, b) => getRotationStartTime(a) - getRotationStartTime(b))[0] || null;
+  if (!Array.isArray(rotations) || rotations.length === 0) return null;
+  // Strict resolution: return first rotation with status === 'upcoming'
+  const found = rotations.find((r) => String(r.status || '').trim().toLowerCase() === 'upcoming');
+  return found || null;
 }
 
 function collectRotationIntegrityIssues(rotations = []) {
-  const assignments = [...rotations]
-    .map((rotation) => ({ original: rotation, normalized: normalizeRotation(rotation) }))
-    .filter(({ normalized }) => normalized);
-
-  const activeAssignments = assignments.filter(({ original }) => String(original.status || '').trim().toLowerCase() === 'active');
-  const missingUnits = assignments.filter(({ normalized }) => !getRotationUnitId(normalized)).length;
-  const missingDates = assignments.filter(({ normalized }) => !parseRotationDate(normalized.startDate || normalized.start_date)).length;
-  const invalidStatuses = assignments.filter(({ original }) => !isValidRotationStatus(original)).length;
+  const assignments = Array.isArray(rotations) ? rotations : [];
+  const activeAssignments = assignments.filter((r) => String(r.status || '').trim().toLowerCase() === 'active');
+  const missingUnits = assignments.filter((r) => !getRotationUnitId(r)).length;
+  const missingDates = assignments.filter((r) => !parseRotationDate(r.startDate || r.start_date)).length;
+  const invalidStatuses = assignments.filter((r) => !isValidRotationStatus(r)).length;
 
   return {
     duplicateActiveAssignments: Math.max(0, activeAssignments.length - 1),
@@ -134,48 +99,19 @@ function calculateOverdueDays(rotation, today = new Date()) {
   return Math.max(0, Math.floor((current.getTime() - endDate.getTime()) / (1000 * 60 * 60 * 24)));
 }
 
-function isCompletedRotation(rotation, today = new Date()) {
+function isCompletedRotation(rotation) {
   if (!rotation || typeof rotation !== 'object') return false;
-
-  const status = String(rotation.status || '').trim().toLowerCase();
-  if (status === 'completed') return true;
-
-  const workflowState = String(rotation.workflowState || '').trim().toLowerCase();
-  if (workflowState === 'completed') return true;
-
-  if (rotation.endDate) {
-    const endDate = new Date(rotation.endDate);
-    const todayDate = new Date(today);
-    if (!Number.isNaN(endDate.getTime()) && !Number.isNaN(todayDate.getTime())) {
-      endDate.setHours(0, 0, 0, 0);
-      todayDate.setHours(0, 0, 0, 0);
-      return endDate < todayDate;
-    }
-  }
-
-  return false;
+  return String(rotation.status || '').trim().toLowerCase() === 'completed';
 }
 
 function transitionAssignmentStatus(assignment, action) {
   if (!assignment || typeof assignment !== 'object') return assignment;
-
-  if (action === 'auto-time-trigger') {
-    return {
-      ...assignment,
-      status: 'active',
-      workflowState: 'pending_confirmation',
-      overdueDays: calculateOverdueDays(assignment),
-    };
-  }
-
   if (action === 'admin-confirm') {
     return {
       ...assignment,
       status: 'completed',
-      workflowState: 'normal',
     };
   }
-
   return assignment;
 }
 

@@ -1,4 +1,4 @@
-const { normalizeRotation } = require('./assignmentUtils');
+// NOTE: Do NOT normalize rotations; use status as single source of truth
 
 function parseDateSafe(value) {
   if (!value) return null;
@@ -32,27 +32,14 @@ function isCompletedRotation(rotation, today) {
   return endDate < today;
 }
 
-function isCurrentRotation(rotation, today) {
-  const normalized = normalizeRotation(rotation);
-  if (normalized?.status === 'active' && normalized?.workflowState === 'pending_confirmation') return true;
-  if (normalized?.status === 'active') {
-    return true;
-  }
-
-  const startDate = parseDateSafe(rotation.start_date);
-  const endDate = parseDateSafe(rotation.end_date);
-
-  if (!startDate) return false;
-  if (startDate > today) return false;
-  if (!endDate) return true;
-
-  return endDate >= today;
+function isCurrentRotation(rotation) {
+  if (!rotation) return false;
+  return String(rotation.status || '').trim().toLowerCase() === 'active';
 }
 
-function isUpcomingRotation(rotation, today) {
-  const startDate = parseDateSafe(rotation.start_date);
-  if (!startDate) return false;
-  return startDate > today;
+function isUpcomingRotation(rotation) {
+  if (!rotation) return false;
+  return String(rotation.status || '').trim().toLowerCase() === 'upcoming';
 }
 
 function buildInternSchedule({ internId, rotations = [], orderedUnits = [], now = new Date() }) {

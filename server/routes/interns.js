@@ -478,24 +478,10 @@ const syncInternRotationStates = async (internId) => {
     const startDate = startOfDay(rotation.startDate);
     const endDate = startOfDay(rotation.endDate);
 
-    let nextStatus = rotation.status;
-    if (rotation.status === 'awaiting_confirmation') {
-      nextStatus = 'awaiting_confirmation';
-    } else if (activeRotationId && rotation._id.toString() === activeRotationId) {
-      // Keep status as 'active' - workflowState tracks pending confirmation
-      nextStatus = 'active';
-    } else if (startDate > now) {
-      nextStatus = 'upcoming';
-    } else if (endDate < now && rotation.status !== 'active') {
-      console.log('AUTO COMPLETION BLOCKED');
-      const updated = transitionAssignmentStatus(rotation, 'auto-time-trigger');
-      rotation.status = updated.status;
-      rotation.overdueDays = updated.overdueDays;
-      nextStatus = updated.status;
-    }
-
-    if (rotation.status !== nextStatus) {
-      rotation.status = nextStatus;
+    // Do not infer or mutate lifecycle status from dates or workflowState.
+    // Only ensure endDate exists; otherwise trust the stored `status` value as single source of truth.
+    if (!rotation.endDate || Number.isNaN(new Date(rotation.endDate).getTime())) {
+      rotation.endDate = recalculateEndDate(rotation.startDate, safeDuration);
       await rotation.save();
     } else if (rotation.isModified()) {
       await rotation.save();
@@ -507,10 +493,10 @@ const syncInternRotationStates = async (internId) => {
     throw new Error('Intern not found');
   }
 
-  const current = rotations.find((rotation) => rotation._id.toString() === activeRotationId) || null;
-  const upcoming = rotations.filter((rotation) => rotation.status === 'upcoming');
-  const awaitingConfirmation = rotations.filter((rotation) => rotation.status === 'awaiting_confirmation');
-  const completed = rotations.filter((rotation) => isCompletedRotation(rotation));
+  // Strict resolution using status only
+  const current = rotations.find((rotation) => String(rotation.status || '').trim().toLowerCase() === 'active') || null;
+  const upcoming = rotations.filter((rotation) => String(rotation.status || '').trim().toLowerCase() === 'upcoming');
+  const completed = rotations.filter((rotation) => String(rotation.status || '').trim().toLowerCase() === 'completed');
 
   const totalExtensionDays = rotations.reduce(
     (sum, rotation) => sum + getRotationTotalExtensionDays(rotation, rotation.unit),
@@ -519,14 +505,12 @@ const syncInternRotationStates = async (internId) => {
 
   intern.currentUnit = current?.unit || null;
   if (current) {
-    const activeExtensionDays = getRotationTotalExtensionDays(current, current.unit);
-    // Always return 'active' as lifecycle status - use workflowState to detect pending confirmation
-    intern.status = activeExtensionDays > 0 ? 'extended' : 'active';
+    intern.status = 'active';
     intern.manualExtensionDays = getRotationManualExtensionDays(current);
     intern.autoExtensionDays = getRotationAutoExtensionDays(current);
-    intern.extensionDays = activeExtensionDays;
-  } else if (upcoming.length > 0 || awaitingConfirmation.length > 0) {
-    intern.status = 'active';
+    intern.extensionDays = getRotationTotalExtensionDays(current, current.unit);
+  } else if (upcoming.length > 0) {
+    intern.status = 'upcoming';
     intern.manualExtensionDays = 0;
     intern.autoExtensionDays = 0;
     intern.extensionDays = 0;

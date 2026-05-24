@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "start": "node server/index.js",
-    "audit-rotation-integrity": "node server/scripts/auditRotationIntegrity.js"
+    "audit-rotation-integrity": "node server/scripts/auditRotationIntegrity.js",
+    "validate-post-repair": "node scripts/validatePostRepair.js"
   }
 }

@@ -1,7 +1,7 @@
 const Intern = require('../models/Intern');
 const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
-const { normalizeRotation, resolveCurrentAssignment, getLatestActiveLikeAssignment } = require('./assignmentUtils');
+const { resolveCurrentAssignment, getLatestActiveLikeAssignment } = require('./assignmentUtils');
 
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
 
@@ -102,12 +102,9 @@ const getRotationTotalDuration = (rotation, fallbackUnit = null) => {
 
 // Helper functions for status computation
 const computePrimaryStatus = (rotations = []) => {
-  const normalized = (rotations || []).map(normalizeRotation);
-  const hasPending = normalized.some(r => r?.workflowState === 'pending_confirmation');
-  if (hasPending) return 'PENDING';
-  const hasActive = normalized.some(r => r?.status === 'active');
-  const hasUpcoming = normalized.some(r => r?.status === 'upcoming');
-  return hasActive || hasUpcoming ? 'ACTIVE' : 'COMPLETED';
+  const hasActive = (rotations || []).some(r => String(r?.status || '').toLowerCase() === 'active');
+  const hasUpcoming = (rotations || []).some(r => String(r?.status || '').toLowerCase() === 'upcoming');
+  return hasActive ? 'ACTIVE' : (hasUpcoming ? 'UPCOMING' : 'COMPLETED');
 };
 
 const computeExtensionStatus = (rotations = []) => {
@@ -138,34 +135,11 @@ const toIsoString = (date) => {
   }
 };
 
-const getRotationStatus = (rotation, today = new Date()) => {
+const getRotationStatus = (rotation) => {
   const rawStatus = String(rotation?.status || '').trim().toLowerCase();
-  // Return the actual database status without treating 'pending' as a lifecycle state
-  if (rawStatus === 'awaiting_confirmation') return 'awaiting_confirmation';
-
-  const normalized = normalizeRotation(rotation);
-  if (normalized) {
-    return normalized.status;
-  }
-
-  const startRaw = rotation?.startDate || rotation?.start_date;
-  const endRaw = rotation?.endDate || rotation?.end_date;
-
-  const start = startRaw ? new Date(startRaw) : null;
-  const end = endRaw ? new Date(endRaw) : null;
-
-  const hasValidStart = start instanceof Date && !Number.isNaN(start.getTime());
-  const hasValidEnd = end instanceof Date && !Number.isNaN(end.getTime());
-
-  if (!hasValidStart) return 'upcoming';
-
-  if (!hasValidEnd) {
-    return start <= today ? 'active' : 'upcoming';
-  }
-
-  if (start <= today && end >= today) return 'active';
-  if (start > today) return 'upcoming';
-  return 'completed';
+  // Strict single-source-of-truth: only accept exact lifecycle statuses
+  if (rawStatus === 'active' || rawStatus === 'upcoming' || rawStatus === 'completed') return rawStatus;
+  return 'invalid';
 };
 
 const formatRotation = (rotation) => {
@@ -215,7 +189,6 @@ const formatRotation = (rotation) => {
     autoExtensionDays: getRotationAutoExtensionDays(rotation),
     totalExtensionDays: rotationExtensionDays,
     status,
-    workflowState: rotation.workflowState || rotation.workflow_state || 'normal',
     unitId,
     unit_id: unitId,
     unitName,
@@ -229,15 +202,9 @@ const formatRotation = (rotation) => {
 const formatIntern = (intern, rotations = []) => {
   const formattedRotations = (rotations || []).map(formatRotation);
 
-  const currentRotation = resolveCurrentAssignment({ rotations: formattedRotations }) || [...formattedRotations]
-    .filter((rotation) => rotation && (rotation.status === 'active' || rotation.status === 'awaiting_confirmation'))
-    .sort((a, b) => {
-      const aTime = new Date(a.startDate || a.start_date).getTime() || 0;
-      const bTime = new Date(b.startDate || b.start_date).getTime() || 0;
-      return bTime - aTime;
-    })[0] || null;
+  const currentRotation = resolveCurrentAssignment({ rotations: formattedRotations }) || null;
   const upcomingRotations = formattedRotations.filter(r => r.status === 'upcoming');
-  const awaitingConfirmationRotations = formattedRotations.filter(r => r.status === 'awaiting_confirmation');
+  const awaitingConfirmationRotations = formattedRotations.filter((r) => r.status === 'active' && String(r.workflowState || '').toLowerCase() === 'pending_confirmation');
   const completedRotations = formattedRotations
     .filter((rotation) => rotation.status === 'completed')
     .sort((a, b) => {
@@ -379,7 +346,7 @@ const addUnitProgress = (internView, currentUnit, units = []) => {
   now.setHours(0, 0, 0, 0);
 
   // Compute totalDays from actual rotation dates (includes any extension)
-  const totalDays = (() => {
+  const plannedTotalDays = (() => {
     const endDate = activeRotation?.endDate ? new Date(activeRotation.endDate) : null;
     if (activeStartDate && endDate) {
       endDate.setHours(0, 0, 0, 0);
@@ -398,8 +365,11 @@ const addUnitProgress = (internView, currentUnit, units = []) => {
 
   // day 1 starts on startDate, then increments daily and caps at totalDays
   const daysSpent = activeStartDate
-    ? calculateElapsedDays(activeStartDate, totalDays, now)
+    ? calculateElapsedDays(activeStartDate, plannedTotalDays, now)
     : 0;
+  const totalDays = activeRotation?.workflowState === 'pending_confirmation'
+    ? Math.max(plannedTotalDays, daysSpent)
+    : plannedTotalDays;
   const currentUnitProgress = activeRotation ? `${daysSpent}/${totalDays}` : null;
 
   const nextUpcomingRotation = upcomingRotations[0] || null;

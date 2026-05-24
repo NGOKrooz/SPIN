@@ -1,0 +1,240 @@
+# Final Rotation Consistency Report
+
+- Date: 2026-05-24T16:06:54.516Z
+- Interns processed: 50
+- Assignments updated: 135
+- Invalid statuses fixed: 0
+- Legacy fields removed: 135
+- Duplicate active rotations repaired: 82
+- Duplicate upcoming rotations logged: 0
+- Skipped unsafe records: 0
+- Current unit errors: 0
+- Next unit errors: 0
+- Active capacity count: 50
+
+## Repair Actions
+
+- Intern 69cc809b62a28394d378de63, Rotation 69cc809c62a28394d378de67: completed -> completed
+- Intern 69cc809b62a28394d378de63, Rotation 69cc809c62a28394d378de68: completed -> completed
+- Intern 69cc809b62a28394d378de63, Rotation 69e7f60496c92067fe70330a: completed -> completed
+- Intern 69cc809b62a28394d378de63, Rotation 69fc3451d25ecb9f4fa27f68: active -> active
+- Intern 69cc820562a28394d378e0de, Rotation 69cc820562a28394d378e0e2: active -> active
+- Intern 69cc820562a28394d378e0de, Rotation 69eb45f31b4ecc2279b12725: active -> active
+- Intern 69cc820562a28394d378e0de, Rotation 69f314487b77fc514840d2d5: active -> active
+- Intern 69cc820562a28394d378e0de, Rotation 69eb45f31b4ecc2279b12725: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69cc820562a28394d378e0de, Rotation 69cc820562a28394d378e0e2: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69cc82d962a28394d378e233, Rotation 69cc82d962a28394d378e238: active -> active
+- Intern 69cc82d962a28394d378e233, Rotation 69cc82d962a28394d378e237: active -> active
+- Intern 69cc82d962a28394d378e233, Rotation 69e7f60296c92067fe7032a1: active -> active
+- Intern 69cc82d962a28394d378e233, Rotation 69f234a2959332929ef8a635: active -> active
+- Intern 69cc82d962a28394d378e233, Rotation 69e7f60296c92067fe7032a1: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69cc82d962a28394d378e233, Rotation 69cc82d962a28394d378e238: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69cc82d962a28394d378e233, Rotation 69cc82d962a28394d378e237: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69cd8cb22825d7362377989e, Rotation 69cd8cb22825d736237798a1: active -> active
+- Intern 69cd8cb22825d7362377989e, Rotation 69cd8d162825d736237799b5: active -> active
+- Intern 69cd8cb22825d7362377989e, Rotation 69f581de4528f41e3563ebaf: active -> active
+- Intern 69cd8cb22825d7362377989e, Rotation 69cd8d162825d736237799b5: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69cd8cb22825d7362377989e, Rotation 69cd8cb22825d736237798a1: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69cd8e062825d73623779afd, Rotation 69cd8e062825d73623779b00: active -> active
+- Intern 69cd8e062825d73623779afd, Rotation 69d9445efb4d63612146aa7e: active -> active
+- Intern 69cd8e062825d73623779afd, Rotation 69f314477b77fc514840d2c0: active -> active
+- Intern 69cd8e062825d73623779afd, Rotation 69d9445efb4d63612146aa7e: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69cd8e062825d73623779afd, Rotation 69cd8e062825d73623779b00: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69cd947fbb19358afe3ec767, Rotation 69cd9480bb19358afe3ec76a: active -> active
+- Intern 69cd947fbb19358afe3ec767, Rotation 69cd94d3bb19358afe3ec8dc: active -> active
+- Intern 69cd947fbb19358afe3ec767, Rotation 69f581de4528f41e3563ebad: active -> active
+- Intern 69cd947fbb19358afe3ec767, Rotation 69cd94d3bb19358afe3ec8dc: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69cd947fbb19358afe3ec767, Rotation 69cd9480bb19358afe3ec76a: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69cd95a4bb19358afe3eca91, Rotation 69cd95a5bb19358afe3eca94: active -> active
+- Intern 69cd95a4bb19358afe3eca91, Rotation 69dcb925328e7738abcdf402: active -> active
+- Intern 69cd95a4bb19358afe3eca91, Rotation 69fa2e15fe7a9e49a93e2001: active -> active
+- Intern 69cd95a4bb19358afe3eca91, Rotation 69dcb925328e7738abcdf402: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69cd95a4bb19358afe3eca91, Rotation 69cd95a5bb19358afe3eca94: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69cdb41ff8fe2f3246053d67, Rotation 69cdb4b3f8fe2f3246053f61: active -> active
+- Intern 69cdb41ff8fe2f3246053d67, Rotation 69e7f60296c92067fe7032a7: active -> active
+- Intern 69cdb41ff8fe2f3246053d67, Rotation 6a06ba94bf2690a4f43cf8c3: active -> active
+- Intern 69cdb41ff8fe2f3246053d67, Rotation 69e7f60296c92067fe7032a7: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69cdb41ff8fe2f3246053d67, Rotation 69cdb4b3f8fe2f3246053f61: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69cdb57ef8fe2f324605401c, Rotation 69cdb57ef8fe2f324605401f: active -> active
+- Intern 69cdb57ef8fe2f324605401c, Rotation 69e7f60296c92067fe7032a3: active -> active
+- Intern 69cdb57ef8fe2f324605401c, Rotation 6a06ba94bf2690a4f43cf8c5: active -> active
+- Intern 69cdb57ef8fe2f324605401c, Rotation 69e7f60296c92067fe7032a3: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69cdb57ef8fe2f324605401c, Rotation 69cdb57ef8fe2f324605401f: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69cdb615f8fe2f324605416b, Rotation 69cdb615f8fe2f324605416e: active -> active
+- Intern 69cdb615f8fe2f324605416b, Rotation 69d366fc930bb9d5477d1b4f: active -> active
+- Intern 69cdb615f8fe2f324605416b, Rotation 69f1a1171d589e0b9945532b: active -> active
+- Intern 69cdb615f8fe2f324605416b, Rotation 69d366fc930bb9d5477d1b4f: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69cdb615f8fe2f324605416b, Rotation 69cdb615f8fe2f324605416e: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69cdb68cf8fe2f32460542cc, Rotation 69cdb68df8fe2f32460542cf: active -> active
+- Intern 69cdb68cf8fe2f32460542cc, Rotation 69e7f60296c92067fe7032ac: active -> active
+- Intern 69cdb68cf8fe2f32460542cc, Rotation 6a06ba94bf2690a4f43cf8c8: active -> active
+- Intern 69cdb68cf8fe2f32460542cc, Rotation 69e7f60296c92067fe7032ac: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69cdb68cf8fe2f32460542cc, Rotation 69cdb68df8fe2f32460542cf: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69cdb72cf8fe2f324605443f, Rotation 69cdb72df8fe2f3246054442: active -> active
+- Intern 69cdb72cf8fe2f324605443f, Rotation 69d366fc930bb9d5477d1b51: active -> active
+- Intern 69cdb72cf8fe2f324605443f, Rotation 69f314477b77fc514840d2c2: active -> active
+- Intern 69cdb72cf8fe2f324605443f, Rotation 69d366fc930bb9d5477d1b51: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69cdb72cf8fe2f324605443f, Rotation 69cdb72df8fe2f3246054442: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69cdb7b5f8fe2f32460545c4, Rotation 69cdb7b5f8fe2f32460545c7: active -> active
+- Intern 69cdb7b5f8fe2f32460545c4, Rotation 69d366fc930bb9d5477d1b57: active -> active
+- Intern 69cdb7b5f8fe2f32460545c4, Rotation 69ef53d830a1c84728338f2e: active -> active
+- Intern 69cdb7b5f8fe2f32460545c4, Rotation 69d366fc930bb9d5477d1b57: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69cdb7b5f8fe2f32460545c4, Rotation 69cdb7b5f8fe2f32460545c7: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce2de7c72b810925cec07a, Rotation 69ce2de8c72b810925cec07d: active -> active
+- Intern 69ce2de7c72b810925cec07a, Rotation 69d366fc930bb9d5477d1b55: active -> active
+- Intern 69ce2de7c72b810925cec07a, Rotation 69f00eb9e4106c152c5795e7: active -> active
+- Intern 69ce2de7c72b810925cec07a, Rotation 69d366fc930bb9d5477d1b55: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce2de7c72b810925cec07a, Rotation 69ce2de8c72b810925cec07d: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce2e55c72b810925cec20b, Rotation 69ce2e61c72b810925cec2f5: active -> active
+- Intern 69ce2e55c72b810925cec20b, Rotation 69e7f60296c92067fe7032d0: active -> active
+- Intern 69ce2e55c72b810925cec20b, Rotation 69feec831b8012bf4f92a29f: active -> active
+- Intern 69ce2e55c72b810925cec20b, Rotation 69e7f60296c92067fe7032d0: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce2e55c72b810925cec20b, Rotation 69ce2e61c72b810925cec2f5: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce2ee1c72b810925cec4c0, Rotation 69ce2ee2c72b810925cec4c3: active -> active
+- Intern 69ce2ee1c72b810925cec4c0, Rotation 69e7f60296c92067fe7032a9: active -> active
+- Intern 69ce2ee1c72b810925cec4c0, Rotation 6a06ba94bf2690a4f43cf8ca: active -> active
+- Intern 69ce2ee1c72b810925cec4c0, Rotation 69e7f60296c92067fe7032a9: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce2ee1c72b810925cec4c0, Rotation 69ce2ee2c72b810925cec4c3: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce2fc5c72b810925cec6c7, Rotation 69ce2fc6c72b810925cec6ca: active -> active
+- Intern 69ce2fc5c72b810925cec6c7, Rotation 69e7f60296c92067fe7032ae: active -> active
+- Intern 69ce2fc5c72b810925cec6c7, Rotation 6a06ba94bf2690a4f43cf8be: active -> active
+- Intern 69ce2fc5c72b810925cec6c7, Rotation 69e7f60296c92067fe7032ae: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce2fc5c72b810925cec6c7, Rotation 69ce2fc6c72b810925cec6ca: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce3041c72b810925cec88e, Rotation 69ce3041c72b810925cec891: active -> active
+- Intern 69ce3041c72b810925cec88e, Rotation 69e7f60296c92067fe70329f: active -> active
+- Intern 69ce3041c72b810925cec88e, Rotation 69fdceef7af6f5ed3e2b7212: active -> active
+- Intern 69ce3041c72b810925cec88e, Rotation 69e7f60296c92067fe70329f: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce3041c72b810925cec88e, Rotation 69ce3041c72b810925cec891: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce308cc72b810925ceca67, Rotation 69ce308dc72b810925ceca6a: active -> active
+- Intern 69ce308cc72b810925ceca67, Rotation 69d366fc930bb9d5477d1b53: active -> active
+- Intern 69ce308cc72b810925ceca67, Rotation 69f1a1171d589e0b99455329: active -> active
+- Intern 69ce308cc72b810925ceca67, Rotation 69d366fc930bb9d5477d1b53: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce308cc72b810925ceca67, Rotation 69ce308dc72b810925ceca6a: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce312ac72b810925ceccdc, Rotation 69ce312ac72b810925ceccdf: active -> active
+- Intern 69ce312ac72b810925ceccdc, Rotation 69d366fc930bb9d5477d1b59: active -> active
+- Intern 69ce312ac72b810925ceccdc, Rotation 69fc3435d25ecb9f4fa27d9e: active -> active
+- Intern 69ce312ac72b810925ceccdc, Rotation 69d366fc930bb9d5477d1b59: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce312ac72b810925ceccdc, Rotation 69ce312ac72b810925ceccdf: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce3293c72b810925ced007, Rotation 69ce3293c72b810925ced00a: active -> active
+- Intern 69ce3293c72b810925ced007, Rotation 69d366fc930bb9d5477d1b5d: active -> active
+- Intern 69ce3293c72b810925ced007, Rotation 69f1a1171d589e0b99455326: active -> active
+- Intern 69ce3293c72b810925ced007, Rotation 69d366fc930bb9d5477d1b5d: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce3293c72b810925ced007, Rotation 69ce3293c72b810925ced00a: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce32fbc72b810925ced21c, Rotation 69ce32fbc72b810925ced21f: active -> active
+- Intern 69ce32fbc72b810925ced21c, Rotation 69e7f60296c92067fe7032b5: active -> active
+- Intern 69ce32fbc72b810925ced21c, Rotation 6a06ba94bf2690a4f43cf8d1: active -> active
+- Intern 69ce32fbc72b810925ced21c, Rotation 69e7f60296c92067fe7032b5: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce32fbc72b810925ced21c, Rotation 69ce32fbc72b810925ced21f: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce3370c72b810925ced443, Rotation 69ce3370c72b810925ced446: active -> active
+- Intern 69ce3370c72b810925ced443, Rotation 69d366fc930bb9d5477d1b5b: active -> active
+- Intern 69ce3370c72b810925ced443, Rotation 69ef53d830a1c84728338f30: active -> active
+- Intern 69ce3370c72b810925ced443, Rotation 69d366fc930bb9d5477d1b5b: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce3370c72b810925ced443, Rotation 69ce3370c72b810925ced446: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce33e7c72b810925ced676, Rotation 69ce33e7c72b810925ced679: active -> active
+- Intern 69ce33e7c72b810925ced676, Rotation 69d4a8fbfc1ce707d82b384c: active -> active
+- Intern 69ce33e7c72b810925ced676, Rotation 69f1a1171d589e0b9945532d: active -> active
+- Intern 69ce33e7c72b810925ced676, Rotation 69d4a8fbfc1ce707d82b384c: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce33e7c72b810925ced676, Rotation 69ce33e7c72b810925ced679: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce3421c72b810925ced8c1, Rotation 69ce3422c72b810925ced8c4: active -> active
+- Intern 69ce3421c72b810925ced8c1, Rotation 69d4a8fbfc1ce707d82b384a: active -> active
+- Intern 69ce3421c72b810925ced8c1, Rotation 69f1a1171d589e0b99455330: active -> active
+- Intern 69ce3421c72b810925ced8c1, Rotation 69d4a8fbfc1ce707d82b384a: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce3421c72b810925ced8c1, Rotation 69ce3422c72b810925ced8c4: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce34dfc72b810925cedbcc, Rotation 69ce34e0c72b810925cedbcf: active -> active
+- Intern 69ce34dfc72b810925cedbcc, Rotation 69d4a8fbfc1ce707d82b3848: active -> active
+- Intern 69ce34dfc72b810925cedbcc, Rotation 69eff9c7474e08eb081b7386: active -> active
+- Intern 69ce34dfc72b810925cedbcc, Rotation 69d4a8fbfc1ce707d82b3848: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce34dfc72b810925cedbcc, Rotation 69ce34e0c72b810925cedbcf: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce3546c72b810925cede3b, Rotation 69ce3547c72b810925cede3e: active -> active
+- Intern 69ce3546c72b810925cede3b, Rotation 69d66c9a76b285ef9c750cf4: active -> active
+- Intern 69ce3546c72b810925cede3b, Rotation 6a043a37d842d4c5dfb47f12: active -> active
+- Intern 69ce3546c72b810925cede3b, Rotation 69d66c9a76b285ef9c750cf4: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce3546c72b810925cede3b, Rotation 69ce3547c72b810925cede3e: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce35aec72b810925cee0bc, Rotation 69ce35afc72b810925cee0bf: active -> active
+- Intern 69ce35aec72b810925cee0bc, Rotation 69dcb925328e7738abcdf404: active -> active
+- Intern 69ce35aec72b810925cee0bc, Rotation 69f8c474b26924f7c8e7b13e: active -> active
+- Intern 69ce35aec72b810925cee0bc, Rotation 69dcb925328e7738abcdf404: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce35aec72b810925cee0bc, Rotation 69ce35afc72b810925cee0bf: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce361ec72b810925cee361, Rotation 69ce361fc72b810925cee364: active -> active
+- Intern 69ce361ec72b810925cee361, Rotation 69eb374a1b4ecc2279b0e4a8: active -> active
+- Intern 69ce361ec72b810925cee361, Rotation 69ce361fc72b810925cee364: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce369bc72b810925cee618, Rotation 69ce369bc72b810925cee61b: active -> active
+- Intern 69ce369bc72b810925cee618, Rotation 69eb374a1b4ecc2279b0e4a6: active -> active
+- Intern 69ce369bc72b810925cee618, Rotation 69ce369bc72b810925cee61b: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce36f2c72b810925cee8e1, Rotation 69ce36f3c72b810925cee8e4: active -> active
+- Intern 69ce36f2c72b810925cee8e1, Rotation 69eb374a1b4ecc2279b0e4ba: active -> active
+- Intern 69ce36f2c72b810925cee8e1, Rotation 69ce36f3c72b810925cee8e4: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce373ac72b810925ceebaa, Rotation 69ce373ac72b810925ceebad: active -> active
+- Intern 69ce373ac72b810925ceebaa, Rotation 69eb374a1b4ecc2279b0e4a4: active -> active
+- Intern 69ce373ac72b810925ceebaa, Rotation 6a043a37d842d4c5dfb47f14: active -> active
+- Intern 69ce373ac72b810925ceebaa, Rotation 69eb374a1b4ecc2279b0e4a4: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce373ac72b810925ceebaa, Rotation 69ce373ac72b810925ceebad: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce3783c72b810925ceee97, Rotation 69ce3783c72b810925ceee9a: active -> active
+- Intern 69ce3783c72b810925ceee97, Rotation 69dcb925328e7738abcdf406: active -> active
+- Intern 69ce3783c72b810925ceee97, Rotation 69fa2e15fe7a9e49a93e2003: active -> active
+- Intern 69ce3783c72b810925ceee97, Rotation 69dcb925328e7738abcdf406: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce3783c72b810925ceee97, Rotation 69ce3783c72b810925ceee9a: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce37e9c72b810925cef4ec, Rotation 69ce37e9c72b810925cef4ef: active -> active
+- Intern 69ce37e9c72b810925cef4ec, Rotation 69dcb925328e7738abcdf409: active -> active
+- Intern 69ce37e9c72b810925cef4ec, Rotation 69ce37e9c72b810925cef4ef: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce380fc72b810925cef6a6, Rotation 69ce3810c72b810925cef6a9: active -> active
+- Intern 69ce380fc72b810925cef6a6, Rotation 69dcb925328e7738abcdf40b: active -> active
+- Intern 69ce380fc72b810925cef6a6, Rotation 69fb0141ee76ebb9ab23ee8d: active -> active
+- Intern 69ce380fc72b810925cef6a6, Rotation 69dcb925328e7738abcdf40b: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce380fc72b810925cef6a6, Rotation 69ce3810c72b810925cef6a9: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce3894c72b810925cef9fd, Rotation 69ce3895c72b810925cefa00: active -> active
+- Intern 69ce3894c72b810925cef9fd, Rotation 69eb374a1b4ecc2279b0e4a1: active -> active
+- Intern 69ce3894c72b810925cef9fd, Rotation 69ce3895c72b810925cefa00: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce3902c72b810925cefd1a, Rotation 69ce3903c72b810925cefd1d: active -> active
+- Intern 69ce3902c72b810925cefd1a, Rotation 69e7f60296c92067fe7032b1: active -> active
+- Intern 69ce3902c72b810925cefd1a, Rotation 69fc3435d25ecb9f4fa27da4: active -> active
+- Intern 69ce3902c72b810925cefd1a, Rotation 69e7f60296c92067fe7032b1: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce3902c72b810925cefd1a, Rotation 69ce3903c72b810925cefd1d: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce3943c72b810925cf0061, Rotation 69ce3943c72b810925cf0064: active -> active
+- Intern 69ce3943c72b810925cf0061, Rotation 69e7f60296c92067fe7032b7: active -> active
+- Intern 69ce3943c72b810925cf0061, Rotation 69fc3435d25ecb9f4fa27da0: active -> active
+- Intern 69ce3943c72b810925cf0061, Rotation 69e7f60296c92067fe7032b7: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce3943c72b810925cf0061, Rotation 69ce3943c72b810925cf0064: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce398cc72b810925cf024b, Rotation 69ce398cc72b810925cf024e: active -> active
+- Intern 69ce398cc72b810925cf024b, Rotation 69e7f60496c92067fe70330c: active -> active
+- Intern 69ce398cc72b810925cf024b, Rotation 6a0338b3fb99cb1de2405cb1: active -> active
+- Intern 69ce398cc72b810925cf024b, Rotation 69e7f60496c92067fe70330c: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce398cc72b810925cf024b, Rotation 69ce398cc72b810925cf024e: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce39d8c72b810925cf05a4, Rotation 69ce39d8c72b810925cf05a7: active -> active
+- Intern 69ce39d8c72b810925cf05a4, Rotation 69e7f60296c92067fe7032b3: active -> active
+- Intern 69ce39d8c72b810925cf05a4, Rotation 6a0338b3fb99cb1de2405cb7: active -> active
+- Intern 69ce39d8c72b810925cf05a4, Rotation 69e7f60296c92067fe7032b3: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce39d8c72b810925cf05a4, Rotation 69ce39d8c72b810925cf05a7: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69ce3a1fc72b810925cf0909, Rotation 69ce3a1fc72b810925cf090c: active -> active
+- Intern 69ce3a1fc72b810925cf0909, Rotation 69e7f60296c92067fe7032cd: active -> active
+- Intern 69ce3a1fc72b810925cf0909, Rotation 69ce3a1fc72b810925cf090c: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69eb518b1b4ecc2279b1fd52, Rotation 69eb518b1b4ecc2279b1fd57: active -> active
+- Intern 69eb518b1b4ecc2279b1fd52, Rotation 69f581de4528f41e3563ebb4: active -> active
+- Intern 69eb518b1b4ecc2279b1fd52, Rotation 69eb518b1b4ecc2279b1fd57: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69eb52311b4ecc2279b201ae, Rotation 69eb52321b4ecc2279b201b3: active -> active
+- Intern 69eb52311b4ecc2279b201ae, Rotation 69eff9c6474e08eb081b7374: active -> active
+- Intern 69eb52311b4ecc2279b201ae, Rotation 69eb52321b4ecc2279b201b3: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69eb52781b4ecc2279b20658, Rotation 69eb52781b4ecc2279b2065d: active -> active
+- Intern 69eb52781b4ecc2279b20658, Rotation 69fdceef7af6f5ed3e2b7215: active -> active
+- Intern 69eb52781b4ecc2279b20658, Rotation 69eb52781b4ecc2279b2065d: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69eb52c51b4ecc2279b20b2e, Rotation 69eb52c61b4ecc2279b20b33: active -> active
+- Intern 69eb52c51b4ecc2279b20b2e, Rotation 69f314487b77fc514840d2d1: active -> active
+- Intern 69eb52c51b4ecc2279b20b2e, Rotation 69eb52c61b4ecc2279b20b33: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69eb532f1b4ecc2279b20ee7, Rotation 69eb53301b4ecc2279b20eec: active -> active
+- Intern 69eb532f1b4ecc2279b20ee7, Rotation 69f8c474b26924f7c8e7b142: active -> active
+- Intern 69eb532f1b4ecc2279b20ee7, Rotation 69eb53301b4ecc2279b20eec: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69eb53801b4ecc2279b2150f, Rotation 69eb53801b4ecc2279b21514: active -> active
+- Intern 69eb53801b4ecc2279b2150f, Rotation 6a0580089915d1fb10e58a2e: active -> active
+- Intern 69eb53801b4ecc2279b2150f, Rotation 69eb53801b4ecc2279b21514: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 69eb549f1b4ecc2279b21c75, Rotation 69eb549f1b4ecc2279b21c7a: active -> active
+- Intern 69eb549f1b4ecc2279b21c75, Rotation 69feec831b8012bf4f92a2a2: active -> active
+- Intern 69eb549f1b4ecc2279b21c75, Rotation 69eb549f1b4ecc2279b21c7a: active -> completed (duplicate active rotation; older active converted to completed)
+- Intern 6a0b32e294aa32608304d8c7, Rotation 6a0b3bcd7dc4c47a6c16c23c: active -> active
+- Intern 6a0b862e4060d46452efe3af, Rotation 6a0b86334060d46452efe3c0: active -> active
+
+## Manual Review Logs
+
+
+## Accept Workflow Verification
+
+- no clean active+upcoming pair available for dry-run accept verification
