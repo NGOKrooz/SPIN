@@ -8,7 +8,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { api } from '../services/api';
 import RecentUpdates from '../components/RecentUpdates';
-import { buildUpcomingMovements, PREDICTIVE_WINDOW_DAYS } from '../lib/predictivePlanning';
+import { PREDICTIVE_WINDOW_DAYS } from '../lib/predictivePlanning';
 
 export default function Dashboard() {
   const { data: interns, isLoading: internsLoading } = useQuery({
@@ -21,6 +21,16 @@ export default function Dashboard() {
     queryFn: api.getUnits,
   });
 
+  const { data: upcomingRotations, isLoading: upcomingLoading } = useQuery({
+    queryKey: ['upcoming-rotations'],
+    queryFn: api.getUpcomingRotations,
+    staleTime: 60000,
+  });
+
+  const today = new Date();
+  const windowEnd = new Date(today);
+  windowEnd.setDate(windowEnd.getDate() + PREDICTIVE_WINDOW_DAYS);
+
   const todayLabel = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
     year: 'numeric',
@@ -30,7 +40,7 @@ export default function Dashboard() {
 
   // removed unused systemInfo
 
-  if (internsLoading || unitsLoading) {
+  if (internsLoading || unitsLoading || upcomingLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -43,10 +53,20 @@ export default function Dashboard() {
 
   const criticalUnits = units?.filter(unit => unit?.status === 'critical') || [];
   const warningUnits = units?.filter(unit => unit?.status === 'warning') || [];
-  const upcomingMovements = buildUpcomingMovements(interns || [], units || [], {
-    movementWindowDays: PREDICTIVE_WINDOW_DAYS,
-    leavingSoonDays: PREDICTIVE_WINDOW_DAYS,
-  });
+  const upcomingMovements = (upcomingRotations || [])
+    .map((rotation) => {
+      const moveDate = new Date(rotation.startDate || rotation.start_date);
+      return {
+        internId: rotation.intern?._id?.toString?.() || rotation.internId?._id?.toString?.() || null,
+        internName: rotation.intern?.name || rotation.internName || 'Unnamed Intern',
+        fromUnit: rotation.intern?.currentUnit?.name || 'Current Unit',
+        toUnit: rotation.unit?.name || rotation.unit_name || 'Unknown Unit',
+        moveDate,
+        moveDateLabel: moveDate && !Number.isNaN(moveDate.getTime()) ? moveDate.toLocaleDateString('en-US') : 'TBD',
+      };
+    })
+    .filter((movement) => movement.moveDate && movement.moveDate >= today && movement.moveDate <= windowEnd)
+    .sort((left, right) => left.moveDate.getTime() - right.moveDate.getTime());
 
   const stats = [
     {
@@ -111,7 +131,7 @@ export default function Dashboard() {
         <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
           <CardHeader>
             <CardTitle>Upcoming Movements (Next 5 Days)</CardTitle>
-            <CardDescription>Preview-only movement board based on global batch-balanced assignment</CardDescription>
+            <CardDescription>Scheduled upcoming rotations in the next 5 days</CardDescription>
           </CardHeader>
           <CardContent>
             {upcomingMovements.length === 0 ? (

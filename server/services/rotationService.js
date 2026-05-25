@@ -185,7 +185,7 @@ async function getUpcomingRotations(daysAhead = 30) {
   return await Rotation.find({
     startDate: { $gt: today, $lte: futureDate },
   })
-    .populate('intern')
+    .populate({ path: 'intern', populate: { path: 'currentUnit' } })
     .populate('unit')
     .sort({ startDate: 1 })
     .exec();

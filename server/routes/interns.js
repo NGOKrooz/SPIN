@@ -355,11 +355,14 @@ const syncInternRotationStates = async (internId) => {
 
   const current = rotations.find((rotation) => rotation._id.toString() === activeRotationId) || null;
   const upcoming = rotations.filter((rotation) => rotation.status === 'upcoming');
+  const hasFutureRotation = rotations.some((rotation) => ['upcoming', 'awaiting_confirmation'].includes(rotation.status));
   const completed = rotations.filter((rotation) => rotation.status === 'completed');
 
   intern.currentUnit = current?.unit || null;
   if (current) {
     intern.status = Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active';
+  } else if (hasFutureRotation) {
+    intern.status = 'pending';
   } else {
     intern.status = 'completed';
   }
@@ -382,7 +385,7 @@ const mapInternWithUnits = (internDoc, units) => {
     })
     : [];
   const activeRotation = rotations.find((rotation) => rotation?.status === 'active') || null;
-  const upcomingRotations = rotations.filter((rotation) => rotation?.status === 'upcoming');
+  const upcomingRotations = rotations.filter((rotation) => ['upcoming', 'awaiting_confirmation'].includes(rotation?.status));
   const currentUnitId = (
     intern.currentUnit?._id?.toString()
     || activeRotation?.unit?._id?.toString?.()

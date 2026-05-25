@@ -198,12 +198,34 @@ const addUnitProgress = (internView, currentUnit, units = []) => {
     return [unitId, unit];
   }).filter(([unitId]) => Boolean(unitId)));
 
-  const upcomingRotations = [...(internView.upcomingUnits || [])]
-    .sort((left, right) => {
-      const leftTime = left?.startDate ? new Date(left.startDate).getTime() : Number.MAX_SAFE_INTEGER;
-      const rightTime = right?.startDate ? new Date(right.startDate).getTime() : Number.MAX_SAFE_INTEGER;
-      return leftTime - rightTime;
-    });
+  const rawUpcomingRotations = [
+    ...(internView.awaitingConfirmationUnits || []),
+    ...(internView.upcomingUnits || []),
+  ];
+
+  const upcomingRotations = [];
+  const seenUpcomingUnitIds = new Set();
+
+  for (const rotation of rawUpcomingRotations) {
+    const unitId = String(
+      rotation.unitId
+      || rotation.unit_id
+      || rotation.unit?._id
+      || rotation.unit?.id
+      || rotation.id
+      || rotation._id
+      || ''
+    );
+    if (!unitId || seenUpcomingUnitIds.has(unitId)) continue;
+    seenUpcomingUnitIds.add(unitId);
+    upcomingRotations.push(rotation);
+  }
+
+  upcomingRotations.sort((left, right) => {
+    const leftTime = left?.startDate ? new Date(left.startDate).getTime() : Number.MAX_SAFE_INTEGER;
+    const rightTime = right?.startDate ? new Date(right.startDate).getTime() : Number.MAX_SAFE_INTEGER;
+    return leftTime - rightTime;
+  });
 
   const seenUpcomingUnitIds = new Set();
   const remainingUnitDocs = [];
