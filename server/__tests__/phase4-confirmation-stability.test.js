@@ -5,6 +5,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 
 const internsRouter = require('../routes/interns');
 const rotationsRouter = require('../routes/rotations');
+const activityRouter = require('../routes/activity');
 const debugRouter = require('../routes/debug');
 const { reshuffleAllUpcoming } = require('../services/rotationPlanService');
 const Intern = require('../models/Intern');
@@ -16,6 +17,7 @@ const app = express();
 app.use(express.json());
 app.use('/api/interns', internsRouter);
 app.use('/api/rotations', rotationsRouter);
+app.use('/api/activity', activityRouter);
 app.use('/api/debug', debugRouter);
 
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
@@ -100,6 +102,185 @@ describe('Phase 4 confirmation-based movement stability', () => {
     // After fix: no more 'pending' status persisted to database
     expect(rotations.filter((r) => r.status === 'active' && r.workflowState === 'pending_confirmation')).toHaveLength(1);
     expect(rotations.filter((r) => r.status === 'awaiting_confirmation')).toHaveLength(1);
+  });
+
+  test('upcoming rotations survive movement queue, sync, activity, and rebuild refreshes', async () => {
+    const today = normalizeDay(new Date());
+    const units = await Unit.create([
+      { name: 'Cardiology', order: 1, duration: 20, capacity: 4 },
+      { name: 'Neurology', order: 2, duration: 20, capacity: 4 },
+      { name: 'Pediatrics', order: 3, duration: 20, capacity: 4 },
+      { name: 'Orthopedics', order: 4, duration: 20, capacity: 4 },
+    ]);
+
+    const intern = await Intern.create({
+      name: 'Phase4 Upcoming Persistence Intern',
+      gender: 'Female',
+      batch: 'A',
+      startDate: addDays(today, -100),
+      status: 'active',
+    });
+
+    const activeStart = addDays(today, -25);
+    const activeEnd = addDays(activeStart, 19);
+    const nextAwaitingStart = addDays(today, 1);
+    const nextAwaitingEnd = addDays(nextAwaitingStart, 19);
+    const futureUpcomingStart = addDays(nextAwaitingEnd, 1);
+    const futureUpcomingEnd = addDays(futureUpcomingStart, 19);
+
+    await Rotation.create({
+      intern: intern._id,
+      unit: units[0]._id,
+      startDate: activeStart,
+      endDate: activeEnd,
+      duration: 20,
+      status: 'active',
+    });
+
+    await Rotation.create({
+      intern: intern._id,
+      unit: units[1]._id,
+      startDate: nextAwaitingStart,
+      endDate: nextAwaitingEnd,
+      duration: 20,
+      status: 'awaiting_confirmation',
+    });
+
+    await Rotation.create({
+      intern: intern._id,
+      unit: units[2]._id,
+      startDate: futureUpcomingStart,
+      endDate: futureUpcomingEnd,
+      duration: 20,
+      status: 'upcoming',
+    });
+
+    const assertUpcomingExists = async () => {
+      const upcoming = await Rotation.find({ intern: intern._id, status: 'upcoming' }).exec();
+      expect(upcoming).toHaveLength(1);
+      
+      expect(String(upcoming[0].unit)).toBe(String(units[2]._id));
+      return upcoming[0];
+    };
+
+    await assertUpcomingExists();
+
+    const internResponse = await request(app).get(`/api/interns/${intern._id}`);
+    expect(internResponse.status).toBe(200);
+    await assertUpcomingExists();
+
+    const activityResponse = await request(app).get('/api/activity');
+    expect(activityResponse.status).toBe(200);
+    await assertUpcomingExists();
+
+    const refreshResponse = await request(app).post('/api/rotations/refresh-upcoming');
+    expect(refreshResponse.status).toBe(200);
+    expect(refreshResponse.body.success).toBe(true);
+    await assertUpcomingExists();
+
+    const reassignResponse = await request(app)
+      .post(`/api/rotations/${intern._id}/reassign-next`)
+      .send({ newUnitId: units[3]._id.toString() });
+    expect(reassignResponse.status).toBe(200);
+    expect(reassignResponse.body.success).toBe(true);
+
+    const nextAwaiting = await Rotation.findOne({ intern: intern._id, status: 'awaiting_confirmation' }).exec();
+    expect(nextAwaiting).toBeTruthy();
+    expect(String(nextAwaiting.unit)).toBe(String(units[3]._id));
+    await assertUpcomingExists();
+
+    const acceptResponse = await request(app).post(`/api/rotations/${intern._id}/accept-movement`);
+    expect(acceptResponse.status).toBe(200);
+    expect(acceptResponse.body.success).toBe(true);
+
+    const activeAfterAccept = await Rotation.findOne({ intern: intern._id, status: 'active' }).exec();
+    expect(activeAfterAccept).toBeTruthy();
+    await assertUpcomingExists();
+  });
+
+  test('accept movement plus rebuild preserves completed history and future queue', async () => {
+    const today = normalizeDay(new Date());
+    const units = await Unit.create([
+      { name: 'Cardiology', order: 1, duration: 20, capacity: 4 },
+      { name: 'Neurology', order: 2, duration: 20, capacity: 4 },
+      { name: 'Pediatrics', order: 3, duration: 20, capacity: 4 },
+    ]);
+
+    const intern = await Intern.create({
+      name: 'Phase4 Movement Preserve Intern',
+      gender: 'Female',
+      batch: 'A',
+      startDate: addDays(today, -40),
+      status: 'active',
+    });
+
+    const activeStart = addDays(today, -10);
+    const activeEnd = addDays(activeStart, 19);
+    const nextAwaitingStart = addDays(activeEnd, 1);
+    const nextAwaitingEnd = addDays(nextAwaitingStart, 19);
+    const futureUpcomingStart = addDays(nextAwaitingEnd, 1);
+    const futureUpcomingEnd = addDays(futureUpcomingStart, 19);
+
+    await Rotation.create({
+      intern: intern._id,
+      unit: units[0]._id,
+      startDate: activeStart,
+      endDate: activeEnd,
+      duration: 20,
+      status: 'active',
+    });
+
+    await Rotation.create({
+      intern: intern._id,
+      unit: units[1]._id,
+      startDate: nextAwaitingStart,
+      endDate: nextAwaitingEnd,
+      duration: 20,
+      status: 'awaiting_confirmation',
+    });
+
+    await Rotation.create({
+      intern: intern._id,
+      unit: units[2]._id,
+      startDate: futureUpcomingStart,
+      endDate: futureUpcomingEnd,
+      duration: 20,
+      status: 'upcoming',
+    });
+
+    const acceptResponse = await request(app).post(`/api/rotations/${intern._id}/accept-movement`);
+    expect(acceptResponse.status).toBe(200);
+    expect(acceptResponse.body.success).toBe(true);
+
+    const afterAccept = await Rotation.find({ intern: intern._id }).populate('unit').exec();
+    const completed = afterAccept.filter((rot) => rot.status === 'completed');
+    const active = afterAccept.filter((rot) => rot.status === 'active');
+    const upcoming = afterAccept.filter((rot) => rot.status === 'upcoming');
+
+    expect(completed).toHaveLength(1);
+    expect(active).toHaveLength(1);
+    expect(upcoming).toHaveLength(1);
+    expect(completed[0].unit.name).toBe('Cardiology');
+    expect(completed[0].actualEndDate).toBeTruthy();
+    expect(active[0].unit.name).toBe('Neurology');
+    expect(upcoming[0].unit.name).toBe('Pediatrics');
+
+    const refreshResponse = await request(app).post('/api/rotations/refresh-upcoming');
+    expect(refreshResponse.status).toBe(200);
+    expect(refreshResponse.body.success).toBe(true);
+
+    const afterRefresh = await Rotation.find({ intern: intern._id }).populate('unit').exec();
+    const completedAfter = afterRefresh.filter((rot) => rot.status === 'completed');
+    const activeAfter = afterRefresh.filter((rot) => rot.status === 'active');
+    const upcomingAfter = afterRefresh.filter((rot) => rot.status === 'upcoming');
+
+    expect(completedAfter).toHaveLength(1);
+    expect(activeAfter).toHaveLength(1);
+    expect(upcomingAfter).toHaveLength(1);
+    expect(completedAfter[0].unit.name).toBe('Cardiology');
+    expect(activeAfter[0].unit.name).toBe('Neurology');
+    expect(upcomingAfter[0].unit.name).toBe('Pediatrics');
+    expect(upcomingAfter.some((rot) => rot.unit.name === 'Cardiology')).toBe(false);
   });
 
   test('GET /api/debug/rotations/:internId does not auto-advance when AUTO_ROTATION is enabled', async () => {

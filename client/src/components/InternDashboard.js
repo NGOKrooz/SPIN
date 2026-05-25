@@ -1,15 +1,12 @@
 import React from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { X, Calendar, User, Clock, MapPin, Award, Building2 } from 'lucide-react';
 import ExtensionModal from './ExtensionModal';
 import ReassignModal from './ReassignModal';
-import ReassignNextModal from './ReassignNextModal';
-import MovementControls from './MovementControls';
-import ConfirmMovementModal from './ConfirmMovementModal';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { exportToCSV, openPrintableWindow, formatDate, getBatchColor, getStatusColor, normalizeDate, calculateDaysBetween } from '../lib/utils';
-import { getActiveAssignment, previewNextUnitForIntern, PREDICTIVE_WINDOW_DAYS } from '../lib/predictivePlanning';
+import { previewNextUnitForIntern, PREDICTIVE_WINDOW_DAYS } from '../lib/predictivePlanning';
 import { api } from '../services/api';
 
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
@@ -87,8 +84,6 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   const queryClient = useQueryClient();
   const [showExtend, setShowExtend] = React.useState(false);
   const [showReassign, setShowReassign] = React.useState(false);
-  const [reassignNextData, setReassignNextData] = React.useState(null);
-  const [confirmMovementData, setConfirmMovementData] = React.useState(null);
   const [activeRotation, setActiveRotation] = React.useState(null);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [internState, setInternState] = React.useState(intern);
@@ -121,23 +116,15 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
     }
   }, [internDetails]);
 
-  const titleCase = (value) => {
-    if (!value) return '';
-    const normalized = String(value).toLowerCase();
-    return normalized.charAt(0).toUpperCase() + normalized.slice(1);
-  };
-
   const currentIntern = internState || intern;
-  const extensionDays = Number(
-    currentIntern?.totalExtensionDays
-    ?? currentIntern?.total_extension_days
-    ?? currentIntern?.extensionDays
-    ?? currentIntern?.extension_days
-    ?? 0
-  );
-  const primaryStatus = String(currentIntern?.primaryStatus || currentIntern?.status || 'active').toLowerCase();
-  const displayStatus = titleCase(primaryStatus);
-  const hasExtension = Boolean(currentIntern?.hasExtension) || extensionDays > 0;
+  const extensionDays = Number(currentIntern?.extension_days) || 0;
+  const derivedStatus = React.useMemo(() => {
+    if (!currentIntern) return 'Active';
+    if (currentIntern.status === 'Completed') return 'Completed';
+    if (currentIntern.status === 'Extended') return 'Extended';
+    if (extensionDays > 0) return 'Extended';
+    return currentIntern.status || 'Active';
+  }, [currentIntern, extensionDays]);
 
   const { data: internSchedule } = useQuery({
     queryKey: ['intern-schedule', intern.id],
@@ -168,26 +155,6 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   const rotationDurationWeeks = Number(systemSettings?.rotation_duration_weeks) || 4;
   const rotationDurationDays = rotationDurationWeeks * 7;
 
-  const refreshMovementData = React.useCallback(async () => {
-    await queryClient.invalidateQueries({ queryKey: ['intern-schedule', intern.id] });
-    await queryClient.invalidateQueries({ queryKey: ['intern', intern.id] });
-    await queryClient.invalidateQueries({ queryKey: ['interns'] });
-  }, [intern.id, queryClient]);
-
-  const acceptMovementMutation = useMutation({
-    mutationFn: (internId) => api.acceptMovement(internId),
-    onSuccess: async (data) => {
-      console.log('[PHASE 2] Confirmation completion:', data);
-      setConfirmMovementData(null);
-      await refreshMovementData();
-      if (typeof onInternUpdated === 'function') onInternUpdated(data);
-    },
-    onError: (error) => {
-      console.error('[PHASE 2] Failed to accept movement:', error);
-      alert(`Failed to accept movement: ${error.message || 'Unknown error'}`);
-    },
-  });
-
   // Debug logging
   React.useEffect(() => {
     if (internSchedule) {
@@ -213,35 +180,33 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   // Separate completed and upcoming rotations using normalized dates to handle extensions correctly
   const completedRotations = React.useMemo(() => {
     if (schedulePayload?.completed) return schedulePayload.completed;
-    const today = normalizeDate(new Date());
-    return scheduleRows.filter(r => {
-      // Check status first
-      if (r.status === 'completed') return true;
-      // Check if end_date is before today
-      const endDate = normalizeDate(r.end_date);
-      return endDate && endDate < today;
-    });
+    return scheduleRows.filter(r => normalizeDate(r.end_date) < normalizeDate(new Date()));
   }, [schedulePayload, scheduleRows]);
 
-  const currentRotation = React.useMemo(() => {
-    if (schedulePayload?.current) return schedulePayload.current;
-    return getActiveAssignment({ ...currentIntern, rotations: scheduleRows }) || null;
-  }, [schedulePayload, scheduleRows, currentIntern]);
+  const currentRotations = React.useMemo(() => {
+    if (schedulePayload?.current) return [schedulePayload.current];
+    return scheduleRows.filter(r => {
+      const start = normalizeDate(r.start_date);
+      const end = normalizeDate(r.end_date);
+      const today = normalizeDate(new Date());
+      return start <= today && end >= today;
+    });
+  }, [schedulePayload, scheduleRows]);
 
   const upcomingRotations = React.useMemo(() => {
     if (Array.isArray(schedulePayload?.upcomingRotations) && schedulePayload.upcomingRotations.length > 0) {
       return schedulePayload.upcomingRotations;
     }
-    if (schedulePayload?.upcoming) return schedulePayload?.upcoming;
+    if (schedulePayload?.upcoming) return schedulePayload.upcoming;
     return scheduleRows.filter(r => normalizeDate(r.start_date) > normalizeDate(new Date()));
   }, [schedulePayload, scheduleRows]);
 
   // Debug logging for filtered results
   React.useEffect(() => {
     console.log('[InternDashboard] Completed:', completedRotations.length);
-    console.log('[InternDashboard] Current:', currentRotation ? 1 : 0);
+    console.log('[InternDashboard] Current:', currentRotations.length);
     console.log('[InternDashboard] Upcoming:', upcomingRotations.length);
-  }, [completedRotations.length, currentRotation, upcomingRotations.length]);
+  }, [completedRotations.length, currentRotations.length, upcomingRotations.length]);
 
   const orderedUnits = React.useMemo(() => {
     return [...(units || [])].sort((a, b) => {
@@ -260,6 +225,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   }, [completedRotations]);
 
   const currentUnitId = React.useMemo(() => {
+    const currentRotation = currentRotations[0] || null;
     return (
       currentRotation?.unit_id
       || currentRotation?.unitId
@@ -267,7 +233,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
       || currentIntern?.currentUnit?._id
       || null
     );
-  }, [currentIntern, currentRotation]);
+  }, [currentIntern, currentRotations]);
 
   const remainingUnits = React.useMemo(() => {
     return orderedUnits.filter((unit) => {
@@ -277,6 +243,8 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
       return !completedUnitIds.has(unitId);
     });
   }, [orderedUnits, currentUnitId, completedUnitIds]);
+
+  const currentRotation = currentRotations[0] || null;
 
   const nextAssignmentPreview = React.useMemo(() => {
     if (!currentRotation || !currentIntern) {
@@ -311,41 +279,6 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
       leavingSoonDays: PREDICTIVE_WINDOW_DAYS,
     });
   }, [completedRotations, currentIntern, currentRotation, currentTime, interns, orderedUnits]);
-
-  const movementControlItem = React.useMemo(() => {
-    if (!currentRotation || !currentIntern) return null;
-    const awaitingAssignment = scheduleRows.find((row) => row.status === 'awaiting_confirmation') || null;
-    const startDate = parseDateValue(currentRotation.start_date || currentRotation.startDate);
-    const plannedDuration = Number(currentRotation.baseDuration || currentRotation.base_duration || currentRotation.duration || currentRotation.duration_days || 0);
-    const plannedEndDate = startDate && plannedDuration > 0 ? getUnitEndDate(startDate, plannedDuration) : parseDateValue(currentRotation.end_date || currentRotation.endDate);
-    const today = new Date(currentTime);
-    today.setHours(0, 0, 0, 0);
-    const remainingDays = plannedEndDate ? Math.floor((plannedEndDate.getTime() - today.getTime()) / DAY_IN_MS) : null;
-    const elapsedDays = startDate ? Math.floor((today.getTime() - startDate.getTime()) / DAY_IN_MS) + 1 : 0;
-    const nextUnit = awaitingAssignment?.unit_name || awaitingAssignment?.unit?.name || nextAssignmentPreview?.unit?.name || currentIntern?.upcomingUnit?.name || 'Pending Assignment';
-    const item = {
-      intern: {
-        ...currentIntern,
-        rotations: scheduleRows,
-        completedUnits: completedRotations,
-      },
-      activeAssignment: currentRotation,
-      nextAssignment: awaitingAssignment || null,
-      internId: currentIntern._id || currentIntern.id || intern.id,
-      internName: currentIntern.name || 'Unnamed Intern',
-      currentUnit: currentRotation.unit_name || currentIntern?.currentUnit?.name || 'Current Unit',
-      currentUnitId: currentRotation.unit_id || currentRotation.unitId || currentIntern?.currentUnit?.id || currentIntern?.currentUnit?._id,
-      nextUnit,
-      nextUnitId: awaitingAssignment?.unit_id || awaitingAssignment?.unitId || awaitingAssignment?.unit?.id || awaitingAssignment?.unit?._id,
-      elapsedDays,
-      plannedDuration,
-      remainingDays,
-      overdueDays: Math.max(0, elapsedDays - plannedDuration),
-      isOverdue: currentRotation.status === 'awaiting_confirmation' || currentRotation.workflowState === 'pending_confirmation' || (remainingDays !== null && remainingDays < 0),
-    };
-    console.log('[InternDashboard] pending movement item:', item);
-    return item;
-  }, [completedRotations, currentIntern, currentRotation, currentTime, intern.id, nextAssignmentPreview, scheduleRows]);
 
   const getRotationDuration = React.useCallback((rotation) => {
     // NEVER use rotation.duration_days - backend doesn't update it after extension
@@ -437,7 +370,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   }, [intern.id, internState?.extension_days, invalidateInternLists, onInternUpdated, queryClient]);
 
   const handleReassign = React.useCallback(() => {
-    const current = currentRotation || {
+    const current = currentRotations[0] || {
       id: 'fallback-current-rotation',
       unit_name: currentIntern?.currentUnit?.name || 'Current Unit',
       start_date: currentIntern?.start_date || currentIntern?.startDate || new Date().toISOString(),
@@ -445,7 +378,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
     };
     setActiveRotation(current);
     setShowReassign(true);
-  }, [currentIntern?.currentUnit?.name, currentIntern?.startDate, currentIntern?.start_date, currentRotation]);
+  }, [currentIntern?.currentUnit?.name, currentIntern?.startDate, currentIntern?.start_date, currentRotations]);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
@@ -572,52 +505,54 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
               </Card>
               <Card>
                 <CardContent className="p-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(primaryStatus.toLowerCase())}`}>
-                        {displayStatus}
-                      </span>
-                      {hasExtension && extensionDays > 0 && (
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor('extension')}`}>
-                          +{extensionDays} days
-                        </span>
-                      )}
-                    </div>
+                  <div className="flex items-center space-x-2">
+                    <span className={`w-3 h-3 rounded-full ${getStatusColor(derivedStatus)}`}></span>
                     <div>
                       <p className="text-sm font-medium text-gray-600">Status</p>
-                      <p className="text-xl font-bold text-gray-900">{displayStatus}</p>
+                      <p className="text-xl font-bold text-gray-900">
+                        {derivedStatus}
+                        {extensionDays > 0 && (
+                          <span className="ml-2 text-sm text-yellow-600">+{extensionDays} days</span>
+                        )}
+                      </p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
             </div>
 
-            {/* Current Unit */}
-            {currentRotation && (
+            {/* Current Units */}
+            {currentRotations.length > 0 && (
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center space-x-2">
                     <MapPin className="h-5 w-5" />
-                    <span>Current Unit</span>
+                    <span>Current Units</span>
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 bg-blue-50 rounded-lg">
-                      <div>
-                        <h4 className="font-medium">{currentRotation.unit_name}</h4>
-                        <p className="text-sm text-gray-600">
-                          {formatDate(currentRotation.start_date)} - {formatDate(currentRotation.end_date)}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        {getCurrentUnitProgressDisplay(currentRotation, currentTime) && (
-                          <p className="text-sm font-medium text-blue-600">
-                            {getCurrentUnitProgressDisplay(currentRotation, currentTime)}
-                          </p>
-                        )}
-                      </div>
-                    </div>
+                    {currentRotations.map((rotation) => {
+                      const progressDisplay = getCurrentUnitProgressDisplay(rotation, currentTime);
+
+                      return (
+                        <div key={rotation.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 bg-blue-50 rounded-lg">
+                          <div>
+                            <h4 className="font-medium">{rotation.unit_name}</h4>
+                            <p className="text-sm text-gray-600">
+                              {formatDate(rotation.start_date)} - {formatDate(rotation.end_date)}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            {progressDisplay && (
+                              <p className="text-sm font-medium text-blue-600">
+                                {progressDisplay}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </CardContent>
               </Card>
@@ -657,7 +592,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
               <CardContent>
                 {!currentRotation ? (
                   <p className="text-center py-4 text-gray-500">No active unit assignment</p>
-                ) : !nextAssignmentPreview.shouldPreview && !movementControlItem?.isOverdue ? (
+                ) : !nextAssignmentPreview.shouldPreview ? (
                   <div className="text-center py-4 text-gray-500">
                     Preview appears when current unit has 5 days or less remaining
                   </div>
@@ -666,29 +601,16 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                     <p className="font-medium text-green-700">Rotation Complete</p>
                     <p className="text-xs text-gray-500 mt-1">All units have been completed.</p>
                   </div>
-                ) : nextAssignmentPreview.status === 'pending' && !movementControlItem?.isOverdue ? (
+                ) : nextAssignmentPreview.status === 'pending' ? (
                   <div className="text-center py-4">
                     <p className="font-medium text-amber-700">Pending Assignment</p>
                     <p className="text-xs text-gray-500 mt-1">No eligible unit available for preview.</p>
                   </div>
                 ) : (
                   <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
-                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                      <div>
-                        <p className="text-sm text-blue-700 font-medium">Next Assignment (in &lt;=5 days)</p>
-                        <p className="text-lg font-semibold text-gray-900 mt-1">{movementControlItem?.nextUnit || nextAssignmentPreview?.unit?.name || 'Pending Assignment'}</p>
-                        <p className="text-sm text-gray-600 mt-1">Starts: {nextAssignmentPreview?.startsOnLabel || 'TBD'}</p>
-                      </div>
-                      {movementControlItem && (
-                        <MovementControls
-                          item={movementControlItem}
-                          className="md:w-72"
-                          onAccept={setConfirmMovementData}
-                          onReassign={setReassignNextData}
-                          acceptPending={acceptMovementMutation.isPending}
-                        />
-                      )}
-                    </div>
+                    <p className="text-sm text-blue-700 font-medium">Next Assignment (in &lt;=5 days)</p>
+                    <p className="text-lg font-semibold text-gray-900 mt-1">{nextAssignmentPreview?.unit?.name || 'Pending Assignment'}</p>
+                    <p className="text-sm text-gray-600 mt-1">Starts: {nextAssignmentPreview?.startsOnLabel || 'TBD'}</p>
                   </div>
                 )}
               </CardContent>
@@ -794,23 +716,6 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
             }}
           />
         )}
-        {reassignNextData && (
-          <ReassignNextModal
-            confirmation={reassignNextData}
-            onClose={() => setReassignNextData(null)}
-            onSuccess={async () => {
-              console.log('[PHASE 3] Intern dashboard reassignment complete');
-              setReassignNextData(null);
-              await refreshMovementData();
-            }}
-          />
-        )}
-        <ConfirmMovementModal
-          movement={confirmMovementData}
-          isPending={acceptMovementMutation.isPending}
-          onClose={() => setConfirmMovementData(null)}
-          onConfirm={(movement) => acceptMovementMutation.mutate(movement.internId)}
-        />
       </div>
     </div>
   );

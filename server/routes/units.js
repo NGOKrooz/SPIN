@@ -10,7 +10,6 @@ const { buildInternViews } = require('../services/internViewService');
 const {
   getActiveUnitLoadMap,
 } = require('../services/rotationPlanService');
-const { isActiveLikeAssignment } = require('../services/assignmentUtils');
 const { updateBatchStats } = require('./dashboard');
 
 const router = express.Router();
@@ -98,7 +97,7 @@ const formatUnitRotation = (rotationDoc, today = startOfDay(new Date())) => {
     endDate: toIsoString(endDate),
     end_date: toIsoString(endDate),
     status,
-    is_current: isActiveLikeAssignment(status),
+    is_current: status === 'active',
   };
 };
 
@@ -482,11 +481,9 @@ router.put('/:id', normalizeUnitPayload, validateUnitPayload, async (req, res) =
     if (durationChanged) {
       // Dynamic system: update baseDuration and endDate on active rotations for this unit.
       const newDuration = getUnitDuration(unit);
-      const activeRotations = await Rotation.find({ unit: unit._id }).select('startDate endDate extensionDays baseDuration duration').exec();
-      const { normalizeRotation } = require('../services/assignmentUtils');
+      const activeRotations = await Rotation.find({ unit: unit._id, status: 'active' }).exec();
       for (const rot of activeRotations) {
-        const norm = normalizeRotation(rot) || rot;
-        if (!norm.extensionDays || norm.extensionDays === 0) {
+        if (!rot.extensionDays || rot.extensionDays === 0) {
           rot.baseDuration = newDuration;
           rot.duration = newDuration;
           rot.endDate = recalculateEndDate(rot.startDate, newDuration);

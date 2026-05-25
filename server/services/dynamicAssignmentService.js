@@ -5,6 +5,7 @@ const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
 const { canAssignmentTransition } = require('./movementGuard');
 const { normalizeRotation, resolveCurrentAssignment } = require('./assignmentUtils');
+const { cleanupInvalidUpcomingRotations } = require('./rotationCleanupService');
 
 const DEFAULT_CAPACITY = 5;
 const DEFAULT_DURATION = 20;
@@ -558,7 +559,7 @@ async function assignNextUnit(internOrId, options = {}) {
     previousEndDate = latestRotation.endDate ? startOfDay(latestRotation.endDate) : null;
   }
 
-  await Rotation.deleteMany({ intern: intern._id, status: 'upcoming' }).exec();
+  await cleanupInvalidUpcomingRotations(intern._id, 'assignNextUnit');
 
   let rotation = null;
   let unit = null;
@@ -671,6 +672,8 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
   const intern = await Intern.findById(internId).exec();
   if (!intern) throw new Error('Intern not found');
 
+  const { trace } = require('./mutationTraceService');
+
   const today = startOfDay(now);
   const allRotationsForIntern = await Rotation.find({ intern: internId }).sort({ startDate: -1, createdAt: -1 }).exec();
   const activeNorm = resolveCurrentAssignment({ rotations: allRotationsForIntern });
@@ -686,6 +689,14 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
       .sort({ startDate: 1, createdAt: 1 })
       .exec();
 
+    // Trace active and next planned snapshot (nextPlannedRotation is now defined)
+    try {
+      trace('ensureContinuousAssignment:active_found', internId, { active: { id: activeRotation._id.toString(), unit: activeRotation.unit?.toString?.() || activeRotation.unit }, nextPlannedRotation: nextPlannedRotation ? { id: nextPlannedRotation._id.toString(), unit: nextPlannedRotation.unit?.toString?.() || nextPlannedRotation.unit } : null });
+    } catch (err) {
+      console.error('[MUTATION_TRACE] trace error in ensureContinuousAssignment', err);
+    }
+
+
     if (startDate && today < startDate) {
       activeRotation.status = 'upcoming';
       await activeRotation.save();
@@ -698,6 +709,7 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
       // PHASE 4: Preserve overdue active assignments when a next movement is already staged.
       if (nextPlannedRotation) {
         console.warn(`[MOVEMENT BLOCKED]\nsource: refresh\nintern: ${intern._id.toString()}\nreason: automatic transitions disabled`);
+        trace('ensureContinuousAssignment:blocking_overdue_with_next', internId, { active: { id: activeRotation._id.toString(), unit: activeRotation.unit?.toString?.() }, nextPlannedRotation: { id: nextPlannedRotation._id.toString(), unit: nextPlannedRotation.unit?.toString?.() } });
         const overdueDays = Math.max(0, Math.floor((today.getTime() - endDate.getTime()) / DAY_IN_MS));
         if (overdueDays > 0) {
           const manualExtensionDays = getRotationManualExtensionDays(activeRotation);
@@ -727,6 +739,7 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
       // PHASE 4: Do not auto-advance expired active rotations by default.
       // Keep status as 'active' - admin must explicitly accept to transition
       await activeRotation.save();
+      trace('ensureContinuousAssignment:post_save_active_overdue', internId, { active: { id: activeRotation._id.toString(), unit: activeRotation.unit?.toString?.() }, internCurrentUnit: intern.currentUnit ? intern.currentUnit.toString?.() : intern.currentUnit });
       intern.currentUnit = activeRotation.unit || null;
       intern.status = 'active';
       await intern.save();

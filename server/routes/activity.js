@@ -10,16 +10,12 @@ const {
   getRecentActivities,
   logActivityEventSafe,
 } = require('../services/recentUpdatesService');
-const { transitionAssignmentStatus, getLatestActiveLikeAssignment } = require('../services/assignmentUtils');
 
 const router = express.Router();
 
 const DEFAULT_ROTATION_DURATION_DAYS = 20;
 
-function parseLimit(rawValue, fallback = null, max = 10000) {
-  if (rawValue === 'all' || rawValue === 'unlimited') {
-    return null; // No limit
-  }
+function parseLimit(rawValue, fallback = 10, max = 1000) {
   const parsed = Number(rawValue);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return fallback;
@@ -76,12 +72,10 @@ async function syncRotationMovementsForFeed() {
       endDate.setHours(0, 0, 0, 0);
 
       let nextStatus = rotation.status;
-      if (rotation.status !== 'completed' && now > endDate) {
-        console.log('AUTO COMPLETION BLOCKED');
-        const updated = transitionAssignmentStatus(rotation, 'auto-time-trigger');
-        rotation.status = updated.status;
-        rotation.overdueDays = updated.overdueDays;
-        nextStatus = updated.status;
+      if (rotation.status === 'awaiting_confirmation') {
+        nextStatus = 'awaiting_confirmation';
+      } else if (rotation.status !== 'completed' && now > endDate) {
+        nextStatus = 'completed';
       } else if (rotation.status !== 'completed' && !hasActiveRotation && startDate <= now && now <= endDate) {
         nextStatus = 'active';
         hasActiveRotation = true;
@@ -96,15 +90,13 @@ async function syncRotationMovementsForFeed() {
       await rotation.save();
     }
 
-    const currentRotation = getLatestActiveLikeAssignment(rotations) || null;
+    const currentRotation = rotations.find((rotation) => rotation.status === 'active') || null;
     const completedRotations = rotations.filter((rotation) => rotation.status === 'completed');
     const previousUnitId = intern.currentUnit?._id?.toString?.() || intern.currentUnit?.toString?.() || null;
     const nextUnitId = currentRotation?.unit?.toString?.() || null;
     const nextStatus = rotations.length > 0 && completedRotations.length === rotations.length
       ? 'completed'
-      : (currentRotation?.workflowState === 'pending_confirmation'
-        ? 'pending'
-        : (Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active'));
+      : (Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active');
 
     if (previousUnitId && nextUnitId && previousUnitId !== nextUnitId) {
       const nextUnit = await Unit.findById(nextUnitId).select('name').exec();
@@ -139,7 +131,7 @@ async function fetchRecentActivities(limit) {
 // GET /api/activity - Get recent activities (compatibility endpoint)
 router.get('/', async (req, res) => {
   try {
-    const limit = parseLimit(req.query.limit, null, 10000);
+    const limit = parseLimit(req.query.limit, 10, 1000);
     const activities = await fetchRecentActivities(limit);
     res.status(200).json(activities);
   } catch (err) {
@@ -151,7 +143,7 @@ router.get('/', async (req, res) => {
 // GET /api/activity/recent - Get recent activities
 router.get('/recent', async (req, res) => {
   try {
-    const limit = parseLimit(req.query.limit, null, 10000);
+    const limit = parseLimit(req.query.limit, 10, 1000);
     const activities = await fetchRecentActivities(limit);
     res.status(200).json(activities);
   } catch (err) {

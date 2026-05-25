@@ -1,21 +1,16 @@
-import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { 
   Users, 
-  Building2,
-  AlertCircle
+  Building2, 
+  AlertTriangle
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { api } from '../services/api';
 import RecentUpdates from '../components/RecentUpdates';
-import ReassignNextModal from '../components/ReassignNextModal';
-import MovementControls from '../components/MovementControls';
-import ConfirmMovementModal from '../components/ConfirmMovementModal';
-import { buildMovementQueue, PREDICTIVE_WINDOW_DAYS } from '../lib/predictivePlanning';
+import { buildUpcomingMovements, PREDICTIVE_WINDOW_DAYS } from '../lib/predictivePlanning';
 
 export default function Dashboard() {
-  const queryClient = useQueryClient();
-  
   const { data: interns, isLoading: internsLoading } = useQuery({
     queryKey: ['interns'],
     queryFn: api.getInterns,
@@ -25,43 +20,6 @@ export default function Dashboard() {
     queryKey: ['units'],
     queryFn: api.getUnits,
   });
-
-  // PHASE 2: Accept movement mutation
-  const acceptMovementMutation = useMutation({
-    mutationFn: (internId) => api.acceptMovement(internId),
-    onSuccess: (data, internId) => {
-      console.log('[PHASE 2] Movement accepted successfully:', data);
-      // Refresh interns data to update the dashboard
-      queryClient.invalidateQueries({ queryKey: ['interns'] });
-      // Show success feedback (could be enhanced with toast notifications)
-      alert(`✅ Movement accepted! ${data.data.internName} moved to ${data.data.toUnit}`);
-    },
-    onError: (error, internId) => {
-      console.error('[PHASE 2] Failed to accept movement:', error);
-      alert(`❌ Failed to accept movement: ${error.message || 'Unknown error'}`);
-    },
-  });
-
-  // PHASE 3: Reassign next unit mutation
-  const reassignNextMutation = useMutation({
-    mutationFn: ({ internId, newUnitId }) => api.reassignNext(internId, newUnitId),
-    onSuccess: (data) => {
-      console.log('[PHASE 3] Reassignment successful:', data);
-      // Refresh interns data to update the dashboard immediately
-      queryClient.invalidateQueries({ queryKey: ['interns'] });
-      // Close modal and show success feedback
-      setReassignModalData(null);
-      alert(`✅ Reassigned! ${data.data.internName}'s next unit changed to ${data.data.newUnit}`);
-    },
-    onError: (error) => {
-      console.error('[PHASE 3] Failed to reassign:', error);
-      alert(`❌ Failed to reassign: ${error.message || 'Unknown error'}`);
-    },
-  });
-
-  // PHASE 3: Modal state
-  const [reassignModalData, setReassignModalData] = useState(null);
-  const [confirmMovementData, setConfirmMovementData] = useState(null);
 
   const todayLabel = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
@@ -83,22 +41,11 @@ export default function Dashboard() {
   const activeInterns = interns?.filter(intern => intern.currentUnit) || [];
   const unassignedInterns = interns?.filter(intern => !intern.currentUnit) || [];
 
-  const movementQueue = buildMovementQueue(interns || [], {
-    units: units || [],
-    referenceDate: new Date(),
+  const criticalUnits = units?.filter(unit => unit?.status === 'critical') || [];
+  const warningUnits = units?.filter(unit => unit?.status === 'warning') || [];
+  const upcomingMovements = buildUpcomingMovements(interns || [], units || [], {
+    movementWindowDays: PREDICTIVE_WINDOW_DAYS,
     leavingSoonDays: PREDICTIVE_WINDOW_DAYS,
-  });
-  const nearingCompletionInterns = movementQueue.filter((item) => item.status === 'nearing_completion');
-  const awaitingConfirmationInterns = movementQueue.filter((item) => item.status === 'awaiting_confirmation');
-
-  console.log('[MOVEMENT QUEUE] Count:', movementQueue.length);
-  console.log('[MOVEMENT QUEUE] Nearing completion:', nearingCompletionInterns.map((item) => item.internName));
-  console.log('[MOVEMENT QUEUE] Awaiting confirmation:', awaitingConfirmationInterns.map((item) => item.internName));
-  movementQueue.forEach((item) => {
-    console.log('QUEUE ITEM:', item);
-    console.log('  nextUnitPreview:', item.nextUnitPreview);
-    console.log('  nextUnit:', item.nextUnit);
-    console.log('  isAwaitingConfirmation:', item.isAwaitingConfirmation);
   });
 
   const stats = [
@@ -118,23 +65,22 @@ export default function Dashboard() {
       color: 'text-green-600',
       bgColor: 'bg-green-100',
     },
-    {
-      title: 'Movement Queue',
-      value: movementQueue.length,
-      description: 'Interns nearing movement or awaiting confirmation',
-      icon: AlertCircle,
-      color: 'text-orange-600',
-      bgColor: 'bg-orange-100',
-    },
   ];
 
   return (
     <div className="mx-auto w-full max-w-[1200px] space-y-6 px-4 sm:px-6 lg:px-8">
-      {/* Header Card */}
-      <div className="rounded-2xl border border-gray-200 bg-white/70 p-5 shadow-sm backdrop-blur sm:p-6">
-        <div className="flex flex-col gap-2">
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">Internship Scheduler</h1>
-          <h2 className="text-xl font-semibold text-gray-700 sm:text-2xl">Dashboard</h2>
+      {/* Header */}
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-gray-200 bg-white/70 p-5 shadow-sm backdrop-blur sm:p-6">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">Internship Scheduler</h1>
+            <h2 className="text-base font-semibold text-gray-700 sm:text-lg">UNTH Ituku Ozalla</h2>
+            <p className="text-sm text-gray-500 sm:text-base">Physiotherapy Department</p>
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-2xl font-bold text-gray-900 sm:text-3xl">Dashboard</h3>
           <p className="text-sm text-gray-600 sm:text-base">{todayLabel}</p>
         </div>
       </div>
@@ -164,94 +110,76 @@ export default function Dashboard() {
 
         <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-orange-600" />
-              Movement Queue
+            <CardTitle>Upcoming Movements (Next 5 Days)</CardTitle>
+            <CardDescription>Preview-only movement board based on global batch-balanced assignment</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {upcomingMovements.length === 0 ? (
+              <div className="text-sm text-gray-500">No movements expected in the next 5 days.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-gray-500">
+                      <th className="py-2 pr-4">Intern</th>
+                      <th className="py-2 pr-4">From</th>
+                      <th className="py-2 pr-4">To</th>
+                      <th className="py-2">Move Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {upcomingMovements.map((movement) => (
+                      <tr key={`${movement.internId || movement.internName}-${movement.moveDateLabel}`} className="border-b last:border-b-0">
+                        <td className="py-2 pr-4 font-medium text-gray-900">{movement.internName}</td>
+                        <td className="py-2 pr-4 text-gray-700">{movement.fromUnit}</td>
+                        <td className="py-2 pr-4 text-gray-700">{movement.toUnit}</td>
+                        <td className="py-2 text-gray-600">{movement.moveDateLabel}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <AlertTriangle className="h-5 w-5" />
+              <span>Coverage Alerts</span>
             </CardTitle>
             <CardDescription>
-              Interns nearing completion or already awaiting confirmation for movement
+              Units requiring immediate attention
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {movementQueue.length === 0 ? (
-              <div className="text-sm text-gray-500">No interns in the movement queue at this time.</div>
+            {criticalUnits.length === 0 && warningUnits.length === 0 ? (
+              <div className="text-center py-4">
+                <div className="text-green-600 text-sm">All units have adequate coverage</div>
+              </div>
             ) : (
-              <div className="space-y-4">
-                {movementQueue.map((item) => (
-                  <div 
-                    key={item.internId}
-                    className={`border rounded-lg p-4 transition-colors ${item.status === 'overdue' || item.status === 'awaiting_confirmation' ? 'border-orange-200 bg-orange-50/50 hover:bg-orange-100/50' : 'border-slate-200 bg-slate-50 hover:bg-slate-100'}`}
-                  >
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-3">
-                        <div>
-                          <div className="text-sm text-gray-500 font-medium">Intern Name</div>
-                          <div className="text-lg font-semibold text-gray-900">
-                            {item.internName}
-                          </div>
-                        </div>
-
-                        <div>
-                          <div className="text-sm text-gray-500 font-medium">Current Unit</div>
-                          <div className="text-base text-gray-900 font-medium">
-                            {item.currentUnit}
-                          </div>
-                        </div>
-
-                        <div>
-                          <div className="text-sm text-gray-500 font-medium">Duration</div>
-                          <div className="text-base text-gray-900 font-semibold">
-                            {item.durationLabel}
-                          </div>
-                        </div>
-
-                        {item.status === 'nearing_completion' ? (
-                          <div>
-                            <div className="text-sm text-gray-500 font-medium">Status</div>
-                            <div className="text-base text-blue-700 font-semibold">Upcoming Movement</div>
-                            <div className="text-xs text-gray-600 mt-1">
-                              {item.remainingDays} day{item.remainingDays === 1 ? '' : 's'} remaining
-                            </div>
-                          </div>
-                        ) : item.status === 'overdue' ? (
-                          <div>
-                            <div className="text-sm text-gray-500 font-medium">Status</div>
-                            <div className="text-base text-orange-700 font-semibold">Overdue Movement</div>
-                            <div className="text-xs text-orange-600 mt-1">
-                              OVERDUE: {item.overdueDays} day{item.overdueDays === 1 ? '' : 's'}
-                            </div>
-                          </div>
-                        ) : (
-                          <div>
-                            <div className="text-sm text-gray-500 font-medium">Status</div>
-                            <div className="text-base text-orange-700 font-semibold">Awaiting Confirmation</div>
-                            <div className="text-xs text-orange-600 mt-1">
-                              OVERDUE: {item.overdueDays} day{item.overdueDays === 1 ? '' : 's'}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="space-y-3">
-                        <div>
-                          <div className="text-sm text-gray-500 font-medium">Next Unit</div>
-                          <div className="text-lg font-semibold text-gray-900">
-                            {item.nextUnit || 'Next unit not assigned'}
-                          </div>
-                        </div>
-
-                        <>
-                          <MovementControls
-                            item={item}
-                            className="pt-2"
-                            onAccept={setConfirmMovementData}
-                            onReassign={setReassignModalData}
-                            acceptPending={acceptMovementMutation.isPending}
-                            reassignPending={reassignNextMutation.isPending}
-                          />
-                        </>
+              <div className="space-y-2">
+                {criticalUnits.map((unit) => (
+                  <div key={unit.id} className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium text-red-800 break-words">{unit.name}</span>
+                      <div className="text-xs text-red-600 mt-1 break-words">
+                        {unit.reason} • Batch A: {unit.byBatch.A}, Batch B: {unit.byBatch.B}
                       </div>
                     </div>
+                    <span className="text-xs bg-red-200 text-red-800 px-2 py-1 rounded ml-2">Critical</span>
+                  </div>
+                ))}
+                {warningUnits.map((unit) => (
+                  <div key={unit.id} className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium text-yellow-800 break-words">{unit.name}</span>
+                      <div className="text-xs text-yellow-600 mt-1 break-words">
+                        {unit.reason} • Batch A: {unit.byBatch.A}, Batch B: {unit.byBatch.B}
+                      </div>
+                    </div>
+                    <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded ml-2">Warning</span>
                   </div>
                 ))}
               </div>
@@ -259,30 +187,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
-      {/* Removed Recent Rotations and Upcoming Movements per Phase 1 requirements */}
-
-      {/* PHASE 3: Reassign Next Unit Modal */}
-      {reassignModalData && (
-        <ReassignNextModal
-          confirmation={reassignModalData}
-          onClose={() => setReassignModalData(null)}
-          onSuccess={() => {
-            console.log('[PHASE 3] ✅ Reassignment successful, modal closing');
-            setReassignModalData(null);
-          }}
-        />
-      )}
-
-      <ConfirmMovementModal
-        movement={confirmMovementData}
-        isPending={acceptMovementMutation.isPending}
-        onClose={() => setConfirmMovementData(null)}
-        onConfirm={(movement) => {
-          console.log(`[PHASE 2] ${movement.internName} confirmed for movement from ${movement.currentUnit} to ${movement.nextUnit}`);
-          acceptMovementMutation.mutate(movement.internId);
-          setConfirmMovementData(null);
-        }}
-      />
+      {/* Removed Recent Rotations per requirements */}
     </div>
   );
 }

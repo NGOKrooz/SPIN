@@ -23,9 +23,7 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
     reason: '',
   });
 
-  const manualExtensionDays = Number(intern?.manualExtensionDays ?? intern?.manual_extension_days ?? 0);
-  const autoExtensionDays = Number(intern?.autoExtensionDays ?? intern?.auto_extension_days ?? 0);
-  const currentExtensionDays = manualExtensionDays + autoExtensionDays;
+  const currentExtensionDays = Number(intern?.extensionDays ?? intern?.extension_days) || 0;
 
   const { toast } = useToast();
 
@@ -172,10 +170,7 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
 
     removeExtensionMutation.mutate({
       id: intern.id,
-      data: {
-        remove_days: days,
-        reason: removeFormData.reason || 'Extension removed',
-      },
+      data: { days, reason: removeFormData.reason || 'Extension removed' },
     });
   };
 
@@ -284,19 +279,9 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
               <p className="text-sm font-medium text-gray-700 mb-3">
                 Current Extension: <span className="text-yellow-600 font-bold">+{currentExtensionDays} days</span>
               </p>
-              {(manualExtensionDays > 0 || autoExtensionDays > 0) && (
-                <div className="text-sm text-gray-600 mb-3 space-y-1">
-                  {manualExtensionDays > 0 && (
-                    <div>Manual extension: +{manualExtensionDays} days</div>
-                  )}
-                  {autoExtensionDays > 0 && (
-                    <div>Overdue auto-extension: +{autoExtensionDays} days</div>
-                  )}
-                </div>
-              )}
               <form onSubmit={handleRemove} className="space-y-3">
                 <div>
-                  <Label htmlFor="remove-days">Remove Days *</Label>
+                  <Label htmlFor="remove-days">Days to Remove</Label>
                   <Input
                     id="remove-days"
                     type="number"
@@ -305,11 +290,7 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
                     value={removeFormData.days}
                     onChange={(e) => handleRemoveChange('days', e.target.value)}
                     placeholder={`1 – ${currentExtensionDays}`}
-                    required
                   />
-                  <p className="text-xs text-gray-500 mt-1">
-                    You may remove up to {currentExtensionDays} extension day{currentExtensionDays === 1 ? '' : 's'}.
-                  </p>
                 </div>
                 <div>
                   <Label htmlFor="remove-reason">Reason (Optional)</Label>
@@ -324,17 +305,14 @@ export default function ExtensionModal({ intern, onClose, onSuccess }) {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="flex items-center justify-end space-x-3">
-                  <Button type="button" variant="outline" onClick={() => setRemoveFormData({ days: '', reason: '' })}>
-                    Cancel
-                  </Button>
+                <div className="flex justify-end">
                   <Button
                     type="submit"
-                    variant="destructive"
+                    variant="outline"
                     disabled={isRemoving}
-                    className="hospital-gradient"
+                    className="text-red-600 border-red-300 hover:bg-red-50"
                   >
-                    {isRemoving ? 'Applying...' : 'Apply Reduction'}
+                    {isRemoving ? 'Removing...' : 'Remove Extension Days'}
                   </Button>
                 </div>
               </form>

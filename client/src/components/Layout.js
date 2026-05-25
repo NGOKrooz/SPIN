@@ -6,8 +6,8 @@ import {
   Users, 
   Building2, 
   Settings,
-  Repeat,
   Stethoscope,
+  MessageCircle,
   X
 } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -17,7 +17,6 @@ const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Interns', href: '/interns', icon: Users },
   { name: 'Units', href: '/units', icon: Building2 },
-  { name: 'Spun', href: '/spun', icon: Repeat },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
@@ -92,7 +91,7 @@ export default function Layout() {
   return (
     <div className="min-h-screen app-bg overflow-x-hidden">
       {/* Mobile top bar */}
-      <div className="md:hidden fixed top-0 left-0 right-0 z-50 flex h-14 items-center justify-between bg-white/90 px-4 shadow-sm backdrop-blur-md">
+      <div className="md:hidden sticky top-0 z-50 flex h-14 items-center justify-between bg-white/90 px-4 shadow-sm backdrop-blur-md">
         <button
           aria-label="Open sidebar"
           className="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
@@ -127,8 +126,8 @@ export default function Layout() {
         )}
       >
         <div className="flex h-full flex-col">
-          {/* Sidebar Header */}
-          <div className="sidebar-header flex h-16 items-center justify-between px-4 glass-header md:hidden">
+          {/* Logo */}
+          <div className="flex h-16 items-center justify-between px-4 glass-header md:hidden">
             <div className="flex items-center space-x-2">
               <div className="hospital-gradient rounded-lg p-2">
                 <Stethoscope className="h-5 w-5 text-white" />
@@ -141,7 +140,7 @@ export default function Layout() {
               <X className="h-4 w-4" />
             </Button>
           </div>
-          <div className="sidebar-header hidden h-16 items-center px-4 glass-header md:flex">
+          <div className="hidden h-16 items-center px-4 glass-header md:flex">
             <div className="flex items-center space-x-2">
               <div className="hospital-gradient rounded-lg p-2">
                 <Stethoscope className="h-6 w-6 text-white" />
@@ -152,8 +151,8 @@ export default function Layout() {
             </div>
           </div>
 
-          {/* Sidebar Menu */}
-          <nav className="sidebar-menu flex-1 space-y-1 px-4 py-4">
+          {/* Navigation */}
+          <nav className="flex-1 space-y-1 px-4 py-4">
             {navigation.map((item) => {
               const isActive = location.pathname === item.href;
               return (
@@ -180,18 +179,23 @@ export default function Layout() {
             })}
           </nav>
 
-          {/* Sidebar Footer */}
-          <div className="sidebar-footer border-t border-gray-200 p-4 mt-auto">
-            <div className="text-center text-xs text-gray-500">
-              <p>UNTH Ituku Ozalla</p>
-              <p>Physiotherapy Department</p>
-            </div>
+          {/* Footer */}
+          <div className="border-t border-gray-200 p-4">
+            <a
+              href="https://wa.me/2349068361100"
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center justify-center space-x-2 rounded-md px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-green-700 transition-colors"
+            >
+              <MessageCircle className="h-4 w-4" />
+              <span>Contact Team</span>
+            </a>
           </div>
         </div>
       </div>
 
       {/* Role switch bar */}
-      <div className="md:ml-64">
+      <div className="md:pl-64">
         <div className="sticky top-0 z-40 hidden h-10 items-center justify-end bg-white/80 px-4 backdrop-blur md:flex">
           <div className="text-xs text-gray-600">
             Role: <span className="font-medium">{role}</span>
@@ -212,7 +216,7 @@ export default function Layout() {
       </div>
 
       {/* Main content */}
-      <div className="md:ml-64 mt-14 md:mt-0">
+      <div className="md:pl-64">
         <main className="py-4 md:py-8">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <Outlet />

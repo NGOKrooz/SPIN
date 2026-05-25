@@ -103,18 +103,18 @@ export const rotationsAPI = {
   delete: (id) => http.delete(`/rotations/${id}`),
   generate: (startDate) => http.post('/rotations/generate', { start_date: startDate }),
   fixEndDates: () => http.post('/rotations/fix-end-dates'),
-  refreshUpcoming: () => http.post('/rotations/refresh-upcoming'),
-  acceptMovement: (internId) => http.post(`/rotations/${internId}/accept-movement`),
-  reassignNext: (internId, newUnitId) => http.post(`/rotations/${internId}/reassign-next`, { newUnitId }),};
+  autoAdvance: () => http.post('/rotations/auto-advance'),
+};
+
+// Auto-advance API for specific intern
+export const autoAdvanceAPI = {
+  triggerForIntern: (internId) => http.post(`/interns/${internId}/auto-advance`),
+};
 
 // Activity logs API
 export const activityAPI = {
   getRecent: (limit = 10) => http.get('/activity/recent', { params: { limit } }),
   clear: () => http.delete('/activity/clear'),
-};
-
-export const spunAPI = {
-  getSummary: (limit = 25) => http.get('/spun', { params: { limit } }),
 };
 
 // Settings API
@@ -169,16 +169,11 @@ export const api = {
   updateRotation: (id, data) => rotationsAPI.update(id, data),
   deleteRotation: (id) => rotationsAPI.delete(id),
   generateRotations: (startDate) => rotationsAPI.generate(startDate),
-  refreshUpcomingRotations: () => rotationsAPI.refreshUpcoming(),
-  acceptMovement: (internId) => rotationsAPI.acceptMovement(internId),
-  reassignNext: (internId, newUnitId) => rotationsAPI.reassignNext(internId, newUnitId),
+  autoAdvanceRotations: () => rotationsAPI.autoAdvance(),
 
   // Activity
   getRecentActivities: (limit) => activityAPI.getRecent(limit),
   clearRecentActivities: () => activityAPI.clear(),
-
-  // Spun
-  getSpunHistory: (limit) => spunAPI.getSummary(limit),
 
   // Settings
   getSystemSettings: () => settingsAPI.getSystem(),

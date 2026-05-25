@@ -1,14 +1,6 @@
 const Intern = require('../models/Intern');
 const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
-const {
-  getUnitOccupancy,
-  getUnitInternsLeavingSoon,
-  getCompletedUnitIds,
-  selectNextUnit,
-  DEFAULT_CAPACITY,
-} = require('./dynamicAssignmentService');
-const { isActiveLikeAssignment, resolveCurrentAssignment } = require('./assignmentUtils');
 
 const DEFAULT_ROTATION_DURATION_DAYS = 20;
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
@@ -78,6 +70,13 @@ const createSeededRandom = (seed) => {
   };
 };
 
+const isRotationFinalized = (rotation) => {
+  if (!rotation) return false;
+  if (rotation.status === 'completed') return true;
+  if (rotation.actualEndDate) return true;
+  return false;
+};
+
 const buildForwardSequenceKey = (anchorUnitId, upcomingUnits = []) => {
   const sequence = [anchorUnitId, ...upcomingUnits.map((unit) => unit?._id?.toString?.() || unit?.id?.toString?.() || null)]
     .filter(Boolean)
@@ -87,9 +86,9 @@ const buildForwardSequenceKey = (anchorUnitId, upcomingUnits = []) => {
 };
 
 const getDerivedRotationStatus = (rotation, today = startOfDay(new Date())) => {
-  if (rotation?.status === 'completed' || rotation?.status === 'awaiting_confirmation') {
-    return rotation.status;
-  }
+  if (!rotation) return 'upcoming';
+  if (isRotationFinalized(rotation)) return 'completed';
+  if (rotation.status === 'awaiting_confirmation') return 'awaiting_confirmation';
 
   const startDate = rotation?.startDate ? startOfDay(rotation.startDate) : null;
   const endDate = rotation?.endDate ? startOfDay(rotation.endDate) : null;
@@ -97,7 +96,7 @@ const getDerivedRotationStatus = (rotation, today = startOfDay(new Date())) => {
   if (!startDate) return 'upcoming';
   if (startDate > today) return 'upcoming';
   if (!endDate || endDate >= today) return 'active';
-  return 'pending';
+  return 'completed';
 };
 
 const computeDeterministicProgress = (internStartDate, orderedUnits = [], now = new Date()) => {
@@ -220,14 +219,13 @@ const syncRotationHistory = async (internId) => {
 
 const getActiveUnitLoadMap = async () => {
   const today = startOfDay(new Date());
-  const rotations = await Rotation.find({}).select('unit startDate endDate status workflowState').exec();
+  const rotations = await Rotation.find({ status: 'active' }).select('unit startDate endDate').exec();
   const counts = new Map();
-  const { normalizeRotation } = require('./assignmentUtils');
 
   for (const rotation of rotations) {
-    const norm = normalizeRotation(rotation);
-    if (!norm || norm.status !== 'active') continue;
-    const unitId = norm?.unit?.toString?.() || null;
+    const derivedStatus = getDerivedRotationStatus(rotation, today);
+    if (derivedStatus !== 'active') continue;
+    const unitId = rotation?.unit?.toString?.() || null;
     if (!unitId) continue;
     counts.set(unitId, (counts.get(unitId) || 0) + 1);
   }
@@ -236,7 +234,7 @@ const getActiveUnitLoadMap = async () => {
 };
 
 const getReservedForwardSequenceKeys = async (excludeInternId = null) => {
-  const query = { status: { $in: ['active', 'upcoming'] } };
+  const query = { status: { $in: ['active', 'upcoming', 'awaiting_confirmation'] } };
   if (excludeInternId) {
     query.intern = { $ne: excludeInternId };
   }
@@ -389,12 +387,25 @@ const rebuildInternFutureRotations = async ({
   }
 
   const today = startOfDay(now);
+  const { trace } = require('./mutationTraceService');
   const completedRotations = [];
   let activeRotation = null;
   const existingUpcomingRotations = [];
 
+  // Trace initial rotation list
+  trace('rebuildInternFutureRotations:initial', internId, {
+    rotations: rotations.map(r => ({ id: r._id.toString(), status: r.status, unit: r.unit?._id?.toString?.() || r.unit })),
+  });
+
   for (const rotation of rotations) {
-    const derivedStatus = getDerivedRotationStatus(rotation, today);
+    const isAwaitingConfirmation = rotation.status === 'awaiting_confirmation';
+    const isFinalized = isRotationFinalized(rotation);
+    const derivedStatus = isFinalized
+      ? 'completed'
+      : isAwaitingConfirmation
+      ? 'awaiting_confirmation'
+      : getDerivedRotationStatus(rotation, today);
+
     if (rotation.status !== derivedStatus) {
       rotation.status = derivedStatus;
       await rotation.save();
@@ -402,16 +413,31 @@ const rebuildInternFutureRotations = async ({
 
     if (derivedStatus === 'completed') {
       completedRotations.push(rotation);
-    } else if (isActiveLikeAssignment(derivedStatus) && !activeRotation) {
-      // Treat 'pending' as active-like for operational resolution
+      trace('rebuildInternFutureRotations:collected_completed', internId, { rotation: { id: rotation._id.toString(), unit: rotation.unit?._id?.toString?.() || rotation.unit } });
+      continue;
+    }
+
+    if (derivedStatus === 'active' && !activeRotation) {
       activeRotation = rotation;
-    } else {
+      continue;
+    }
+
+    if (derivedStatus !== 'awaiting_confirmation') {
+      // Only add truly upcoming rotations to existingUpcomingRotations, not awaiting_confirmation
       existingUpcomingRotations.push(rotation);
+      trace('rebuildInternFutureRotations:existing_upcoming_add', internId, { rotation: { id: rotation._id.toString(), unit: rotation.unit?._id?.toString?.() || rotation.unit } });
     }
   }
 
   const completedUnitIds = new Set(
     completedRotations.map((rotation) => rotation?.unit?._id?.toString?.() || rotation?.unit?.toString?.()).filter(Boolean)
+  );
+
+  const stagedFutureUnitIds = new Set(
+    rotations
+      .filter((rotation) => ['awaiting_confirmation', 'upcoming'].includes(rotation.status))
+      .map((rotation) => rotation?.unit?._id?.toString?.() || rotation?.unit?.toString?.())
+      .filter(Boolean)
   );
 
   const allUnitIds = new Set(orderedUnits.map((unit) => String(unit._id)));
@@ -429,7 +455,9 @@ const rebuildInternFutureRotations = async ({
     const remainingUnits = orderedUnits.filter((unit) => {
       const unitId = String(unit._id);
       if (completedUnitIds.has(unitId)) return false;
-      return unitId !== String(currentUnitId);
+      if (unitId === String(currentUnitId)) return false;
+      if (stagedFutureUnitIds.has(unitId)) return false;
+      return true;
     });
 
     desiredUpcomingUnits = chooseUniqueUpcomingUnits({
@@ -443,10 +471,16 @@ const rebuildInternFutureRotations = async ({
 
     intern.currentUnit = activeRotation.unit?._id || activeRotation.unit;
   } else if (!allCompleted) {
-    const firstRemainingUnit = orderedUnits.find((unit) => !completedUnitIds.has(String(unit._id))) || null;
+    const firstRemainingUnit = orderedUnits.find((unit) => {
+      const unitId = String(unit._id);
+      if (completedUnitIds.has(unitId)) return false;
+      if (stagedFutureUnitIds.has(unitId)) return false;
+      return true;
+    }) || null;
     const remainingUnits = orderedUnits.filter((unit) => {
       const unitId = String(unit._id);
       if (completedUnitIds.has(unitId)) return false;
+      if (stagedFutureUnitIds.has(unitId)) return false;
       return !firstRemainingUnit || unitId !== String(firstRemainingUnit._id);
     });
 
@@ -471,22 +505,25 @@ const rebuildInternFutureRotations = async ({
     intern.currentUnit = null;
   }
 
-  while (existingUpcomingRotations.length > desiredUpcomingUnits.length) {
-    const rotationToDelete = existingUpcomingRotations.pop();
-    if (rotationToDelete) {
-      await rotationToDelete.deleteOne();
+  const createdUpcomingRotations = [];
+
+  // Preserve already scheduled upcoming rotations as immutable.
+  // Do not update or resave existing upcoming documents.
+  if (existingUpcomingRotations.length > 0) {
+    const lastUpcomingRotation = existingUpcomingRotations[existingUpcomingRotations.length - 1];
+    if (lastUpcomingRotation?.endDate) {
+      previousEndDate = startOfDay(lastUpcomingRotation.endDate);
     }
   }
 
-  const createdUpcomingRotations = [];
   while (existingUpcomingRotations.length < desiredUpcomingUnits.length) {
     const newUnitForCreate = desiredUpcomingUnits[existingUpcomingRotations.length];
     const newUnitDuration = getUnitDuration(newUnitForCreate);
     const createdRotation = await Rotation.create({
       intern: intern._id,
       unit: newUnitForCreate._id,
-      startDate: startOfDay(intern.startDate || now),
-      endDate: startOfDay(intern.startDate || now),
+      startDate: addDays(previousEndDate, 1),
+      endDate: recalculateEndDate(addDays(previousEndDate, 1), newUnitDuration),
       baseDuration: newUnitDuration,
       extensionDays: 0,
       duration: newUnitDuration,
@@ -494,21 +531,8 @@ const rebuildInternFutureRotations = async ({
     });
     existingUpcomingRotations.push(createdRotation);
     createdUpcomingRotations.push(createdRotation);
-  }
-
-  for (let index = 0; index < desiredUpcomingUnits.length; index += 1) {
-    const unit = desiredUpcomingUnits[index];
-    const rotation = existingUpcomingRotations[index];
-    const duration = getUnitDuration(unit);
-    rotation.unit = unit._id;
-    rotation.baseDuration = duration;
-    rotation.extensionDays = 0;
-    rotation.duration = duration;
-    rotation.startDate = addDays(previousEndDate, 1);
-    rotation.endDate = recalculateEndDate(rotation.startDate, duration);
-    rotation.status = 'upcoming';
-    previousEndDate = startOfDay(rotation.endDate);
-    await rotation.save();
+    previousEndDate = startOfDay(createdRotation.endDate);
+    trace('rebuildInternFutureRotations:created_upcoming', internId, { index: existingUpcomingRotations.length - 1, rotation: { id: createdRotation._id.toString(), unit: createdRotation.unit?.toString?.() || createdRotation.unit, startDate: createdRotation.startDate, endDate: createdRotation.endDate, status: createdRotation.status } });
   }
 
   if (allCompleted) {
@@ -522,6 +546,32 @@ const rebuildInternFutureRotations = async ({
   await intern.save();
   await syncRotationHistory(intern._id);
 
+  const validationErrors = [];
+  const upcomingIds = existingUpcomingRotations
+    .map((rotation) => String(rotation._id))
+    .filter(Boolean);
+
+  if (new Set(upcomingIds).size !== upcomingIds.length) {
+    validationErrors.push('duplicate upcoming rotations detected');
+  }
+
+  if (rotations.filter((rotation) => rotation.status === 'active').length > 1) {
+    validationErrors.push('multiple active rotations found for intern');
+  }
+
+  if (completedRotations.some((rotation) => rotation.status !== 'completed')) {
+    validationErrors.push('finalized rotations were reclassified incorrectly');
+  }
+
+  if (validationErrors.length > 0) {
+    const message = `Rotation rebuild validation failed for intern ${internId}: ${validationErrors.join('; ')}`;
+    if (process.env.NODE_ENV === 'production') {
+      console.error(message);
+    } else {
+      throw new Error(message);
+    }
+  }
+
   return {
     currentRotation: activeRotation,
     upcomingRotations: existingUpcomingRotations,
@@ -529,111 +579,43 @@ const rebuildInternFutureRotations = async ({
   };
 };
 
-async function reshuffleAllUpcoming() {
-  const interns = await Intern.find({}).exec();
-  const units = await Unit.find({}).sort({ order: 1, position: 1, createdAt: 1 }).exec();
-  const occupancy = await getUnitOccupancy();
-  const leavingSoon = await getUnitInternsLeavingSoon();
+const reshuffleAllUpcoming = async () => {
+  const internIds = await Rotation.distinct('intern', {
+    status: { $in: ['active', 'upcoming', 'awaiting_confirmation'] },
+  }).exec();
 
-  const trueLoad = new Map();
-  for (const unit of units) {
-    const unitId = String(unit._id);
-    const currentCount = occupancy.get(unitId) || 0;
-    const leavingCount = leavingSoon.get(unitId) || 0;
-    trueLoad.set(unitId, currentCount - leavingCount);
-  }
-
+  const activeUnitLoadMap = await getActiveUnitLoadMap();
+  const reservedSequenceKeys = new Set();
   const results = [];
-  const today = startOfDay(new Date());
+  const { trace } = require('./mutationTraceService');
 
-  for (const intern of interns) {
-    const allRotations = await Rotation.find({ intern: intern._id }).sort({ startDate: -1, createdAt: -1 }).populate('unit').exec();
-    const activeRotation = resolveCurrentAssignment({ rotations: allRotations }) || null;
+  const sortedInternIds = [...new Set((internIds || []).map((id) => String(id)))].sort();
 
-    let nextStart = startOfDay(today);
-    let currentUnitId = null;
-
-    if (activeRotation && activeRotation.endDate) {
-      currentUnitId = activeRotation.unit?._id?.toString?.() || activeRotation.unit?.toString?.() || null;
-      const extensionDays = Number(activeRotation.extensionDays || 0);
-      nextStart = addDays(startOfDay(activeRotation.endDate), extensionDays + 1);
-    } else {
-      const latestRotation = await Rotation.findOne({ intern: intern._id })
-        .sort({ endDate: -1, startDate: -1 })
-        .exec();
-      if (latestRotation && latestRotation.endDate) {
-        const extensionDays = Number(latestRotation.extensionDays || 0);
-        nextStart = addDays(startOfDay(latestRotation.endDate), extensionDays + 1);
-      }
+  for (const internId of sortedInternIds) {
+    trace('reshuffleAllUpcoming:start_intern', internId, { reservedSequenceCount: reservedSequenceKeys.size });
+    const reservedKeysForOthers = await getReservedForwardSequenceKeys(internId);
+    for (const key of reservedKeysForOthers) {
+      reservedSequenceKeys.add(key);
     }
 
-    const completedIds = await getCompletedUnitIds(intern._id);
-    const plannedRotations = await Rotation.find({
-      intern: intern._id,
-      status: { $in: ['upcoming', 'awaiting_confirmation'] }
-    })
-      .select('unit')
-      .exec();
-    if (plannedRotations.length > 0) {
-      console.warn(`[MOVEMENT BLOCKED]\nsource: reshuffle\nintern: ${intern._id.toString()}\nreason: automatic transitions disabled`);
-    }
-    await Rotation.deleteMany({ intern: intern._id, status: 'upcoming' }).exec();
+    const rebuildResult = await rebuildInternFutureRotations({
+      internId,
+      reservedSequenceKeys,
+      activeUnitLoadMap,
+    });
 
-    const createdUpcoming = [];
-    const usedUnitIds = new Set(completedIds);
-    if (currentUnitId) usedUnitIds.add(currentUnitId);
-    for (const planned of plannedRotations) {
-      const plannedUnitId = planned.unit?.toString?.() || null;
-      if (plannedUnitId) {
-        usedUnitIds.add(plannedUnitId);
-      }
-    }
-
-    while (true) {
-      const availableUnits = units.filter((unit) => !usedUnitIds.has(String(unit._id)));
-      if (availableUnits.length === 0) {
-        break;
-      }
-
-      const nextSelection = selectNextUnit(availableUnits, trueLoad, completedIds, currentUnitId, DEFAULT_CAPACITY);
-      if (!nextSelection || !nextSelection.unit) {
-        break;
-      }
-
-      const unit = nextSelection.unit;
-      const unitId = String(unit._id);
-      if (usedUnitIds.has(unitId)) {
-        break;
-      }
-
-      const duration = getUnitDuration(unit);
-      const endDate = addDays(nextStart, duration - 1);
-      const rotation = await Rotation.create({
-        intern: intern._id,
-        unit: unit._id,
-        startDate: nextStart,
-        endDate,
-        baseDuration: duration,
-        extensionDays: 0,
-        duration,
-        status: 'upcoming',
-      });
-
-      createdUpcoming.push(rotation);
-      completedIds.add(unitId); // Add to completed so it doesn't get selected again
-      trueLoad.set(unitId, (trueLoad.get(unitId) || 0) + 1);
-      currentUnitId = unitId;
-      nextStart = addDays(endDate, 1);
-    }
-
-    results.push({ internId: intern._id.toString(), createdUpcoming: createdUpcoming.length });
+    results.push({
+      internId,
+      upcomingCount: rebuildResult.upcomingRotations.length,
+      createdUpcomingCount: rebuildResult.createdUpcomingRotations.length,
+    });
   }
 
   return {
-    refreshed: results.length,
-    details: results,
+    rebuiltInternCount: results.length,
+    results,
   };
-}
+};
 
 module.exports = {
   DEFAULT_ROTATION_DURATION_DAYS,

@@ -1,5 +1,5 @@
 // Strict allowed lifecycle statuses
-const VALID_LIFECYCLE_STATUSES = new Set(['active', 'upcoming', 'completed']);
+const VALID_LIFECYCLE_STATUSES = new Set(['active', 'upcoming', 'completed', 'awaiting_confirmation']);
 
 function parseRotationDate(value) {
   if (!value) return null;
