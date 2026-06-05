@@ -9,7 +9,15 @@ export default function MovementControls({
   reassignPending = false,
   className = '',
 }) {
-  const enabled = Boolean(item?.isOverdue);
+  // Enable buttons whenever:
+  // 1. Next upcoming rotation exists, OR
+  // 2. Current rotation is overdue, OR  
+  // 3. Remaining days <= 5
+  // This follows the Movement Queue eligibility criteria
+  const hasUpcomingRotation = Boolean(item?.hasUpcomingRotation);
+  const isOverdue = Boolean(item?.isOverdue);
+  const remainingDaysShort = item?.remainingDays !== null && item?.remainingDays <= 5;
+  const enabled = hasUpcomingRotation || isOverdue || remainingDaysShort;
 
   return (
     <div className={`flex gap-2 ${className}`}>

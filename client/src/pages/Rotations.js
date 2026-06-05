@@ -34,12 +34,12 @@ export default function Rotations() {
 
   const { data: interns } = useQuery({
     queryKey: ['interns'],
-    queryFn: api.getInterns,
+    queryFn: () => api.getInterns(),
   });
 
   const { data: units } = useQuery({
     queryKey: ['units'],
-    queryFn: api.getUnits,
+    queryFn: () => api.getUnits(),
   });
 
   const generateMutation = useMutation({

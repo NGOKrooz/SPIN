@@ -72,9 +72,7 @@ async function syncRotationMovementsForFeed() {
       endDate.setHours(0, 0, 0, 0);
 
       let nextStatus = rotation.status;
-      if (rotation.status === 'awaiting_confirmation') {
-        nextStatus = 'awaiting_confirmation';
-      } else if (rotation.status !== 'completed' && now > endDate) {
+      if (rotation.status !== 'completed' && now > endDate) {
         nextStatus = 'completed';
       } else if (rotation.status !== 'completed' && !hasActiveRotation && startDate <= now && now <= endDate) {
         nextStatus = 'active';

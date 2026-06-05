@@ -39,13 +39,9 @@ const toIsoString = (date) => {
 };
 
 const getRotationStatus = (rotation, today = new Date()) => {
-  if (
-    rotation?.status === 'active'
-    || rotation?.status === 'upcoming'
-    || rotation?.status === 'completed'
-    || rotation?.status === 'awaiting_confirmation'
-  ) {
-    return rotation.status;
+  const rawStatus = String(rotation?.status || '').trim().toLowerCase();
+  if (['active', 'upcoming', 'completed', 'awaiting_confirmation'].includes(rawStatus)) {
+    return rawStatus;
   }
 
   const startRaw = rotation.startDate || rotation.start_date;
@@ -89,11 +85,12 @@ const formatRotation = (rotation) => {
     baseDuration: rotationBaseDuration,
     extensionDays: rotationExtensionDays,
     status,
-    workflowState: rotation.workflowState || rotation.workflow_state || null,
     unitId,
     unit_id: unitId,
     unitName,
     unit_name: unitName,
+    workflowState: rotation.workflowState || rotation.workflow_state || null,
+    workflow_state: rotation.workflowState || rotation.workflow_state || null,
     isManualAssignment: Boolean(rotation.isManualAssignment || rotation.is_manual_assignment),
     is_manual_assignment: Boolean(rotation.isManualAssignment || rotation.is_manual_assignment),
     unit: unit ? {
@@ -112,9 +109,9 @@ const formatIntern = (intern, rotations = []) => {
   const formattedRotations = (rotations || []).map(formatRotation);
 
   const currentRotation = formattedRotations.find(r => r.status === 'active');
-  const upcomingRotations = formattedRotations.filter(r => r.status === 'upcoming');
-  const awaitingConfirmationRotations = formattedRotations.filter(r => r.status === 'awaiting_confirmation');
+  const upcomingRotations = formattedRotations.filter((r) => r.status === 'upcoming' || r.status === 'awaiting_confirmation');
   const completedRotations = formattedRotations.filter(r => r.status === 'completed');
+  const awaitingConfirmationRotations = [...upcomingRotations];
 
   const startDate = intern.startDate || intern.start_date;
 
@@ -167,9 +164,8 @@ const formatIntern = (intern, rotations = []) => {
     currentUnit,
     rotations: formattedRotations,
     upcomingUnits: upcomingRotations,
-    awaitingConfirmationUnits: awaitingConfirmationRotations.length > 0
-      ? awaitingConfirmationRotations
-      : (upcomingRotations.length > 0 ? [upcomingRotations[0]] : []),
+    awaitingConfirmationUnits: awaitingConfirmationRotations,
+    awaiting_confirmation_units: awaitingConfirmationRotations,
     completedUnits: completedRotations,
     createdAt: toIsoString(intern.createdAt),
     updatedAt: toIsoString(intern.updatedAt),
@@ -198,34 +194,12 @@ const addUnitProgress = (internView, currentUnit, units = []) => {
     return [unitId, unit];
   }).filter(([unitId]) => Boolean(unitId)));
 
-  const rawUpcomingRotations = [
-    ...(internView.awaitingConfirmationUnits || []),
-    ...(internView.upcomingUnits || []),
-  ];
-
-  const upcomingRotations = [];
-  const seenUpcomingUnitIds = new Set();
-
-  for (const rotation of rawUpcomingRotations) {
-    const unitId = String(
-      rotation.unitId
-      || rotation.unit_id
-      || rotation.unit?._id
-      || rotation.unit?.id
-      || rotation.id
-      || rotation._id
-      || ''
-    );
-    if (!unitId || seenUpcomingUnitIds.has(unitId)) continue;
-    seenUpcomingUnitIds.add(unitId);
-    upcomingRotations.push(rotation);
-  }
-
-  upcomingRotations.sort((left, right) => {
-    const leftTime = left?.startDate ? new Date(left.startDate).getTime() : Number.MAX_SAFE_INTEGER;
-    const rightTime = right?.startDate ? new Date(right.startDate).getTime() : Number.MAX_SAFE_INTEGER;
-    return leftTime - rightTime;
-  });
+  const upcomingRotations = [...(internView.upcomingUnits || [])]
+    .sort((left, right) => {
+      const leftTime = left?.startDate ? new Date(left.startDate).getTime() : Number.MAX_SAFE_INTEGER;
+      const rightTime = right?.startDate ? new Date(right.startDate).getTime() : Number.MAX_SAFE_INTEGER;
+      return leftTime - rightTime;
+    });
 
   const seenUpcomingUnitIds = new Set();
   const remainingUnitDocs = [];

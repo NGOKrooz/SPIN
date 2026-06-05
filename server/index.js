@@ -45,14 +45,37 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware - CORS configuration
-app.use(cors({
-  origin: "https://spin-interns.vercel.app",
-  methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
-  credentials: true
-}));
+const allowedOrigins = [
+  "https://spin-interns.vercel.app",
+  "http://localhost:3000",
+  "http://localhost:3002",
+  "http://localhost:5000",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:3002",
+  "http://127.0.0.1:5000"
+];
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (e.g., curl requests)
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    console.warn(`Blocked CORS origin: ${origin}`);
+    return callback(new Error('CORS not allowed'));
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  allowedHeaders: ["Origin", "X-Requested-With", "Content-Type", "Accept", "Authorization"],
+  credentials: true,
+  optionsSuccessStatus: 204,
+  preflightContinue: false,
+};
+
+app.use(cors(corsOptions));
 
 // Handle preflight
-app.options('*', cors());
+app.options('*', cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -64,7 +87,10 @@ app.use((req, res, next) => {
 
 // CORS headers fallback for environments behind proxies
 app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "https://spin-interns.vercel.app");
+  const origin = req.get('origin');
+  if (allowedOrigins.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+  }
   res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH");
   next();

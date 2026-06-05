@@ -232,18 +232,20 @@ async function ensureInternStatusIsCorrect(internId) {
   const currentNorm = resolveCurrentAssignment({ rotations: allRotations });
   const activeRotation = currentNorm ? allRotations.find((r) => String(r._id) === String(currentNorm._id)) : null;
 
+  const hasPendingOrUpcomingAssignment = allRotations.some((rotation) => {
+    const status = String(rotation?.status || '').trim().toLowerCase();
+    return ['active', 'upcoming', 'awaiting_confirmation'].includes(status);
+  });
+
   let newStatus = 'completed';
-  if (activeRotation) {
-    const activeExtensionDays = Number(activeRotation.extensionDays || 0);
-    // Always return 'active' as lifecycle status
-    // Use workflowState to track pending confirmation
-    newStatus = activeExtensionDays > 0 ? 'extended' : 'active';
-    refreshedIntern.extensionDays = activeExtensionDays;
+  if (hasPendingOrUpcomingAssignment) {
+    const extensionDays = Number(refreshedIntern.extensionDays || 0);
+    newStatus = extensionDays > 0 ? 'extended' : 'active';
   } else {
     refreshedIntern.extensionDays = 0;
   }
 
-  const newCurrentUnit = activeRotation?.unit || null;
+  const newCurrentUnit = activeRotation?.unit || refreshedIntern.currentUnit || null;
 
   const statusChanged = refreshedIntern.status !== newStatus;
   const currentUnitChanged = String(refreshedIntern.currentUnit || '') !== String(newCurrentUnit || '');

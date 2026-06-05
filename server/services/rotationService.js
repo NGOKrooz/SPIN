@@ -2,156 +2,9 @@ const { startOfDay, addDays, isAfter } = require('date-fns');
 const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
 const Intern = require('../models/Intern');
-const { logRecentUpdateSafe } = require('./recentUpdatesService');
-const { trace } = require('./mutationTraceService');
+const { getEligibleUnits } = require('./dynamicAssignmentService');
 
 const DEFAULT_ROTATION_DURATION_DAYS = 20;
-
-function calculateRotationEndDate(startDate, duration) {
-  const start = startOfDay(new Date(startDate));
-  const safeDuration = Number(duration);
-  const effectiveDuration = Number.isFinite(safeDuration) && safeDuration > 0
-    ? safeDuration
-    : DEFAULT_ROTATION_DURATION_DAYS;
-  return addDays(start, effectiveDuration - 1);
-}
-
-async function getActiveRotationForIntern(internId) {
-  return Rotation.findOne({ intern: internId, status: 'active' })
-    .sort({ startDate: 1 })
-    .populate('unit')
-    .exec();
-}
-
-async function getNextStagedRotation(internId) {
-  return Rotation.findOne({
-    intern: internId,
-    status: { $in: ['awaiting_confirmation', 'upcoming'] },
-  })
-    .sort({ startDate: 1, createdAt: 1 })
-    .populate('unit')
-    .exec();
-}
-
-async function acceptMovement(internId) {
-  if (!internId) {
-    throw new Error('Intern ID is required to accept movement');
-  }
-
-  const intern = await Intern.findById(internId).exec();
-  if (!intern) {
-    throw new Error(`Intern not found: ${internId}`);
-  }
-
-  const activeRotation = await getActiveRotationForIntern(internId);
-  if (!activeRotation) {
-    throw new Error('Missing active or upcoming rotation');
-  }
-
-  const nextRotation = await getNextStagedRotation(internId);
-  if (!nextRotation) {
-    throw new Error('No next rotation found');
-  }
-
-  // Trace pre-accept snapshot
-  trace('acceptMovement:pre', internId, {
-    activeRotation: { id: activeRotation._id.toString(), unit: activeRotation.unit?.toString?.() || activeRotation.unit },
-    awaiting: { id: nextRotation._id.toString(), unit: nextRotation.unit?.toString?.() || nextRotation.unit },
-    upcoming: (await Rotation.find({ intern: internId, status: 'upcoming' }).sort({ startDate: 1 }).select('_id unit').exec()).map(r => ({ id: r._id.toString(), unit: r.unit?.toString?.() || r.unit })),
-  });
-
-
-  const today = startOfDay(new Date());
-  activeRotation.status = 'completed';
-  activeRotation.actualEndDate = today;
-  await activeRotation.save();
-
-  const duration = Number(nextRotation.duration || nextRotation.baseDuration || DEFAULT_ROTATION_DURATION_DAYS);
-  nextRotation.status = 'active';
-  nextRotation.startDate = today;
-  nextRotation.endDate = calculateRotationEndDate(today, duration);
-  nextRotation.workflowState = null;
-  await nextRotation.save();
-
-  // Trace post-accept snapshot
-  trace('acceptMovement:post', internId, {
-    activeRotation: { id: activeRotation._id.toString(), unit: activeRotation.unit?.toString?.() || activeRotation.unit },
-    newActive: { id: nextRotation._id.toString(), unit: nextRotation.unit?.toString?.() || nextRotation.unit },
-    upcoming: (await Rotation.find({ intern: internId, status: 'upcoming' }).sort({ startDate: 1 }).select('_id unit').exec()).map(r => ({ id: r._id.toString(), unit: r.unit?.toString?.() || r.unit })),
-  });
-
-  
-
-  intern.currentUnit = nextRotation.unit?._id || nextRotation.unit;
-  intern.status = Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active';
-  await intern.save();
-
-  await logRecentUpdateSafe('movement_accepted', `${intern.name} moved from ${activeRotation.unit?.name || String(activeRotation.unit || 'Unknown')} to ${nextRotation.unit?.name || String(nextRotation.unit || 'Unknown')}`, intern._id);
-
-  return {
-    internName: intern.name,
-    fromUnit: activeRotation.unit?.name || String(activeRotation.unit || 'Unknown'),
-    toUnit: nextRotation.unit?.name || String(nextRotation.unit || 'Unknown'),
-    updatedRotation: nextRotation,
-  };
-}
-
-async function reassignNextUnit(internId, newUnitId) {
-  if (!internId) {
-    throw new Error('Intern ID is required to reassign the next unit');
-  }
-  if (!newUnitId) {
-    throw new Error('newUnitId is required');
-  }
-
-  const intern = await Intern.findById(internId).exec();
-  if (!intern) {
-    throw new Error(`Intern not found: ${internId}`);
-  }
-
-  const unit = await Unit.findById(newUnitId).exec();
-  if (!unit) {
-    throw new Error('Unit not found');
-  }
-
-  const activeRotation = await getActiveRotationForIntern(internId);
-  const activeUnitId = activeRotation?.unit?._id?.toString?.() || activeRotation?.unit?.toString?.();
-  if (activeUnitId && String(activeUnitId) === String(newUnitId)) {
-    throw new Error('Cannot reassign to current active unit');
-  }
-
-  const completedRotation = await Rotation.findOne({
-    intern: internId,
-    status: 'completed',
-    unit: newUnitId,
-  }).exec();
-  if (completedRotation) {
-    throw new Error('Cannot reassign to a unit already completed by this intern');
-  }
-
-  const nextRotation = await getNextStagedRotation(internId);
-  if (!nextRotation) {
-    throw new Error('No next rotation found');
-  }
-
-  const previousUnit = nextRotation.unit?.name || String(nextRotation.unit || 'Unknown');
-  const nextUnitId = nextRotation.unit?._id?.toString?.() || nextRotation.unit?.toString?.();
-  if (String(nextUnitId) === String(newUnitId)) {
-    throw new Error('New unit is already scheduled as the next unit');
-  }
-
-  nextRotation.unit = newUnitId;
-  await nextRotation.save();
-
-  await logRecentUpdateSafe('unit_reassigned', `${intern.name} reassigned from ${previousUnit} to ${unit.name}`, intern._id);
-
-  return {
-    internName: intern.name,
-    previousUnit,
-    newUnit: unit.name,
-    updatedRotation: nextRotation,
-  };
-}
 
 const getDuration = (unitDoc) => {
   const raw = unitDoc?.duration ?? unitDoc?.durationDays ?? unitDoc?.duration_days;
@@ -185,7 +38,7 @@ async function getUpcomingRotations(daysAhead = 30) {
   return await Rotation.find({
     startDate: { $gt: today, $lte: futureDate },
   })
-    .populate({ path: 'intern', populate: { path: 'currentUnit' } })
+    .populate('intern')
     .populate('unit')
     .sort({ startDate: 1 })
     .exec();
@@ -286,6 +139,92 @@ async function updateRotation(rotationId, data) {
  */
 async function deleteRotation(rotationId) {
   return await Rotation.findByIdAndDelete(rotationId).exec();
+}
+
+async function acceptMovement(internId) {
+  const intern = await Intern.findById(internId).exec();
+  if (!intern) throw new Error('Intern not found');
+
+  const activeRotation = await Rotation.findOne({ intern: intern._id, status: 'active' })
+    .populate('unit')
+    .sort({ startDate: 1 })
+    .exec();
+  if (!activeRotation) throw new Error('No active rotation available to accept');
+
+  const nextRotation = await Rotation.findOne({
+    intern: intern._id,
+    status: { $in: ['awaiting_confirmation', 'upcoming'] },
+  })
+    .populate('unit')
+    .sort({ startDate: 1 })
+    .exec();
+  if (!nextRotation) throw new Error('No next rotation available to activate');
+
+  activeRotation.status = 'completed';
+  activeRotation.actualEndDate = startOfDay(new Date());
+  await activeRotation.save();
+
+  const nextDuration = getDuration(nextRotation.unit);
+  const nextStartDate = startOfDay(new Date());
+  const nextEndDate = addDays(nextStartDate, nextDuration - 1);
+
+  nextRotation.status = 'active';
+  nextRotation.startDate = nextStartDate;
+  nextRotation.endDate = nextEndDate;
+  nextRotation.duration = nextDuration;
+  nextRotation.extensionDays = 0;
+  await nextRotation.save();
+
+  intern.currentUnit = nextRotation.unit?._id || nextRotation.unit;
+  await intern.save();
+
+  return {
+    internId: intern._id.toString(),
+    internName: intern.name,
+    fromUnit: activeRotation.unit?.name || String(activeRotation.unit),
+    toUnit: nextRotation.unit?.name || String(nextRotation.unit),
+    activeRotationId: activeRotation._id.toString(),
+    nextRotationId: nextRotation._id.toString(),
+  };
+}
+
+async function reassignNextUnit(internId, newUnitId) {
+  const intern = await Intern.findById(internId).exec();
+  if (!intern) throw new Error('Intern not found');
+
+  const nextRotation = await Rotation.findOne({
+    intern: intern._id,
+    status: { $in: ['awaiting_confirmation', 'upcoming'] },
+  })
+    .populate('unit')
+    .sort({ startDate: 1 })
+    .exec();
+  if (!nextRotation) throw new Error('No next rotation available to reassign');
+
+  const currentRotation = await Rotation.findOne({ intern: intern._id, status: 'active' })
+    .populate('unit')
+    .sort({ startDate: 1 })
+    .exec();
+  const currentUnitId = currentRotation?.unit?._id?.toString?.() || intern.currentUnit?.toString?.() || null;
+  const eligibleUnits = await getEligibleUnits(intern._id, currentUnitId);
+  const selectedUnit = eligibleUnits.find((unit) => String(unit._id || unit.id) === String(newUnitId));
+
+  if (!selectedUnit) {
+    throw new Error('Selected unit is not eligible for reassignment');
+  }
+
+  const previousUnitName = nextRotation.unit?.name || 'Unknown unit';
+  nextRotation.unit = newUnitId;
+  const updatedRotation = await nextRotation.save();
+
+  return {
+    internId: intern._id.toString(),
+    internName: intern.name,
+    previousUnit: previousUnitName,
+    newUnit: selectedUnit.name,
+    nextRotationId: nextRotation._id.toString(),
+    updatedRotation,
+  };
 }
 
 module.exports = {

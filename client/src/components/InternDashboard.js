@@ -6,6 +6,7 @@ import ReassignModal from './ReassignModal';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { exportToCSV, openPrintableWindow, formatDate, getBatchColor, getStatusColor, normalizeDate, calculateDaysBetween } from '../lib/utils';
+import { previewNextUnitForIntern, PREDICTIVE_WINDOW_DAYS } from '../lib/predictivePlanning';
 import { api } from '../services/api';
 
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
@@ -138,12 +139,12 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
 
   const { data: units } = useQuery({
     queryKey: ['units'],
-    queryFn: api.getUnits,
+    queryFn: () => api.getUnits(),
   });
 
   const { data: interns } = useQuery({
     queryKey: ['interns'],
-    queryFn: api.getInterns,
+    queryFn: () => api.getInterns(),
   });
 
   const { data: systemSettings } = useQuery({
@@ -245,27 +246,39 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
 
   const currentRotation = currentRotations[0] || null;
 
-  const awaitingConfirmationRotations = React.useMemo(() => {
-    return scheduleRows.filter((rotation) => rotation.status === 'awaiting_confirmation');
-  }, [scheduleRows]);
+  const nextAssignmentPreview = React.useMemo(() => {
+    if (!currentRotation || !currentIntern) {
+      return {
+        status: 'pending',
+        reason: 'Pending Assignment',
+        shouldPreview: false,
+      };
+    }
 
-  const futureRotations = React.useMemo(() => {
-    const today = normalizeDate(new Date());
-    return scheduleRows
-      .filter((rotation) => {
-        const start = normalizeDate(rotation.start_date);
-        return start && start > today;
-      })
-      .sort((left, right) => {
-        const leftTime = parseDateValue(left.start_date)?.getTime() || Number.MAX_SAFE_INTEGER;
-        const rightTime = parseDateValue(right.start_date)?.getTime() || Number.MAX_SAFE_INTEGER;
-        return leftTime - rightTime;
-      });
-  }, [scheduleRows]);
+    const internForPreview = {
+      ...currentIntern,
+      currentUnit: {
+        ...(currentIntern.currentUnit || {}),
+        id: currentRotation.unit_id || currentRotation.unitId || currentIntern?.currentUnit?.id,
+        _id: currentRotation.unit_id || currentRotation.unitId || currentIntern?.currentUnit?._id,
+        name: currentRotation.unit_name || currentIntern?.currentUnit?.name,
+        startDate: currentRotation.start_date,
+        start_date: currentRotation.start_date,
+        endDate: currentRotation.end_date,
+        end_date: currentRotation.end_date,
+        duration: getTotalDuration(currentRotation),
+        duration_days: getTotalDuration(currentRotation),
+      },
+      completedUnits: completedRotations,
+    };
 
-  const nextScheduledRotation = React.useMemo(() => {
-    return awaitingConfirmationRotations[0] || futureRotations[0] || null;
-  }, [awaitingConfirmationRotations, futureRotations]);
+    return previewNextUnitForIntern(internForPreview, {
+      interns: Array.isArray(interns) ? interns : [],
+      units: orderedUnits,
+      referenceDate: new Date(currentTime),
+      leavingSoonDays: PREDICTIVE_WINDOW_DAYS,
+    });
+  }, [completedRotations, currentIntern, currentRotation, currentTime, interns, orderedUnits]);
 
   const getRotationDuration = React.useCallback((rotation) => {
     // NEVER use rotation.duration_days - backend doesn't update it after extension
@@ -551,7 +564,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                 <div className="flex items-center justify-between">
                   <CardTitle className="flex items-center space-x-2">
                     <Calendar className="h-5 w-5" />
-                    <span>Next Scheduled Assignment</span>
+                    <span>Next Assignment (5-Day Preview)</span>
                   </CardTitle>
                   <Button
                     variant="outline"
@@ -579,24 +592,25 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
               <CardContent>
                 {!currentRotation ? (
                   <p className="text-center py-4 text-gray-500">No active unit assignment</p>
-                ) : !nextScheduledRotation ? (
+                ) : !nextAssignmentPreview.shouldPreview ? (
                   <div className="text-center py-4 text-gray-500">
-                    <p className="font-medium">No future scheduled rotation</p>
-                    <p className="text-xs text-gray-500 mt-1">No upcoming rotation is currently scheduled for this intern.</p>
+                    Preview appears when current unit has 5 days or less remaining
                   </div>
-                ) : nextScheduledRotation.status === 'awaiting_confirmation' ? (
-                  <div className="rounded-lg border border-amber-100 bg-amber-50 p-4">
-                    <p className="text-sm text-amber-700 font-medium">Awaiting Confirmation</p>
-                    <p className="text-lg font-semibold text-gray-900 mt-1">{nextScheduledRotation.unit_name || nextScheduledRotation.unit?.name || 'Unknown Unit'}</p>
-                    <p className="text-sm text-gray-600 mt-1">Starts: {formatDate(nextScheduledRotation.start_date)}</p>
-                    <p className="text-sm text-gray-600 mt-1">Status: Pending confirmation</p>
+                ) : nextAssignmentPreview.status === 'rotation-complete' ? (
+                  <div className="text-center py-4">
+                    <p className="font-medium text-green-700">Rotation Complete</p>
+                    <p className="text-xs text-gray-500 mt-1">All units have been completed.</p>
+                  </div>
+                ) : nextAssignmentPreview.status === 'pending' ? (
+                  <div className="text-center py-4">
+                    <p className="font-medium text-amber-700">Pending Assignment</p>
+                    <p className="text-xs text-gray-500 mt-1">No eligible unit available for preview.</p>
                   </div>
                 ) : (
                   <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
-                    <p className="text-sm text-blue-700 font-medium">Upcoming Scheduled Rotation</p>
-                    <p className="text-lg font-semibold text-gray-900 mt-1">{nextScheduledRotation.unit_name || nextScheduledRotation.unit?.name || 'Unknown Unit'}</p>
-                    <p className="text-sm text-gray-600 mt-1">Starts: {formatDate(nextScheduledRotation.start_date)}</p>
-                    <p className="text-sm text-gray-600 mt-1">Ends: {formatDate(nextScheduledRotation.end_date)}</p>
+                    <p className="text-sm text-blue-700 font-medium">Next Assignment (in &lt;=5 days)</p>
+                    <p className="text-lg font-semibold text-gray-900 mt-1">{nextAssignmentPreview?.unit?.name || 'Pending Assignment'}</p>
+                    <p className="text-sm text-gray-600 mt-1">Starts: {nextAssignmentPreview?.startsOnLabel || 'TBD'}</p>
                   </div>
                 )}
               </CardContent>

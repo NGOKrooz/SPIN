@@ -52,7 +52,7 @@ export default function Units() {
 
   const { data: units, isLoading, isError, error } = useQuery({
     queryKey: ['units'],
-    queryFn: api.getUnits,
+    queryFn: () => api.getUnits(),
   });
 
   const getUnitInterns = React.useCallback((unit) => {

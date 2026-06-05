@@ -22,7 +22,6 @@ const {
   getUnitOccupancy,
   DEFAULT_CAPACITY,
 } = require('../services/dynamicAssignmentService');
-const { cleanupInvalidUpcomingRotations } = require('../services/rotationCleanupService');
 const { updateBatchStats } = require('./dashboard');
 
 const router = express.Router();
@@ -329,15 +328,17 @@ const syncInternRotationStates = async (internId) => {
     const startDate = startOfDay(rotation.startDate);
     const endDate = startOfDay(rotation.endDate);
 
-    let nextStatus = rotation.status;
-    if (rotation.status === 'awaiting_confirmation') {
-      nextStatus = 'awaiting_confirmation';
-    } else if (activeRotationId && rotation._id.toString() === activeRotationId) {
+    let nextStatus = String(rotation.status || '').trim().toLowerCase();
+    if (activeRotationId && rotation._id.toString() === activeRotationId) {
       nextStatus = 'active';
+    } else if (nextStatus === 'awaiting_confirmation') {
+      nextStatus = 'awaiting_confirmation';
     } else if (startDate > now) {
       nextStatus = 'upcoming';
     } else if (endDate < now) {
       nextStatus = 'completed';
+    } else {
+      nextStatus = 'active';
     }
 
     if (rotation.status !== nextStatus) {
@@ -355,14 +356,11 @@ const syncInternRotationStates = async (internId) => {
 
   const current = rotations.find((rotation) => rotation._id.toString() === activeRotationId) || null;
   const upcoming = rotations.filter((rotation) => rotation.status === 'upcoming');
-  const hasFutureRotation = rotations.some((rotation) => ['upcoming', 'awaiting_confirmation'].includes(rotation.status));
   const completed = rotations.filter((rotation) => rotation.status === 'completed');
 
   intern.currentUnit = current?.unit || null;
   if (current) {
     intern.status = Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active';
-  } else if (hasFutureRotation) {
-    intern.status = 'pending';
   } else {
     intern.status = 'completed';
   }
@@ -385,7 +383,7 @@ const mapInternWithUnits = (internDoc, units) => {
     })
     : [];
   const activeRotation = rotations.find((rotation) => rotation?.status === 'active') || null;
-  const upcomingRotations = rotations.filter((rotation) => ['upcoming', 'awaiting_confirmation'].includes(rotation?.status));
+  const upcomingRotations = rotations.filter((rotation) => rotation?.status === 'upcoming');
   const currentUnitId = (
     intern.currentUnit?._id?.toString()
     || activeRotation?.unit?._id?.toString?.()
@@ -588,6 +586,66 @@ router.get('/:id/schedule', async (req, res) => {
   } catch (err) {
     console.error('Error fetching intern schedule:', err);
     res.status(500).json({ error: 'Failed to fetch intern schedule' });
+  }
+});
+
+// GET /api/interns/:id/movement-preview - Backend movement preview for confirmation flows
+router.get('/:id/movement-preview', async (req, res) => {
+  try {
+    await syncInternRotationStates(req.params.id);
+
+    const internDoc = await Intern.findById(req.params.id).populate('currentUnit').exec();
+    if (!internDoc) return res.status(404).json({ error: 'Intern not found' });
+
+    const currentRotation = await Rotation.findOne({ intern: internDoc._id, status: 'active' })
+      .populate('unit')
+      .sort({ startDate: 1 })
+      .exec();
+
+    const nextRotation = await Rotation.findOne({
+      intern: internDoc._id,
+      status: { $in: ['awaiting_confirmation', 'upcoming'] },
+    })
+      .populate('unit')
+      .sort({ startDate: 1 })
+      .exec();
+
+    if (!nextRotation) {
+      return res.status(404).json({ error: 'No next rotation available' });
+    }
+
+    res.json({
+      currentUnit: currentRotation?.unit?.name || internDoc.currentUnit?.name || 'Not started',
+      nextUnit: nextRotation.unit?.name || 'Unassigned',
+      nextRotationId: nextRotation._id.toString(),
+      nextStatus: nextRotation.status,
+    });
+  } catch (err) {
+    console.error('Error fetching movement preview:', err);
+    res.status(500).json({ error: 'Failed to fetch movement preview' });
+  }
+});
+
+// GET /api/interns/:id/eligible-reassign-units - Backend-validated eligible units for reassigning next rotation
+router.get('/:id/eligible-reassign-units', async (req, res) => {
+  try {
+    await syncInternRotationStates(req.params.id);
+
+    const internDoc = await Intern.findById(req.params.id).exec();
+    if (!internDoc) return res.status(404).json({ error: 'Intern not found' });
+
+    const currentRotation = await Rotation.findOne({ intern: internDoc._id, status: 'active' })
+      .populate('unit')
+      .sort({ startDate: 1 })
+      .exec();
+
+    const currentUnitId = currentRotation?.unit?._id?.toString?.() || internDoc.currentUnit?.toString?.() || null;
+    const eligibleUnits = await getEligibleUnits(req.params.id, currentUnitId);
+
+    res.json({ eligibleUnits });
+  } catch (err) {
+    console.error('Error fetching eligible reassign units:', err);
+    res.status(500).json({ error: 'Failed to fetch eligible reassign units' });
   }
 });
 
@@ -844,8 +902,9 @@ router.post('/:id/reassign', async (req, res) => {
     current.status = 'active';
     await current.save();
 
-    // Preserve valid future assignments and only remove invalid or duplicate upcoming rotations.
-    await cleanupInvalidUpcomingRotations(intern._id, 'interns-reassign');
+    // Delete all pre-generated upcoming rotations (there should be none in the new system,
+    // but clean up any legacy records that may exist)
+    await Rotation.deleteMany({ intern: intern._id, status: 'upcoming' }).exec();
 
     const rotationHistory = await Rotation.find({ intern: intern._id })
       .sort({ startDate: 1, createdAt: 1 })

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { X, RotateCcw, CheckCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -17,70 +17,21 @@ export default function ReassignNextModal({ confirmation, onClose, onSuccess }) 
   const [selectedUnitId, setSelectedUnitId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { data: units, isLoading: unitsLoading } = useQuery({
-    queryKey: ['units'],
-    queryFn: api.getUnits,
+  const eligibleUnitsQuery = useQuery({
+    queryKey: ['eligibleReassignUnits', confirmation?.internId],
+    queryFn: () => api.getEligibleReassignUnits(confirmation.internId),
+    enabled: Boolean(confirmation?.internId),
   });
 
-  // PHASE 3: Show only valid units for reassignment
-  // Exclude: current unit, completed units
-  // Only show units intern has not rotated through
-  const availableUnits = useMemo(() => {
-    if (!units) return [];
+  const previewQuery = useQuery({
+    queryKey: ['movementPreview', confirmation?.internId],
+    queryFn: () => api.getMovementPreview(confirmation.internId),
+    enabled: Boolean(confirmation?.internId),
+  });
 
-    console.log(`[PHASE 3] 📋 Building available units for reassignment`);
-    console.log(`[PHASE 3]    Current unit ID: ${confirmation.currentUnitId}`);
-    console.log(`[PHASE 3]    Next unit ID (will be replaced): ${confirmation.nextUnitId}`);
-    console.log(`[PHASE 3]    Total units available: ${units.length}`);
-
-    const currentUnitId = getUnitId(confirmation.currentUnitId)
-      || getUnitId(confirmation.activeAssignment?.unit)
-      || getUnitId(confirmation.activeAssignment?.unitId)
-      || getUnitId(confirmation.activeAssignment?.unit_id)
-      || getUnitId(confirmation.intern?.currentUnit);
-
-    const completedUnitIds = new Set();
-    const completedSources = [
-      ...(confirmation.intern?.rotations || []),
-      ...(confirmation.intern?.completedUnits || []),
-    ];
-
-    completedSources.forEach((assignment) => {
-      if (assignment?.status && assignment.status !== 'completed') return;
-      const unitId = getUnitId(assignment?.unit)
-        || getUnitId(assignment?.unitId)
-        || getUnitId(assignment?.unit_id);
-      if (unitId) completedUnitIds.add(unitId);
-    });
-
-    // Filter units: exclude current unit and units already completed by this intern.
-    const filtered = units.filter(unit => {
-      const unitId = String(unit._id || unit.id || '');
-      const isCurrentUnit = unitId === currentUnitId;
-      const isCompletedUnit = completedUnitIds.has(unitId);
-      
-      if (isCurrentUnit) {
-        console.log(`[PHASE 3]    ❌ Excluding current unit: ${unit.name} (${unitId})`);
-        return false;
-      }
-
-      if (isCompletedUnit) {
-        console.log(`[PHASE 3]    ❌ Excluding completed unit: ${unit.name} (${unitId})`);
-        return false;
-      }
-      
-      console.log(`[PHASE 3]    ✅ Including unit: ${unit.name} (${unitId})`);
-      return true;
-    });
-
-    console.log(`[PHASE 3] 🎯 Available units for reassignment: ${filtered.length}`);
-    return filtered;
-  }, [units, confirmation]);
-
-  const selectedUnit = useMemo(
-    () => availableUnits.find((unit) => String(unit._id || unit.id) === String(selectedUnitId)) || null,
-    [availableUnits, selectedUnitId]
-  );
+  const availableUnits = eligibleUnitsQuery.data?.data?.eligibleUnits || [];
+  const selectedUnit = availableUnits.find((unit) => String(unit._id || unit.id) === String(selectedUnitId)) || null;
+  const nextUnitLabel = previewQuery.data?.data?.nextUnit || 'Loading next unit...';
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -97,28 +48,18 @@ export default function ReassignNextModal({ confirmation, onClose, onSuccess }) 
 
     try {
       setIsSubmitting(true);
-      
-      console.log(`[PHASE 3] 🔄 Submitting reassignment`);
-      console.log(`[PHASE 3]    Intern ID: ${confirmation.internId}`);
-      console.log(`[PHASE 3]    From unit: ${confirmation.nextUnit}`);
-      console.log(`[PHASE 3]    To unit: ${selectedUnit.name}`);
-      console.log(`[PHASE 3]    New unit ID: ${selectedUnitId}`);
-      
       const result = await api.reassignNext(confirmation.internId, selectedUnitId);
-      
-      console.log(`[PHASE 3] ✅ Reassignment API response:`, result);
-      
       onSuccess(result);
       onClose();
     } catch (error) {
-      console.error('[PHASE 3] ❌ Reassignment failed:', error);
+      console.error('Reassignment failed:', error);
       alert(`Failed to reassign: ${error.message || 'Unknown error'}`);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const isLoading = unitsLoading || isSubmitting;
+  const isLoading = eligibleUnitsQuery.isLoading || previewQuery.isLoading || isSubmitting;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -130,7 +71,7 @@ export default function ReassignNextModal({ confirmation, onClose, onSuccess }) 
               <span>Reassign Next Unit</span>
             </CardTitle>
             <CardDescription>
-              Change {confirmation.internName}'s upcoming unit from {confirmation.nextUnit}
+              Change {confirmation.internName}'s upcoming unit from {nextUnitLabel}
             </CardDescription>
           </div>
           <Button variant="ghost" size="sm" onClick={onClose}>
@@ -154,8 +95,11 @@ export default function ReassignNextModal({ confirmation, onClose, onSuccess }) 
                   ))}
                 </SelectContent>
               </Select>
+              {eligibleUnitsQuery.isError && (
+                <p className="text-sm text-red-600">Unable to load eligible units. Refresh and try again.</p>
+              )}
               {availableUnits.length === 0 && !isLoading && (
-                <p className="text-sm text-gray-500">No available units for reassignment</p>
+                <p className="text-sm text-gray-500">No available units for reassignment.</p>
               )}
             </div>
 

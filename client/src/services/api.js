@@ -104,6 +104,8 @@ export const rotationsAPI = {
   generate: (startDate) => http.post('/rotations/generate', { start_date: startDate }),
   fixEndDates: () => http.post('/rotations/fix-end-dates'),
   autoAdvance: () => http.post('/rotations/auto-advance'),
+  acceptMovement: (internId) => http.post(`/rotations/${internId}/accept-movement`),
+  reassignNext: (internId, newUnitId) => http.post(`/rotations/${internId}/reassign-next`, { newUnitId }),
 };
 
 // Auto-advance API for specific intern
@@ -170,6 +172,12 @@ export const api = {
   deleteRotation: (id) => rotationsAPI.delete(id),
   generateRotations: (startDate) => rotationsAPI.generate(startDate),
   autoAdvanceRotations: () => rotationsAPI.autoAdvance(),
+
+  // Movement/Confirmation workflow
+  getMovementPreview: (internId) => http.get(`/interns/${internId}/movement-preview`),
+  getEligibleReassignUnits: (internId) => http.get(`/interns/${internId}/eligible-reassign-units`),
+  acceptMovement: (internId) => http.post(`/rotations/${internId}/accept-movement`),
+  reassignNext: (internId, selectedUnitId) => http.post(`/rotations/${internId}/reassign-next`, { newUnitId: selectedUnitId }),
 
   // Activity
   getRecentActivities: (limit) => activityAPI.getRecent(limit),

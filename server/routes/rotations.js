@@ -208,7 +208,10 @@ router.post('/:internId/reassign-next', async (req, res) => {
     res.json({
       success: true,
       message: `Next unit reassigned for ${result.internName}`,
-      data: result
+      data: {
+        ...result,
+        updatedRotation: result.updatedRotation,
+      },
     });
   } catch (err) {
     console.error('Error reassigning next unit:', err);

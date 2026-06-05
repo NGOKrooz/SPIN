@@ -8,7 +8,8 @@ import {
   Settings,
   Stethoscope,
   MessageCircle,
-  X
+  X,
+  RotateCcw,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Button } from './ui/button';
@@ -17,6 +18,7 @@ const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Interns', href: '/interns', icon: Users },
   { name: 'Units', href: '/units', icon: Building2 },
+  { name: 'Rotations', href: '/rotations', icon: RotateCcw },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 

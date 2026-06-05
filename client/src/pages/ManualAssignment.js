@@ -24,12 +24,12 @@ export default function ManualAssignment() {
 
   const { data: interns, isLoading: internsLoading } = useQuery({
     queryKey: ['interns'],
-    queryFn: api.getInterns,
+    queryFn: () => api.getInterns(),
   });
 
   const { data: units, isLoading: unitsLoading } = useQuery({
     queryKey: ['units'],
-    queryFn: api.getUnits,
+    queryFn: () => api.getUnits(),
   });
 
   const { data: rotations, isLoading: rotationsLoading } = useQuery({

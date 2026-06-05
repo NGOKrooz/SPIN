@@ -5,18 +5,11 @@ const ActivityLogSchema = new mongoose.Schema({
   entityId: { type: String, default: null },
   metadata: { type: mongoose.Schema.Types.Mixed, default: null },
   action: { type: String, required: true },
-  action_type: { type: String, default: null },
   details: { type: mongoose.Schema.Types.Mixed, default: null },
-  message: { type: String, required: true, alias: 'description' },
+  message: { type: String, required: true },
   intern: { type: mongoose.Schema.Types.ObjectId, ref: 'Intern' },
   timestamp: { type: Date, default: Date.now },
   createdAt: { type: Date, default: Date.now }
-});
-
-ActivityLogSchema.pre('save', function () {
-  if (this.action) {
-    this.action_type = this.action;
-  }
 });
 
 module.exports = mongoose.model('ActivityLog', ActivityLogSchema);

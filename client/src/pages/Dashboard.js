@@ -8,28 +8,18 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { api } from '../services/api';
 import RecentUpdates from '../components/RecentUpdates';
-import { PREDICTIVE_WINDOW_DAYS } from '../lib/predictivePlanning';
+import MovementQueueBoard from '../components/MovementQueueBoard';
 
 export default function Dashboard() {
   const { data: interns, isLoading: internsLoading } = useQuery({
     queryKey: ['interns'],
-    queryFn: api.getInterns,
+    queryFn: () => api.getInterns(),
   });
 
   const { data: units, isLoading: unitsLoading } = useQuery({
     queryKey: ['units'],
-    queryFn: api.getUnits,
+    queryFn: () => api.getUnits(),
   });
-
-  const { data: upcomingRotations, isLoading: upcomingLoading } = useQuery({
-    queryKey: ['upcoming-rotations'],
-    queryFn: api.getUpcomingRotations,
-    staleTime: 60000,
-  });
-
-  const today = new Date();
-  const windowEnd = new Date(today);
-  windowEnd.setDate(windowEnd.getDate() + PREDICTIVE_WINDOW_DAYS);
 
   const todayLabel = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
@@ -40,7 +30,7 @@ export default function Dashboard() {
 
   // removed unused systemInfo
 
-  if (internsLoading || unitsLoading || upcomingLoading) {
+  if (internsLoading || unitsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -53,20 +43,6 @@ export default function Dashboard() {
 
   const criticalUnits = units?.filter(unit => unit?.status === 'critical') || [];
   const warningUnits = units?.filter(unit => unit?.status === 'warning') || [];
-  const upcomingMovements = (upcomingRotations || [])
-    .map((rotation) => {
-      const moveDate = new Date(rotation.startDate || rotation.start_date);
-      return {
-        internId: rotation.intern?._id?.toString?.() || rotation.internId?._id?.toString?.() || null,
-        internName: rotation.intern?.name || rotation.internName || 'Unnamed Intern',
-        fromUnit: rotation.intern?.currentUnit?.name || 'Current Unit',
-        toUnit: rotation.unit?.name || rotation.unit_name || 'Unknown Unit',
-        moveDate,
-        moveDateLabel: moveDate && !Number.isNaN(moveDate.getTime()) ? moveDate.toLocaleDateString('en-US') : 'TBD',
-      };
-    })
-    .filter((movement) => movement.moveDate && movement.moveDate >= today && movement.moveDate <= windowEnd)
-    .sort((left, right) => left.moveDate.getTime() - right.moveDate.getTime());
 
   const stats = [
     {
@@ -128,40 +104,7 @@ export default function Dashboard() {
       <div className="space-y-6">
         <RecentUpdates />
 
-        <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
-          <CardHeader>
-            <CardTitle>Upcoming Movements (Next 5 Days)</CardTitle>
-            <CardDescription>Scheduled upcoming rotations in the next 5 days</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {upcomingMovements.length === 0 ? (
-              <div className="text-sm text-gray-500">No movements expected in the next 5 days.</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-gray-500">
-                      <th className="py-2 pr-4">Intern</th>
-                      <th className="py-2 pr-4">From</th>
-                      <th className="py-2 pr-4">To</th>
-                      <th className="py-2">Move Date</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {upcomingMovements.map((movement) => (
-                      <tr key={`${movement.internId || movement.internName}-${movement.moveDateLabel}`} className="border-b last:border-b-0">
-                        <td className="py-2 pr-4 font-medium text-gray-900">{movement.internName}</td>
-                        <td className="py-2 pr-4 text-gray-700">{movement.fromUnit}</td>
-                        <td className="py-2 pr-4 text-gray-700">{movement.toUnit}</td>
-                        <td className="py-2 text-gray-600">{movement.moveDateLabel}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <MovementQueueBoard />
 
         <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
           <CardHeader>
@@ -207,7 +150,6 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
-      {/* Removed Recent Rotations per requirements */}
     </div>
   );
 }

@@ -1,9 +1,21 @@
 import React from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { api } from '../services/api';
 
 export default function ConfirmMovementModal({ movement, isPending = false, onClose, onConfirm }) {
+  const previewQuery = useQuery({
+    queryKey: ['movementPreview', movement?.internId],
+    queryFn: () => api.getMovementPreview(movement.internId),
+    enabled: Boolean(movement?.internId),
+  });
+
   if (!movement) return null;
+
   const delayedDays = movement.overdueDays ?? Math.max(0, -Number(movement.remainingDays || 0));
+  const previewData = previewQuery.data?.data;
+  const nextUnitLabel = previewData?.nextUnit || 'Loading next unit...';
+  const canConfirm = !previewQuery.isLoading && !!previewData?.nextUnit;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -29,8 +41,13 @@ export default function ConfirmMovementModal({ movement, isPending = false, onCl
             </div>
             <div>
               <div className="text-sm text-gray-500">To</div>
-              <div className="text-lg font-semibold text-gray-900">{movement.nextUnit || 'Next unit not assigned'}</div>
+              <div className="text-lg font-semibold text-gray-900">{previewQuery.isLoading ? 'Loading...' : nextUnitLabel}</div>
             </div>
+            {previewQuery.isError && (
+              <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
+                Unable to load movement preview. Please refresh and try again.
+              </div>
+            )}
             <div>
               <div className="text-sm text-gray-500">Delayed By</div>
               <div className="text-lg font-semibold text-gray-900">{delayedDays} day{delayedDays === 1 ? '' : 's'}</div>
@@ -46,8 +63,8 @@ export default function ConfirmMovementModal({ movement, isPending = false, onCl
               <button
                 type="button"
                 className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                onClick={() => onConfirm?.(movement)}
-                disabled={!movement.isOverdue || isPending}
+                onClick={() => onConfirm?.(movement.internId)}
+                disabled={!canConfirm || isPending}
               >
                 Confirm Move
               </button>
