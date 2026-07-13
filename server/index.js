@@ -3,6 +3,7 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 require('dotenv').config();
+const { getAllowedOrigins, buildCorsOptions } = require('./config/cors');
 
 // ═══════════════════════════════════════════════════════════
 // Production Environment Validation (Critical)
@@ -45,32 +46,10 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware - CORS configuration
-const allowedOrigins = [
-  "https://spin-interns.vercel.app",
-  "http://localhost:3000",
-  "http://localhost:3002",
-  "http://localhost:5000",
-  "http://127.0.0.1:3000",
-  "http://127.0.0.1:3002",
-  "http://127.0.0.1:5000"
-];
+const allowedOrigins = getAllowedOrigins();
+const corsOptions = buildCorsOptions(allowedOrigins);
 
-const corsOptions = {
-  origin: (origin, callback) => {
-    // Allow requests with no origin (e.g., curl requests)
-    if (!origin || allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-
-    console.warn(`Blocked CORS origin: ${origin}`);
-    return callback(new Error('CORS not allowed'));
-  },
-  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-  allowedHeaders: ["Origin", "X-Requested-With", "Content-Type", "Accept", "Authorization"],
-  credentials: true,
-  optionsSuccessStatus: 204,
-  preflightContinue: false,
-};
+console.log(`🌐 CORS allowed origins: ${allowedOrigins.join(', ')}`);
 
 app.use(cors(corsOptions));
 
@@ -98,6 +77,12 @@ app.use((req, res, next) => {
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'space3key';
 
+if (process.env.ADMIN_PASSWORD) {
+  console.log('🔐 Admin auth password is configured from environment variables.');
+} else {
+  console.warn('⚠️ Admin auth is using the fallback password because ADMIN_PASSWORD is not set.');
+}
+
 // Health check endpoint - define early so it's always available
 app.get('/api/health', (req, res) => {
   res.json({ 
@@ -105,31 +90,6 @@ app.get('/api/health', (req, res) => {
     message: 'SPIN API is running',
     timestamp: new Date().toISOString()
   });
-});
-
-// Test DB endpoint
-app.get('/test-db', async (req, res) => {
-  try {
-    const mongoose = require('mongoose');
-    const db = mongoose.connection.db;
-
-    if (!db) {
-      return res.status(500).json({ error: 'Database not connected' });
-    }
-
-    const collections = await db.listCollections().toArray();
-    if (collections.length === 0) {
-      return res.json({ message: 'No collections found', collections: [] });
-    }
-
-    const collectionName = collections[0].name;
-    const collection = db.collection(collectionName);
-    const records = await collection.find({}).limit(10).toArray();
-    res.json({ collection: collectionName, records });
-  } catch (error) {
-    console.error('Test DB error:', error);
-    res.status(500).json({ error: 'Database test failed', details: error.message });
-  }
 });
 
 // Auth helper: simple admin password verification
@@ -160,7 +120,6 @@ try {
   app.use('/api/settings', require('./routes/settings').router);
   app.use('/api/config', require('./routes/config'));
   app.use('/api/dashboard', require('./routes/dashboard'));
-  app.use('/api/debug', require('./routes/debug'));
   console.log('✅ All routes loaded successfully');
 } catch (routeError) {
   console.error('❌ Error loading routes:', routeError);
@@ -291,7 +250,6 @@ async function startServer() {
     const server = app.listen(PORT, '0.0.0.0', () => {
       console.log(`🚀 SPIN Server running on port ${PORT}`);
       console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
-      console.log(`🧪 Test DB: http://localhost:${PORT}/test-db`);
     });
     
     // Handle server errors
