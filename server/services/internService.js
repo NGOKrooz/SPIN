@@ -227,7 +227,7 @@ async function ensureInternStatusIsCorrect(internId) {
   const refreshedIntern = await Intern.findById(intern._id).exec();
   if (!refreshedIntern) return;
 
-  const allRotations = await Rotation.find({ intern: refreshedIntern._id }).sort({ startDate: -1, createdAt: -1 }).exec();
+  const allRotations = await Rotation.find({ intern: refreshedIntern._id }).sort({ startDate: 1, createdAt: 1 }).exec();
   const { resolveCurrentAssignment } = require('./assignmentUtils');
   const currentNorm = resolveCurrentAssignment({ rotations: allRotations });
   const activeRotation = currentNorm ? allRotations.find((r) => String(r._id) === String(currentNorm._id)) : null;
@@ -236,11 +236,24 @@ async function ensureInternStatusIsCorrect(internId) {
     const status = String(rotation?.status || '').trim().toLowerCase();
     return ['active', 'upcoming', 'awaiting_confirmation'].includes(status);
   });
+  const activeIndex = activeRotation ? allRotations.findIndex((rotation) => String(rotation._id) === String(activeRotation._id)) : -1;
+  const hasSuccessorRotation = activeIndex >= 0 && allRotations.slice(activeIndex + 1).some((rotation) => rotation?.startDate);
+  const isPendingConfirmation = Boolean(
+    activeRotation
+    && activeRotation.workflowState === 'pending_confirmation'
+    && hasSuccessorRotation
+  ) || Boolean(
+    activeRotation
+    && activeRotation.endDate
+    && startOfDay(activeRotation.endDate) < startOfDay(new Date())
+    && hasSuccessorRotation
+  ) || String(refreshedIntern.status || '').trim().toLowerCase() === 'pending';
 
   let newStatus = 'completed';
   if (hasPendingOrUpcomingAssignment) {
     const extensionDays = Number(refreshedIntern.extensionDays || 0);
-    newStatus = extensionDays > 0 ? 'extended' : 'active';
+    const existingStatus = String(refreshedIntern.status || '').trim().toLowerCase();
+    newStatus = existingStatus === 'pending' || isPendingConfirmation ? 'pending' : (extensionDays > 0 ? 'extended' : 'active');
   } else {
     refreshedIntern.extensionDays = 0;
   }

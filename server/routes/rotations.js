@@ -215,7 +215,9 @@ router.post('/:internId/reassign-next', async (req, res) => {
     });
   } catch (err) {
     console.error('Error reassigning next unit:', err);
-    res.status(500).json({ error: err.message || 'Failed to reassign next unit' });
+    const message = err.message || 'Failed to reassign next unit';
+    const statusCode = message.includes('not eligible') || message.includes('No next rotation') ? 400 : 500;
+    res.status(statusCode).json({ error: message });
   }
 });
 

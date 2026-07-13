@@ -109,13 +109,17 @@ async function createManualRotation(data) {
     endDate.setDate(endDate.getDate() + duration);
   }
 
+  const today = startOfDay(new Date());
+  const rotationStart = startOfDay(startDate);
+  const status = rotationStart > today ? 'upcoming' : 'active';
+
   return await Rotation.create({
     intern: internId,
     unit: unitId,
     startDate,
     duration,
     endDate,
-    status: 'active'
+    status,
   });
 }
 
@@ -176,6 +180,7 @@ async function acceptMovement(internId) {
   await nextRotation.save();
 
   intern.currentUnit = nextRotation.unit?._id || nextRotation.unit;
+  intern.status = Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active';
   await intern.save();
 
   return {
@@ -216,6 +221,10 @@ async function reassignNextUnit(internId, newUnitId) {
   const previousUnitName = nextRotation.unit?.name || 'Unknown unit';
   nextRotation.unit = newUnitId;
   const updatedRotation = await nextRotation.save();
+
+  intern.currentUnit = currentRotation?.unit?._id || intern.currentUnit || null;
+  intern.status = Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active';
+  await intern.save();
 
   return {
     internId: intern._id.toString(),

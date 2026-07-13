@@ -355,12 +355,21 @@ const syncInternRotationStates = async (internId) => {
   }
 
   const current = rotations.find((rotation) => rotation._id.toString() === activeRotationId) || null;
+  const currentIndex = current ? rotations.findIndex((rotation) => rotation._id.toString() === current._id.toString()) : -1;
+  const hasSuccessorRotation = currentIndex >= 0 && rotations.slice(currentIndex + 1).some((rotation) => rotation?.startDate);
   const upcoming = rotations.filter((rotation) => rotation.status === 'upcoming');
+  const awaitingConfirmation = rotations.filter((rotation) => rotation.status === 'awaiting_confirmation');
   const completed = rotations.filter((rotation) => rotation.status === 'completed');
+  const isPendingWorkflow = Boolean(
+    current
+    && current.endDate
+    && startOfDay(current.endDate) < now
+    && (hasSuccessorRotation || upcoming.length > 0 || awaitingConfirmation.length > 0)
+  );
 
   intern.currentUnit = current?.unit || null;
   if (current) {
-    intern.status = Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active';
+    intern.status = isPendingWorkflow ? 'pending' : (Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active');
   } else {
     intern.status = 'completed';
   }
@@ -1027,8 +1036,23 @@ router.post('/:id/extend', async (req, res) => {
       // Dynamic system: no upcoming rotations to rebuild. Extension only affects
       // this active rotation's endDate, which was already saved above.
     }
+
+    const activeIndex = allRotations.findIndex((row) => String(row._id) === String(rotation._id));
+    const hasSuccessorRotation = activeIndex >= 0 && allRotations.slice(activeIndex + 1).some((candidate) => candidate?.startDate);
+    const hasPendingWorkflow = Boolean(
+      rotation
+      && rotation.workflowState === 'pending_confirmation'
+      && hasSuccessorRotation
+    ) || Boolean(
+      rotation
+      && rotation.endDate
+      && startOfDay(rotation.endDate) < startOfDay(new Date())
+      && hasSuccessorRotation
+    ) || String(intern.status || '').trim().toLowerCase() === 'pending';
+
     intern.totalExtensionDays = (intern.totalExtensionDays || 0) + Math.max(days, 0);
-    intern.status = Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active';
+    intern.extensionDays = Number(rotation.extensionDays || 0);
+    intern.status = hasPendingWorkflow ? 'pending' : (Number(intern.extensionDays || 0) > 0 ? 'extended' : 'active');
     await intern.save();
 
     const reasonText = req.body.reason || 'No reason provided';

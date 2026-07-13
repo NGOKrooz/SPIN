@@ -711,26 +711,24 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
         console.warn(`[MOVEMENT BLOCKED]\nsource: refresh\nintern: ${intern._id.toString()}\nreason: automatic transitions disabled`);
         trace('ensureContinuousAssignment:blocking_overdue_with_next', internId, { active: { id: activeRotation._id.toString(), unit: activeRotation.unit?.toString?.() }, nextPlannedRotation: { id: nextPlannedRotation._id.toString(), unit: nextPlannedRotation.unit?.toString?.() } });
         const overdueDays = Math.max(0, Math.floor((today.getTime() - endDate.getTime()) / DAY_IN_MS));
-        if (overdueDays > 0) {
-          const manualExtensionDays = getRotationManualExtensionDays(activeRotation);
-          const autoExtensionDays = getRotationAutoExtensionDays(activeRotation) + overdueDays;
-          activeRotation.manualExtensionDays = manualExtensionDays;
-          activeRotation.autoExtensionDays = autoExtensionDays;
-          activeRotation.extensionDays = manualExtensionDays + autoExtensionDays;
-          activeRotation.duration = Number(activeRotation.duration || 0) + overdueDays;
-          activeRotation.endDate = addDays(endDate, overdueDays);
-          await activeRotation.save();
-          await shiftFutureRotations(intern._id, endDate, overdueDays, [activeRotation._id]);
+        const manualExtensionDays = getRotationManualExtensionDays(activeRotation);
+        const autoExtensionDays = getRotationAutoExtensionDays(activeRotation);
 
-          if (intern) {
-            intern.currentUnit = activeRotation.unit || null;
-            intern.status = 'active';
-            intern.manualExtensionDays = manualExtensionDays;
-            intern.autoExtensionDays = autoExtensionDays;
-            intern.extensionDays = manualExtensionDays + autoExtensionDays;
-            intern.totalExtensionDays = Number(intern.totalExtensionDays || 0) + overdueDays;
-            await intern.save();
+        activeRotation.manualExtensionDays = manualExtensionDays;
+        activeRotation.autoExtensionDays = autoExtensionDays;
+        activeRotation.extensionDays = manualExtensionDays + autoExtensionDays;
+        await activeRotation.save();
+
+        if (intern) {
+          intern.currentUnit = activeRotation.unit || null;
+          intern.status = 'pending';
+          intern.manualExtensionDays = manualExtensionDays;
+          intern.autoExtensionDays = autoExtensionDays;
+          intern.extensionDays = manualExtensionDays + autoExtensionDays;
+          if (overdueDays > 0 && manualExtensionDays === 0 && autoExtensionDays === 0) {
+            intern.totalExtensionDays = Number(intern.totalExtensionDays || 0);
           }
+          await intern.save();
         }
 
         return { rotation: activeRotation, unit: activeRotation.unit, wasReset: false, usedOverflow: false };
