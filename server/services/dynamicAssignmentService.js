@@ -682,20 +682,19 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
   if (activeRotation) {
     const startDate = activeRotation.startDate ? startOfDay(activeRotation.startDate) : null;
     const endDate = activeRotation.endDate ? startOfDay(activeRotation.endDate) : null;
-    const nextPlannedRotation = await Rotation.findOne({
+    // NOTE: was `const` — must be `let` because we may stage and assign it below.
+    let nextPlannedRotation = await Rotation.findOne({
       intern: intern._id,
       status: { $in: ['upcoming', 'awaiting_confirmation'] }
     })
       .sort({ startDate: 1, createdAt: 1 })
       .exec();
 
-    // Trace active and next planned snapshot (nextPlannedRotation is now defined)
     try {
       trace('ensureContinuousAssignment:active_found', internId, { active: { id: activeRotation._id.toString(), unit: activeRotation.unit?.toString?.() || activeRotation.unit }, nextPlannedRotation: nextPlannedRotation ? { id: nextPlannedRotation._id.toString(), unit: nextPlannedRotation.unit?.toString?.() || nextPlannedRotation.unit } : null });
     } catch (err) {
       console.error('[MUTATION_TRACE] trace error in ensureContinuousAssignment', err);
     }
-
 
     if (startDate && today < startDate) {
       activeRotation.status = 'upcoming';
@@ -706,13 +705,56 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
         activeRotation.workflowState = 'pending_confirmation';
         console.log(`[WORKFLOW STATE] intern ${intern._id.toString()}: workflowState set to pending_confirmation (elapsedDays >= plannedDuration)`);
       }
+
+      // --- FIX #1: stage the next rotation if nothing is queued yet ------------
+      // Nothing previously ever created a rotation with status 'awaiting_confirmation',
+      // so this whole workflow was unreachable. We now auto-stage the best eligible
+      // next unit here. This does NOT move the intern anywhere — it only queues a
+      // proposed next unit for HR/operator to Accept or Reassign.
+      if (!nextPlannedRotation) {
+        const currentUnitId = activeRotation.unit?.toString?.() || null;
+        const [allUnits, completedIds] = await Promise.all([
+          Unit.find({}).sort({ order: 1, position: 1, createdAt: 1 }).exec(),
+          getCompletedUnitIds(intern._id),
+        ]);
+        const exclusionIds = new Set(completedIds);
+        if (currentUnitId) exclusionIds.add(currentUnitId);
+
+        const stagedUnit = await selectBestUnit(allUnits, today, exclusionIds);
+
+        if (stagedUnit) {
+          const stagedDuration = getUnitDuration(stagedUnit);
+          const provisionalStart = addDays(endDate, 1);
+          const { endDate: provisionalEnd } = getRotationWindow(provisionalStart, stagedDuration);
+
+          nextPlannedRotation = await Rotation.create({
+            intern: intern._id,
+            unit: stagedUnit._id,
+            startDate: provisionalStart,
+            endDate: provisionalEnd,
+            baseDuration: stagedDuration,
+            duration: stagedDuration,
+            extensionDays: 0,
+            status: 'awaiting_confirmation',
+          });
+
+          console.log(`[STAGE NEXT] intern ${intern._id.toString()}: staged "${stagedUnit.name}" awaiting confirmation`);
+        } else {
+          console.warn(`[STAGE NEXT] intern ${intern._id.toString()}: no eligible unit to stage (all completed or all full)`);
+        }
+      }
+      // --- end FIX #1 -------------------------------------------------------------
+
       // PHASE 4: Preserve overdue active assignments when a next movement is already staged.
       if (nextPlannedRotation) {
         console.warn(`[MOVEMENT BLOCKED]\nsource: refresh\nintern: ${intern._id.toString()}\nreason: automatic transitions disabled`);
         trace('ensureContinuousAssignment:blocking_overdue_with_next', internId, { active: { id: activeRotation._id.toString(), unit: activeRotation.unit?.toString?.() }, nextPlannedRotation: { id: nextPlannedRotation._id.toString(), unit: nextPlannedRotation.unit?.toString?.() } });
         const overdueDays = Math.max(0, Math.floor((today.getTime() - endDate.getTime()) / DAY_IN_MS));
         const manualExtensionDays = getRotationManualExtensionDays(activeRotation);
-        const autoExtensionDays = getRotationAutoExtensionDays(activeRotation);
+        // --- FIX #2: overdueDays was computed but never actually stored anywhere,
+        // so the "25/21 days" style auto-growing counter could never move. Math.max
+        // guards against ever ticking backwards.
+        const autoExtensionDays = Math.max(getRotationAutoExtensionDays(activeRotation), overdueDays);
 
         activeRotation.manualExtensionDays = manualExtensionDays;
         activeRotation.autoExtensionDays = autoExtensionDays;
@@ -734,8 +776,10 @@ async function ensureContinuousAssignment(internId, now = new Date()) {
         return { rotation: activeRotation, unit: activeRotation.unit, wasReset: false, usedOverflow: false };
       }
 
-      // PHASE 4: Do not auto-advance expired active rotations by default.
-      // Keep status as 'active' - admin must explicitly accept to transition
+      // No eligible unit could be staged (e.g. intern has completed every unit).
+      // This is a genuine "internship complete" edge case, not a pending-approval
+      // case. Leaving as 'active' for now — worth deciding separately whether this
+      // should instead flip intern.status to 'completed'.
       await activeRotation.save();
       trace('ensureContinuousAssignment:post_save_active_overdue', internId, { active: { id: activeRotation._id.toString(), unit: activeRotation.unit?.toString?.() }, internCurrentUnit: intern.currentUnit ? intern.currentUnit.toString?.() : intern.currentUnit });
       intern.currentUnit = activeRotation.unit || null;
