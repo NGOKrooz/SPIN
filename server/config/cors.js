@@ -1,7 +1,5 @@
 const defaultOrigins = [
   'https://spin-j3qw.onrender.com', // <-- current production frontend
-  'https://spin.up.railway.app',      // legacy — safe to remove once confirmed unused
-  'https://spin-interns.vercel.app',  // legacy — safe to remove once confirmed unused
   'http://localhost:3000',
   'http://localhost:3002',
   'http://localhost:5000',
