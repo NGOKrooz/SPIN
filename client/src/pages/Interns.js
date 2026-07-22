@@ -61,7 +61,16 @@ export default function Interns() {
   // are valid statuses now. Trust the backend status directly; extension days
   // are shown as a separate "+N days" badge regardless of status.
   const mapWithDerivedStatus = (list) => (list || []).map((i) => {
-    const extensionDays = Number(i.extensionDays ?? i.extension_days) || 0;
+    // FIX (issue 5): the displayed extension count must be the PERMANENT
+    // banked total (accumulated from every previously completed rotation that
+    // sat overdue before being accepted) PLUS whatever the current rotation is
+    // live-accruing right now. Showing only the live per-rotation count meant
+    // this number silently reset to 0/small every time an intern moved to a
+    // new unit, losing all prior overdue history — which this system is
+    // supposed to track strictly.
+    const liveExtensionDays = Number(i.extensionDays ?? i.extension_days) || 0;
+    const bankedExtensionDays = Number(i.totalExtensionDays ?? i.total_extension_days) || 0;
+    const extensionDays = liveExtensionDays + bankedExtensionDays;
     const derived = i.status || 'Active';
 
     return {

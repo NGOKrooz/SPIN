@@ -124,115 +124,116 @@ const calculateInternshipDay = (startDate, todayDate = new Date()) => {
 };
 
 const recalculateInternTimelineFromStartDate = async (intern, newStartDate, todayDate = new Date()) => {
-  const rotations = await Rotation.find({ intern: intern._id })
-    .populate('unit', 'name durationDays duration order position')
+  const allRotations = await Rotation.find({ intern: intern._id })
+    .populate("unit", "name durationDays duration order position")
     .sort({ startDate: 1, createdAt: 1 })
     .exec();
 
-  if (rotations.length === 0) {
+  if (allRotations.length === 0) {
     intern.currentUnit = null;
     await intern.save();
     return;
   }
 
+  // FIX (full rewrite - issues 1/2/4/5 all trace back here): this function
+  // previously walked ALL rotation records, "spending" each one'''s FIXED
+  // PLANNED duration against the total elapsed days since the new start date.
+  // That caused several compounding bugs:
+  //  - It treated a staged '''awaiting_confirmation''' rotation as a normal
+  //    scheduled slot. Push the date far enough and the walk would land on it,
+  //    silently promoting it to active/completed - the exact equivalent of
+  //    clicking Accept with zero confirmation (issue 4).
+  //  - It priced every PAST completed rotation at its fixed planned duration,
+  //    never at how many days the intern actually spent in it (which is more,
+  //    if that rotation sat pending/overdue before being accepted). Any real
+  //    overdue history from earlier units got misattributed as extra elapsed
+  //    days onto whatever the CURRENT rotation happens to be, wildly inflating
+  //    its computed overdue/extension count (issue 2).
+  // This function'''s job is now narrower and safer: adjust ONLY the intern'''s
+  // single real '''active''' rotation'''s dates to match the new start date, anchored
+  // using the TRUE historical duration of prior completed rotations. Any
+  // not-yet-real rotation (upcoming or awaiting_confirmation) is deleted
+  // outright - it will be freshly re-staged, correctly, by
+  // ensureContinuousAssignment right after this function runs, and only
+  // Accept/Reassign may ever promote one.
+  const completedRotations = allRotations.filter((r) => r.status === "completed");
+  const staleRotations = allRotations.filter((r) => r.status !== "completed" && r.status !== "active");
+  const activeRotations = allRotations.filter((r) => r.status === "active");
+
+  if (staleRotations.length > 0) {
+    await Rotation.deleteMany({ _id: { $in: staleRotations.map((r) => r._id) } }).exec();
+  }
+
+  // Defensive: there should only ever be one '''active''' rotation. If more than
+  // one exists (shouldn'''t happen), keep the earliest and delete the rest
+  // rather than guessing which is real.
+  let currentRotation = activeRotations[0] || null;
+  if (activeRotations.length > 1) {
+    await Rotation.deleteMany({ _id: { $in: activeRotations.slice(1).map((r) => r._id) } }).exec();
+  }
+
+  if (!currentRotation) {
+    // No active rotation to anchor to a new start date. Leave completed
+    // history untouched; ensureInternStatusIsCorrect (called right after this
+    // function) will decide what happens next.
+    await intern.save();
+    return;
+  }
+
   const start = normalizeDay(newStartDate);
-  const today = normalizeDay(todayDate);
-  const daysInInternship = calculateInternshipDay(start, today);
 
-  const durations = rotations.map((rotation) => getUnitDuration(rotation.unit));
-
-  let currentIndex = -1;
-  let currentElapsedDays = 0;
-  let remainingDays = daysInInternship;
-
-  for (let index = 0; index < rotations.length; index += 1) {
-    const duration = durations[index];
-    if (remainingDays >= duration) {
-      remainingDays -= duration;
-      continue;
+  // Use each completed rotation'''s TRUE real-world duration (its actual
+  // recorded dates, including any time it sat overdue before being accepted),
+  // not the unit'''s fixed planned duration - keeps the anchor date consistent
+  // with the intern'''s real history instead of under-counting past overdue time.
+  const trueDuration = (rotation) => {
+    const s = normalizeDay(rotation.startDate);
+    const e = normalizeDay(rotation.endDate);
+    if (s && e) {
+      const days = Math.round((e.getTime() - s.getTime()) / DAY_IN_MS) + 1;
+      if (Number.isFinite(days) && days > 0) return days;
     }
+    return getUnitDuration(rotation.unit);
+  };
 
-    currentIndex = index;
-    // Exact-boundary case should move to next unit on Day 1.
-    currentElapsedDays = Math.max(1, remainingDays);
-    break;
-  }
+  const priorCompletedDays = completedRotations
+    .filter((r) => new Date(r.startDate) < new Date(currentRotation.startDate))
+    .reduce((sum, r) => sum + trueDuration(r), 0);
 
-  // FIX: previously, if the new start date pushed elapsed days past the total
-  // duration of every rotation CURRENTLY LOADED for this intern, currentIndex
-  // stayed -1 and this function unconditionally marked the intern (and every
-  // rotation) 'completed'. But this app only ever keeps one rotation loaded at
-  // a time and stages the next one on demand (see dynamicAssignmentService.js)
-  // — running out of loaded rotation records does NOT mean the internship is
-  // actually finished, it just means we've walked past the last one we know
-  // about. Whether the intern has genuinely finished every real unit is
-  // ensureContinuousAssignment's job (it checks the full Unit catalog), which
-  // runs right after this function via ensureInternStatusIsCorrect. So instead
-  // of declaring completion here, fall back to treating the LAST known
-  // rotation as the current (now overdue) one, and let that downstream check
-  // decide pending vs. completed correctly.
-  if (currentIndex === -1 && daysInInternship > 0 && rotations.length > 0) {
-    currentIndex = rotations.length - 1;
-    currentElapsedDays = durations[currentIndex] + Math.max(0, remainingDays);
-  }
+  const duration = getUnitDuration(currentRotation.unit);
+  const newRotationStart = addDays(start, priorCompletedDays);
+  const newRotationEnd = recalculateEndDate(newRotationStart, duration);
 
-  const allCompleted = false;
-  const hasStarted = daysInInternship > 0;
-  let cursor = new Date(start);
+  currentRotation.startDate = newRotationStart;
+  currentRotation.endDate = newRotationEnd;
+  currentRotation.baseDuration = duration;
+  currentRotation.duration = duration;
+  currentRotation.status = "active"; // never anything else here - completion/pending is ensureContinuousAssignment'''s job
+  // FIX (issue 5): only reset the LIVE/current-rotation extension fields.
+  // intern.totalExtensionDays (the permanent banked history from previously
+  // completed rotations) is intentionally left untouched below - it must
+  // persist across the whole internship, not just the current unit.
+  currentRotation.extensionDays = 0;
+  currentRotation.manualExtensionDays = 0;
+  currentRotation.autoExtensionDays = 0;
+  await currentRotation.save();
 
-  for (let index = 0; index < rotations.length; index += 1) {
-    const rotation = rotations[index];
-    const duration = durations[index];
-
-    let rotationStartDate = new Date(cursor);
-    let rotationEndDate = recalculateEndDate(rotationStartDate, duration);
-    let status = 'upcoming';
-
-    if (!hasStarted) {
-      status = 'upcoming';
-    } else if (allCompleted) {
-      status = 'completed';
-    } else if (index < currentIndex) {
-      status = 'completed';
-    } else if (index === currentIndex) {
-      status = 'active';
-      rotationStartDate = addDays(today, -(currentElapsedDays - 1));
-      rotationEndDate = recalculateEndDate(rotationStartDate, duration);
-    } else {
-      status = 'upcoming';
-    }
-
-    rotation.startDate = rotationStartDate;
-    rotation.endDate = rotationEndDate;
-    rotation.baseDuration = duration;
-    rotation.duration = duration;
-    rotation.extensionDays = 0;
-    rotation.status = status;
-    await rotation.save();
-
-    cursor = addDays(rotationEndDate, 1);
-  }
-
-  if (allCompleted) {
-    intern.currentUnit = null;
-    intern.status = 'completed';
-  } else if (currentIndex >= 0) {
-    const activeRotation = rotations[currentIndex];
-    intern.currentUnit = activeRotation.unit?._id || activeRotation.unit;
-    intern.status = 'active';
-  } else {
-    intern.currentUnit = null;
-    intern.status = 'active';
-  }
+  intern.currentUnit = currentRotation.unit?._id || currentRotation.unit;
+  intern.status = "active"; // ensureInternStatusIsCorrect will correct this to '''pending''' if now overdue
+  intern.extensionDays = 0;
+  intern.manualExtensionDays = 0;
+  intern.autoExtensionDays = 0;
+  // intern.totalExtensionDays intentionally NOT reset here - see issue 5 fix.
 
   const rotationHistory = await Rotation.find({ intern: intern._id })
     .sort({ startDate: 1, createdAt: 1 })
-    .select('_id')
+    .select("_id")
     .exec();
   intern.rotationHistory = rotationHistory.map((rotation) => rotation._id);
 
   await intern.save();
 };
+
 
 const toComparableInternValue = (field, value) => {
   if (field === 'startDate') {

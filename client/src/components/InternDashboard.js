@@ -69,23 +69,23 @@ function getTotalDuration(rotation) {
 }
 
 function getCurrentUnitProgressDisplay(rotation, currentTimeValue) {
-  // FIX: this used to recompute endDate as start_date + duration_days, but
-  // duration_days on the schedule payload is the ORIGINAL duration and is never
-  // updated when extension days are added. Once the intern went past that stale
-  // duration (e.g. into day 22 of a 20+2 extended rotation), isCurrentUnit fell
-  // out of range and the whole progress line went blank. We now read the real
-  // start_date/end_date the backend already computed (which DOES reflect
-  // extensions), and derive the display duration from those actual dates.
   const startDate = parseDateValue(rotation?.start_date);
   const endDate = parseDateValue(rotation?.end_date);
   if (!startDate || !endDate) return null;
 
   const now = new Date(currentTimeValue);
-  const isCurrentUnit = now >= startDate && now <= endDate;
+  // FIX (issue 1): previously required `now <= endDate`, so the moment a
+  // rotation went overdue/pending, this returned null and the whole progress
+  // line disappeared instead of continuing to grow (e.g. "35 / 30 days").
+  const isCurrentUnit = now >= startDate;
   if (!isCurrentUnit) return null;
 
   const totalDuration = calculateDaysBetween(startDate, endDate) + 1;
-  const elapsedDays = calculateElapsedDays(rotation.start_date, totalDuration, currentTimeValue);
+  // FIX (issue 1, continued): calculateElapsedDays clamps to totalDuration by
+  // design (correct for other call sites) — compute unclamped here so this
+  // count is allowed to exceed the planned total once overdue.
+  const rawElapsedDays = Math.floor((now.getTime() - startDate.getTime()) / DAY_IN_MS) + 1;
+  const elapsedDays = Math.max(0, rawElapsedDays);
   return `${elapsedDays} / ${totalDuration} days`;
 }
 
@@ -129,7 +129,12 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   }, [internDetails]);
 
   const currentIntern = internState || intern;
-  const extensionDays = Number(currentIntern?.extension_days) || 0;
+  // FIX (issue 5): same as the Interns list — this must show the PERMANENT
+  // banked total from previously completed rotations plus whatever the
+  // current rotation is live-accruing, not just the live count alone (which
+  // resets to 0 every time the intern moves to a new unit).
+  const extensionDays = (Number(currentIntern?.extension_days) || 0)
+    + (Number(currentIntern?.total_extension_days ?? currentIntern?.totalExtensionDays) || 0);
   // FIX (status model): 'Extended' removed — only active, pending, completed
   // exist now. Extension days are shown separately as a number, not a status.
   const derivedStatus = React.useMemo(() => {

@@ -189,14 +189,39 @@ async function acceptMovement(internId) {
   await nextRotation.save();
 
   activeRotation.status = 'completed';
-  activeRotation.actualEndDate = startOfDay(new Date());
+  // FIX (issue 3): actualEndDate was being set but nothing ever displayed it —
+  // the "Completed Rotations" view reads start_date/end_date, so a rotation
+  // that sat overdue for extra days before being accepted still showed only
+  // its ORIGINAL planned duration (e.g. "30 days completed" instead of the
+  // true 35). endDate now gets set to today directly, so the completed
+  // record reflects the real full duration including the overdue period.
+  const trueCompletionDate = startOfDay(new Date());
+  activeRotation.actualEndDate = trueCompletionDate;
+  activeRotation.endDate = trueCompletionDate;
   await activeRotation.save();
+
+  // FIX (issue 5): extension days must persist as a running total across the
+  // WHOLE internship, not reset to 0 every time a unit is accepted. Before
+  // this fix, only the per-rotation extensionDays existed, which got zeroed
+  // out on every new rotation — so any overdue history from a previous unit
+  // was completely lost the moment the intern moved on. intern.totalExtensionDays
+  // is now a permanent bank: whatever this rotation's live overdue count was
+  // right before being accepted gets added to it here, forever. The new
+  // rotation's own live counters start fresh at 0, but the banked total is
+  // never touched by anything except this line.
+  const finalOverdueDaysForThisRotation = Number(activeRotation.extensionDays || 0);
+  intern.totalExtensionDays = Number(intern.totalExtensionDays || 0) + finalOverdueDaysForThisRotation;
 
   intern.currentUnit = nextRotation.unit?._id || nextRotation.unit;
   // FIX (status model): 'extended' removed — only active, pending, completed
   // exist now. Extension days remain tracked as a number on the record; they
   // just no longer produce their own status word.
   intern.status = 'active';
+  // Fresh rotation, fresh live counters — the permanent bank above is what
+  // carries the history forward, not these.
+  intern.extensionDays = 0;
+  intern.manualExtensionDays = 0;
+  intern.autoExtensionDays = 0;
   await intern.save();
 
   return {
@@ -269,5 +294,3 @@ module.exports = {
   acceptMovement,
   reassignNextUnit,
 };
-
-
