@@ -101,7 +101,6 @@ const buildMovementQueue = (interns = []) => {
       overdueDays,
       status: getStatusDisplay(remainingDays, isOverdue, overdueDays),
       requiresMovementConfirmation: Boolean(upcomingRotation),
-      isOverdue: isOverdue && remainingDays !== null ? remainingDays < 0 : false,
       activeRotation,
       upcomingRotation,
       intern,

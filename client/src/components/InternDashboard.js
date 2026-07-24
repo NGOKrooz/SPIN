@@ -70,20 +70,26 @@ function getTotalDuration(rotation) {
 
 function getCurrentUnitProgressDisplay(rotation, currentTimeValue) {
   const startDate = parseDateValue(rotation?.start_date);
-  const endDate = parseDateValue(rotation?.end_date);
-  if (!startDate || !endDate) return null;
+  if (!startDate) return null;
 
   const now = new Date(currentTimeValue);
-  // FIX (issue 1): previously required `now <= endDate`, so the moment a
-  // rotation went overdue/pending, this returned null and the whole progress
-  // line disappeared instead of continuing to grow (e.g. "35 / 30 days").
+  // FIX (denominator drift): previously derived from end_date, which can
+  // legitimately shift on any timeline recompute — so both numbers in
+  // "elapsed / total" moved around together instead of showing a stable
+  // planned total against a freely growing elapsed count.
   const isCurrentUnit = now >= startDate;
   if (!isCurrentUnit) return null;
 
-  const totalDuration = calculateDaysBetween(startDate, endDate) + 1;
-  // FIX (issue 1, continued): calculateElapsedDays clamps to totalDuration by
-  // design (correct for other call sites) — compute unclamped here so this
-  // count is allowed to exceed the planned total once overdue.
+  // FIX (denominator drift, continued): the total must be the unit's FIXED
+  // planned duration (baseDuration) — never derived from dates, and never
+  // including extension days (which would make the fraction always look
+  // "caught up" instead of clearly showing elapsed > planned once overdue).
+  const rawBaseDuration = Number(
+    rotation?.baseDuration ?? rotation?.base_duration ?? rotation?.duration_days ?? rotation?.duration
+  );
+  const totalDuration = Number.isFinite(rawBaseDuration) && rawBaseDuration > 0 ? rawBaseDuration : null;
+  if (!totalDuration) return null;
+
   const rawElapsedDays = Math.floor((now.getTime() - startDate.getTime()) / DAY_IN_MS) + 1;
   const elapsedDays = Math.max(0, rawElapsedDays);
   return `${elapsedDays} / ${totalDuration} days`;
