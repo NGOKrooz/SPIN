@@ -378,6 +378,16 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   const handleConfirmAcceptNext = async (movement) => {
     try {
       await api.acceptMovement?.(movement.internId);
+      // FIX: this dashboard's top section (Status, Current Units, Days in
+      // Internship) is fed by a SEPARATE query keyed ['intern', intern.id]
+      // (see internDetails above) — invalidating only intern-schedule and the
+      // interns list never told THIS query to refetch, so the modal kept
+      // showing the stale pre-accept snapshot even though the Interns list
+      // page and the backend both correctly reflected the real new state.
+      // Matches the invalidate+refetch pattern already used successfully by
+      // the Extension modal's success handler below.
+      await queryClient.invalidateQueries({ queryKey: ['intern', intern.id], exact: true });
+      await queryClient.refetchQueries({ queryKey: ['intern', intern.id], exact: true, type: 'all' });
       await queryClient.invalidateQueries({ queryKey: ['intern-schedule', intern.id] });
       await queryClient.invalidateQueries({ queryKey: ['interns'] });
       setConfirmMovement(null);
@@ -390,6 +400,9 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   };
 
   const handleReassignNextSuccess = async () => {
+    // FIX: same missing key/pattern as handleConfirmAcceptNext above.
+    await queryClient.invalidateQueries({ queryKey: ['intern', intern.id], exact: true });
+    await queryClient.refetchQueries({ queryKey: ['intern', intern.id], exact: true, type: 'all' });
     await queryClient.invalidateQueries({ queryKey: ['intern-schedule', intern.id] });
     await queryClient.invalidateQueries({ queryKey: ['interns'] });
     setReassignNextConfirmation(null);
@@ -853,6 +866,10 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
             onSuccess={async () => {
               setShowReassign(false);
               setActiveRotation(null);
+              // FIX: same missing key as the other handlers above — this
+              // dashboard's top section reads ['intern', intern.id], which
+              // was never being invalidated here either.
+              await queryClient.invalidateQueries({ queryKey: ['intern', intern.id] });
               // Force a complete refresh of the schedule data
               await queryClient.invalidateQueries({ 
                 queryKey: ['intern-schedule', intern.id],
