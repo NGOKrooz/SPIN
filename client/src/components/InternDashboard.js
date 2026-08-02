@@ -389,6 +389,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
       await queryClient.invalidateQueries({ queryKey: ['intern', intern.id], exact: true });
       await queryClient.refetchQueries({ queryKey: ['intern', intern.id], exact: true, type: 'all' });
       await queryClient.invalidateQueries({ queryKey: ['intern-schedule', intern.id] });
+      await queryClient.refetchQueries({ queryKey: ['intern-schedule', intern.id], exact: true, type: 'all' });
       await queryClient.invalidateQueries({ queryKey: ['interns'] });
       setConfirmMovement(null);
     } catch (error) {
@@ -404,6 +405,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
     await queryClient.invalidateQueries({ queryKey: ['intern', intern.id], exact: true });
     await queryClient.refetchQueries({ queryKey: ['intern', intern.id], exact: true, type: 'all' });
     await queryClient.invalidateQueries({ queryKey: ['intern-schedule', intern.id] });
+    await queryClient.refetchQueries({ queryKey: ['intern-schedule', intern.id], exact: true, type: 'all' });
     await queryClient.invalidateQueries({ queryKey: ['interns'] });
     setReassignNextConfirmation(null);
   };
