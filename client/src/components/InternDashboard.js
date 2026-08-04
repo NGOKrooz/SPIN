@@ -106,6 +106,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   // NEW: Accept/Reassign confirmation state for the Next Assignment card.
   const [confirmMovement, setConfirmMovement] = React.useState(null);
   const [reassignNextConfirmation, setReassignNextConfirmation] = React.useState(null);
+  const [isSyncingAfterMove, setIsSyncingAfterMove] = React.useState(false);
 
   React.useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -376,6 +377,7 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
   };
 
   const handleConfirmAcceptNext = async (movement) => {
+    setIsSyncingAfterMove(true);
     try {
       await api.acceptMovement?.(movement.internId);
       // FIX: this dashboard's top section (Status, Current Units, Days in
@@ -397,17 +399,24 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
       // FIX: rethrow so ConfirmMovementModal's own error handling can show
       // this to the user instead of leaving the modal with no feedback.
       throw error;
+    } finally {
+      setIsSyncingAfterMove(false);
     }
   };
 
   const handleReassignNextSuccess = async () => {
-    // FIX: same missing key/pattern as handleConfirmAcceptNext above.
-    await queryClient.invalidateQueries({ queryKey: ['intern', intern.id], exact: true });
-    await queryClient.refetchQueries({ queryKey: ['intern', intern.id], exact: true, type: 'all' });
-    await queryClient.invalidateQueries({ queryKey: ['intern-schedule', intern.id] });
-    await queryClient.refetchQueries({ queryKey: ['intern-schedule', intern.id], exact: true, type: 'all' });
-    await queryClient.invalidateQueries({ queryKey: ['interns'] });
-    setReassignNextConfirmation(null);
+    setIsSyncingAfterMove(true);
+    try {
+      // FIX: same missing key/pattern as handleConfirmAcceptNext above.
+      await queryClient.invalidateQueries({ queryKey: ['intern', intern.id], exact: true });
+      await queryClient.refetchQueries({ queryKey: ['intern', intern.id], exact: true, type: 'all' });
+      await queryClient.invalidateQueries({ queryKey: ['intern-schedule', intern.id] });
+      await queryClient.refetchQueries({ queryKey: ['intern-schedule', intern.id], exact: true, type: 'all' });
+      await queryClient.invalidateQueries({ queryKey: ['interns'] });
+      setReassignNextConfirmation(null);
+    } finally {
+      setIsSyncingAfterMove(false);
+    }
   };
 
   const getRotationDuration = React.useCallback((rotation) => {
@@ -663,29 +672,36 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-3">
-                    {currentRotations.map((rotation) => {
-                      const progressDisplay = getCurrentUnitProgressDisplay(rotation, currentTime);
+                  {isSyncingAfterMove ? (
+                    <div className="flex items-center justify-center py-6 text-sm text-gray-500">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                      Updating...
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {currentRotations.map((rotation) => {
+                        const progressDisplay = getCurrentUnitProgressDisplay(rotation, currentTime);
 
-                      return (
-                        <div key={rotation.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 bg-blue-50 rounded-lg">
-                          <div>
-                            <h4 className="font-medium">{rotation.unit_name}</h4>
-                            <p className="text-sm text-gray-600">
-                              {formatDate(rotation.start_date)} - {formatDate(rotation.end_date)}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            {progressDisplay && (
-                              <p className="text-sm font-medium text-blue-600">
-                                {progressDisplay}
+                        return (
+                          <div key={rotation.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 bg-blue-50 rounded-lg">
+                            <div>
+                              <h4 className="font-medium">{rotation.unit_name}</h4>
+                              <p className="text-sm text-gray-600">
+                                {formatDate(rotation.start_date)} - {formatDate(rotation.end_date)}
                               </p>
-                            )}
+                            </div>
+                            <div className="text-right">
+                              {progressDisplay && (
+                                <p className="text-sm font-medium text-blue-600">
+                                  {progressDisplay}
+                                </p>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -722,7 +738,12 @@ export default function InternDashboard({ intern, onClose, onInternUpdated }) {
                 </div>
               </CardHeader>
               <CardContent>
-                {!currentRotation ? (
+                {isSyncingAfterMove ? (
+                  <div className="flex items-center justify-center py-6 text-sm text-gray-500">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                    Updating...
+                  </div>
+                ) : !currentRotation ? (
                   <p className="text-center py-4 text-gray-500">No active unit assignment</p>
                 ) : !nextAssignmentPreview.shouldPreview && !movementStatus.isEligible ? (
                   <div className="text-center py-4 text-gray-500">
