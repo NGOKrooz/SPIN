@@ -887,4 +887,5 @@ module.exports = {
   advanceToNextUnit,
   ensureContinuousAssignment,
   getEligibleUnits,
+  getUnitDuration,
 };

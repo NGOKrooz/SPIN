@@ -2,15 +2,10 @@ const { startOfDay, addDays, isAfter } = require('date-fns');
 const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
 const Intern = require('../models/Intern');
-const { getEligibleUnits } = require('./dynamicAssignmentService');
+const { getEligibleUnits, getUnitDuration } = require('./dynamicAssignmentService');
 
 const DEFAULT_ROTATION_DURATION_DAYS = 20;
 
-const getDuration = (unitDoc) => {
-  const raw = unitDoc?.duration ?? unitDoc?.durationDays ?? unitDoc?.duration_days;
-  const duration = Number(raw);
-  return Number.isFinite(duration) && duration > 0 ? duration : DEFAULT_ROTATION_DURATION_DAYS;
-};
 
 /**
  * Get current rotations (active today)
@@ -70,7 +65,7 @@ async function autoAdvanceRotation(internId) {
     const nextUnitIndex = (currentUnitIndex + 1) % allUnits.length;
     const nextUnit = allUnits[nextUnitIndex];
 
-    const duration = getDuration(nextUnit);
+    const duration = getUnitDuration(nextUnit);
     const nextStartDate = new Date(lastRotation.endDate);
     const nextEndDate = new Date(nextStartDate);
     nextEndDate.setDate(nextEndDate.getDate() + duration);
@@ -97,7 +92,7 @@ async function autoAdvanceRotation(internId) {
 async function createManualRotation(data) {
   const { internId, unitId } = data;
   const unit = await Unit.findById(unitId).exec();
-  const duration = getDuration(unit);
+  const duration = getUnitDuration(unit);
   let startDate = data.startDate ? new Date(data.startDate) : new Date();
   if (Number.isNaN(startDate.getTime())) {
     startDate = new Date();
@@ -177,7 +172,7 @@ async function acceptMovement(internId) {
   // Reordering removes the zero-active window entirely: there's now a brief
   // moment with TWO active rotations instead, which resolveCurrentAssignment
   // handles fine (it just takes the first match).
-  const nextDuration = getDuration(nextRotation.unit);
+  const nextDuration = getUnitDuration(nextRotation.unit);
   const nextStartDate = startOfDay(new Date());
   const nextEndDate = addDays(nextStartDate, nextDuration - 1);
 
@@ -185,6 +180,7 @@ async function acceptMovement(internId) {
   nextRotation.startDate = nextStartDate;
   nextRotation.endDate = nextEndDate;
   nextRotation.duration = nextDuration;
+  nextRotation.baseDuration = nextDuration;
   nextRotation.extensionDays = 0;
   await nextRotation.save();
 
