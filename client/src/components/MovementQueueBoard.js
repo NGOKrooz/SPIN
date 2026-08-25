@@ -150,6 +150,16 @@ export default function MovementQueueBoard() {
   const handleConfirmAccept = async (movement) => {
     try {
       await api.acceptMovement?.(movement.internId);
+      // FIX: the individual InternDashboard modal reads from its own
+      // ['intern', internId] and ['intern-schedule', internId] queries, which
+      // this board never told to refetch — only ['interns'] here. So this
+      // board's own list updated immediately, but an already-open dashboard
+      // for the same intern kept showing the pre-accept unit until something
+      // unrelated (a remount, a manual refresh) happened to fetch fresh data,
+      // which could be hours later. Invalidate the same keys the dashboard's
+      // own accept handler does, so both views stay in sync immediately.
+      await queryClient.invalidateQueries({ queryKey: ['intern', movement.internId], exact: true });
+      await queryClient.invalidateQueries({ queryKey: ['intern-schedule', movement.internId] });
       await queryClient.invalidateQueries({ queryKey: ['interns'] });
       setConfirmMovement(null);
     } catch (error) {
@@ -162,6 +172,12 @@ export default function MovementQueueBoard() {
   };
 
   const handleReassignSuccess = () => {
+    // FIX: same missing keys as handleConfirmAccept above.
+    const internId = reassignConfirmation?.internId;
+    if (internId) {
+      queryClient.invalidateQueries({ queryKey: ['intern', internId], exact: true });
+      queryClient.invalidateQueries({ queryKey: ['intern-schedule', internId] });
+    }
     queryClient.invalidateQueries({ queryKey: ['interns'] });
     setReassignConfirmation(null);
   };
