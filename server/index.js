@@ -3,6 +3,15 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 require('dotenv').config();
+
+// Pin the process timezone to Lagos before any Date-based logic runs, so
+// every startOfDay(new Date())-style day-boundary calculation (rotation
+// start/end dates, "is it due today" checks, etc.) matches the interns'
+// actual local day instead of whatever timezone the host machine happens
+// to default to. Lagos has no DST, so this offset never needs to change.
+if (!process.env.TZ) {
+  process.env.TZ = 'Africa/Lagos';
+}
 const { getAllowedOrigins, buildCorsOptions } = require('./config/cors');
 
 // ═══════════════════════════════════════════════════════════
