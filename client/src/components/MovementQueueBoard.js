@@ -61,7 +61,7 @@ const getStatusDisplay = (remainingDays, isOverdue, overdueDays) => {
 };
 
 const buildMovementQueue = (interns = []) => {
-  const today = normalizeDay();
+  const today = normalizeDay(new Date());
   const queue = [];
 
   for (const intern of interns) {
