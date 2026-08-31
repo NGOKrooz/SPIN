@@ -352,6 +352,19 @@ const syncInternRotationStates = async (internId) => {
       nextStatus = 'active';
     } else if (nextStatus === 'awaiting_confirmation') {
       nextStatus = 'awaiting_confirmation';
+    } else if (nextStatus === 'completed') {
+      // FIX (the actual root cause of the individual-dashboard-stale-unit
+      // bug): 'completed' is a terminal state set explicitly by
+      // acceptMovement/reassignNextUnit, and must never be recomputed by the
+      // date fallback below. acceptMovement always sets a completed
+      // rotation's endDate to TODAY - so `endDate < now` was false (same
+      // day, not strictly less), falling through to the `else` branch and
+      // flipping it straight back to 'active' on the very next request.
+      // That undid every single Accept immediately, leaving two
+      // simultaneously 'active' rotations and making the individual
+      // dashboard (or any endpoint) disagree with whichever one a given
+      // query happened to resolve as "current".
+      nextStatus = 'completed';
     } else if (startDate > now) {
       nextStatus = 'upcoming';
     } else if (endDate < now) {
