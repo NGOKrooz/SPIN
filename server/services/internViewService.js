@@ -108,7 +108,13 @@ const formatRotation = (rotation) => {
 const formatIntern = (intern, rotations = []) => {
   const formattedRotations = (rotations || []).map(formatRotation);
 
-  const currentRotation = formattedRotations.find(r => r.status === 'active');
+  // FIX: formattedRotations is built from rotations sorted ascending by
+  // startDate, so .find() would grab the OLDEST 'active' rotation if a
+  // duplicate ever exists - disagreeing with intern.currentUnit (kept
+  // correct by ensureContinuousAssignment, which resolves to the NEWEST
+  // active rotation). Picking the last match keeps this in agreement.
+  const activeRotationsSorted = formattedRotations.filter(r => r.status === 'active');
+  const currentRotation = activeRotationsSorted[activeRotationsSorted.length - 1];
   const upcomingRotations = formattedRotations.filter((r) => r.status === 'upcoming' || r.status === 'awaiting_confirmation');
   const completedRotations = formattedRotations.filter(r => r.status === 'completed');
   const awaitingConfirmationRotations = [...upcomingRotations];
@@ -173,7 +179,10 @@ const formatIntern = (intern, rotations = []) => {
 };
 
 const addUnitProgress = (internView, currentUnit, units = []) => {
-  const activeRotation = (internView.rotations || []).find((rotation) => rotation.status === 'active') || null;
+  // FIX: same "pick the latest, not the first, active rotation" fix as
+  // formatIntern above - internView.rotations is sorted ascending.
+  const activeRotationsForProgress = (internView.rotations || []).filter((rotation) => rotation.status === 'active');
+  const activeRotation = activeRotationsForProgress[activeRotationsForProgress.length - 1] || null;
   const currentUnitId = (
     currentUnit?._id?.toString?.()
     || currentUnit?.id

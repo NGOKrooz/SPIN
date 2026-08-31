@@ -412,7 +412,13 @@ const mapInternWithUnits = (internDoc, units) => {
       return (leftDate?.getTime() || 0) - (rightDate?.getTime() || 0);
     })
     : [];
-  const activeRotation = rotations.find((rotation) => rotation?.status === 'active') || null;
+  // FIX: same "pick the latest, not the first, active rotation" fix as the
+  // /schedule endpoint below - rotations here is sorted ascending, so a plain
+  // .find() would resolve to the OLDEST active rotation if a duplicate ever
+  // exists, disagreeing with intern.currentUnit (kept correct separately by
+  // ensureContinuousAssignment, which sorts descending).
+  const activeRotationsSorted = rotations.filter((rotation) => rotation?.status === 'active');
+  const activeRotation = activeRotationsSorted[activeRotationsSorted.length - 1] || null;
   const upcomingRotations = rotations.filter((rotation) => rotation?.status === 'upcoming');
   const currentUnitId = (
     intern.currentUnit?._id?.toString()
@@ -576,7 +582,19 @@ router.get('/:id/schedule', async (req, res) => {
       .sort({ startDate: 1 })
       .exec();
 
-    const currentRotation = rawRotations.find((rotation) => rotation.status === 'active') || null;
+    // FIX: rawRotations is sorted ascending by startDate, so a plain .find()
+    // here grabs the OLDEST 'active' rotation. If two rotations ever end up
+    // simultaneously 'active' (e.g. accept-movement activates the next one
+    // before marking the previous one completed, and something interrupts
+    // execution in between), this disagreed with ensureContinuousAssignment
+    // (which sorts descending and so always resolves to the NEWEST active
+    // rotation, and is what intern.currentUnit is kept in sync with) - the
+    // individual dashboard would keep showing the stale prior unit forever,
+    // even after a full refresh, because both sides were reading real but
+    // differently-resolved data. Picking the last active match instead makes
+    // this endpoint agree with intern.currentUnit's resolution.
+    const activeRotations = rawRotations.filter((rotation) => rotation.status === 'active');
+    const currentRotation = activeRotations[activeRotations.length - 1] || null;
     // FIX: staged next rotations are created with status 'awaiting_confirmation'
     // (see dynamicAssignmentService.js), not 'upcoming'. This filter only checked
     // for 'upcoming', so the frontend's schedule/dashboard never received the
@@ -631,9 +649,13 @@ router.get('/:id/movement-preview', async (req, res) => {
     const internDoc = await Intern.findById(req.params.id).populate('currentUnit').exec();
     if (!internDoc) return res.status(404).json({ error: 'Intern not found' });
 
+    // FIX: same "pick the newest, not the oldest, active rotation" fix as
+    // acceptMovement - findOne with an ascending sort picks the OLDEST
+    // 'active' rotation, which disagrees with intern.currentUnit if a stray
+    // duplicate ever exists.
     const currentRotation = await Rotation.findOne({ intern: internDoc._id, status: 'active' })
       .populate('unit')
-      .sort({ startDate: 1 })
+      .sort({ startDate: -1 })
       .exec();
 
     const nextRotation = await Rotation.findOne({
@@ -668,9 +690,10 @@ router.get('/:id/eligible-reassign-units', async (req, res) => {
     const internDoc = await Intern.findById(req.params.id).exec();
     if (!internDoc) return res.status(404).json({ error: 'Intern not found' });
 
+    // FIX: same "pick the newest active rotation" fix as acceptMovement.
     const currentRotation = await Rotation.findOne({ intern: internDoc._id, status: 'active' })
       .populate('unit')
-      .sort({ startDate: 1 })
+      .sort({ startDate: -1 })
       .exec();
 
     const currentUnitId = currentRotation?.unit?._id?.toString?.() || internDoc.currentUnit?.toString?.() || null;

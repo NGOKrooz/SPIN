@@ -144,9 +144,20 @@ async function acceptMovement(internId) {
   const intern = await Intern.findById(internId).exec();
   if (!intern) throw new Error('Intern not found');
 
+  // FIX: this used to sort ascending, so findOne picked the OLDEST 'active'
+  // rotation. ensureContinuousAssignment (which keeps intern.currentUnit
+  // correct) always resolves the current rotation as the NEWEST active one.
+  // If a stray duplicate 'active' rotation ever existed (e.g. left over from
+  // an interrupted accept elsewhere), this mismatch meant the wrong rotation
+  // got marked 'completed' here - the real current one was never touched and
+  // stayed stuck 'active' forever, while a stale older one got "completed"
+  // instead. Each subsequent accept then repeated the mistake on whatever was
+  // now the oldest active rotation, leaving one new orphaned 'active' record
+  // behind every time - a self-perpetuating cascade. Sorting descending
+  // (newest first) makes this agree with intern.currentUnit and stops it.
   const activeRotation = await Rotation.findOne({ intern: intern._id, status: 'active' })
     .populate('unit')
-    .sort({ startDate: 1 })
+    .sort({ startDate: -1 })
     .exec();
   if (!activeRotation) throw new Error('No active rotation available to accept');
 
@@ -243,9 +254,11 @@ async function reassignNextUnit(internId, newUnitId) {
     .exec();
   if (!nextRotation) throw new Error('No next rotation available to reassign');
 
+  // FIX: same "pick the newest, not the oldest, active rotation" fix as
+  // acceptMovement above, for consistency with intern.currentUnit.
   const currentRotation = await Rotation.findOne({ intern: intern._id, status: 'active' })
     .populate('unit')
-    .sort({ startDate: 1 })
+    .sort({ startDate: -1 })
     .exec();
   const currentUnitId = currentRotation?.unit?._id?.toString?.() || intern.currentUnit?.toString?.() || null;
   const eligibleUnits = await getEligibleUnits(intern._id, currentUnitId);
