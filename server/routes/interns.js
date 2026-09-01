@@ -152,24 +152,37 @@ const recalculateInternTimelineFromStartDate = async (intern, newStartDate, toda
   // This function'''s job is now narrower and safer: adjust ONLY the intern'''s
   // single real '''active''' rotation'''s dates to match the new start date, anchored
   // using the TRUE historical duration of prior completed rotations. Any
-  // not-yet-real rotation (upcoming or awaiting_confirmation) is deleted
-  // outright - it will be freshly re-staged, correctly, by
-  // ensureContinuousAssignment right after this function runs, and only
-  // Accept/Reassign may ever promote one.
+  // not-yet-DECIDED rotation (awaiting_confirmation - a staged suggestion
+  // nobody has accepted/reassigned yet) is deleted outright - it will be
+  // freshly re-staged, correctly, by ensureContinuousAssignment right after
+  // this function runs, and only Accept/Reassign may ever promote one.
+  //
+  // FIX: 'upcoming' is NOT the same thing and must never be deleted here.
+  // In this codebase a staged-but-undecided rotation is ALWAYS created with
+  // status 'awaiting_confirmation' (see dynamicAssignmentService.js) -
+  // 'upcoming' is only ever produced by ensureContinuousAssignment
+  // reclassifying what WAS the real active rotation, purely because ITS
+  // start date now lands in the future (which can easily happen here: a
+  // start-date edit repositions the reconciled completed history, and the
+  // rotation that continues after it may land past today). That rotation is
+  // still the intern's real current unit, just temporarily mis-labeled by
+  // date math - treating it as "stale" and deleting it destroyed the
+  // intern's actual current assignment the moment a SECOND start-date edit
+  // ran after a first one had pushed things into the future.
   const completedRotations = allRotations.filter((r) => r.status === "completed");
-  const staleRotations = allRotations.filter((r) => r.status !== "completed" && r.status !== "active");
-  const activeRotations = allRotations.filter((r) => r.status === "active");
+  const staleRotations = allRotations.filter((r) => r.status !== "completed" && r.status !== "active" && r.status !== "upcoming");
+  const currentCandidates = allRotations.filter((r) => r.status === "active" || r.status === "upcoming");
 
   if (staleRotations.length > 0) {
     await Rotation.deleteMany({ _id: { $in: staleRotations.map((r) => r._id) } }).exec();
   }
 
-  // Defensive: there should only ever be one '''active''' rotation. If more than
-  // one exists (shouldn'''t happen), keep the earliest and delete the rest
-  // rather than guessing which is real.
-  let currentRotation = activeRotations[0] || null;
-  if (activeRotations.length > 1) {
-    await Rotation.deleteMany({ _id: { $in: activeRotations.slice(1).map((r) => r._id) } }).exec();
+  // Defensive: there should only ever be one real "current" rotation. If
+  // more than one exists (shouldn'''t happen), keep the earliest and delete
+  // the rest rather than guessing which is real.
+  let currentRotation = currentCandidates[0] || null;
+  if (currentCandidates.length > 1) {
+    await Rotation.deleteMany({ _id: { $in: currentCandidates.slice(1).map((r) => r._id) } }).exec();
   }
 
   if (!currentRotation) {
