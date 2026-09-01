@@ -196,26 +196,67 @@ const recalculateInternTimelineFromStartDate = async (intern, newStartDate, toda
     return getUnitDuration(rotation.unit);
   };
 
-  const priorCompletedDays = completedRotations
-    .filter((r) => new Date(r.startDate) < new Date(currentRotation.startDate))
-    .reduce((sum, r) => sum + trueDuration(r), 0);
+  // FIX: this function previously only re-anchored the ACTIVE rotation,
+  // leaving every COMPLETED rotation's stored dates untouched - so after a
+  // start-date edit, Completed Rotations kept showing dates computed
+  // against the OLD start date, no longer chronologically continuous with
+  // the new timeline and often overlapping each other and the (correctly
+  // shifted) current rotation. Walk completed rotations in their existing
+  // chronological order (which still reflects the real sequence the intern
+  // moved through, even though the absolute dates are stale) and re-anchor
+  // each one back-to-back from the new start date, preserving each
+  // rotation's TRUE recorded duration - only WHERE it sits in time shifts,
+  // never HOW LONG it was, so extensions/overdue history stay intact. A
+  // rotation flagged isManualAssignment is an intentional, fixed record: its
+  // own dates are left untouched, and the cursor simply resumes immediately
+  // after it for whatever comes next - it is never itself shifted or used to
+  // silently swallow an adjacent automatic rotation'''s days.
+  let cursor = start;
+  for (const rotation of completedRotations) {
+    if (rotation.isManualAssignment) {
+      cursor = addDays(normalizeDay(rotation.endDate), 1);
+      continue;
+    }
+    const duration = trueDuration(rotation);
+    const newStart = cursor;
+    const newEnd = addDays(newStart, duration - 1);
+    if (
+      startOfDay(rotation.startDate).getTime() !== newStart.getTime()
+      || startOfDay(rotation.endDate).getTime() !== newEnd.getTime()
+    ) {
+      rotation.startDate = newStart;
+      rotation.endDate = newEnd;
+      await rotation.save();
+    }
+    cursor = addDays(newEnd, 1);
+  }
 
+  // The active rotation now continues immediately after the (just
+  // reconciled) completed history, anchored off `cursor` instead of
+  // re-summing prior durations from what would otherwise still be stale
+  // completed-rotation records.
   const duration = getUnitDuration(currentRotation.unit);
-  const newRotationStart = addDays(start, priorCompletedDays);
-  const newRotationEnd = recalculateEndDate(newRotationStart, duration);
+  const newRotationStart = currentRotation.isManualAssignment
+    ? normalizeDay(currentRotation.startDate)
+    : cursor;
+  const newRotationEnd = currentRotation.isManualAssignment
+    ? normalizeDay(currentRotation.endDate)
+    : recalculateEndDate(newRotationStart, duration);
 
   currentRotation.startDate = newRotationStart;
   currentRotation.endDate = newRotationEnd;
-  currentRotation.baseDuration = duration;
-  currentRotation.duration = duration;
   currentRotation.status = "active"; // never anything else here - completion/pending is ensureContinuousAssignment'''s job
   // FIX (issue 5): only reset the LIVE/current-rotation extension fields.
   // intern.totalExtensionDays (the permanent banked history from previously
   // completed rotations) is intentionally left untouched below - it must
   // persist across the whole internship, not just the current unit.
-  currentRotation.extensionDays = 0;
-  currentRotation.manualExtensionDays = 0;
-  currentRotation.autoExtensionDays = 0;
+  if (!currentRotation.isManualAssignment) {
+    currentRotation.baseDuration = duration;
+    currentRotation.duration = duration;
+    currentRotation.extensionDays = 0;
+    currentRotation.manualExtensionDays = 0;
+    currentRotation.autoExtensionDays = 0;
+  }
   await currentRotation.save();
 
   intern.currentUnit = currentRotation.unit?._id || currentRotation.unit;
