@@ -7,12 +7,19 @@ const { canAssignmentTransition } = require('./movementGuard');
 const { normalizeRotation, resolveCurrentAssignment } = require('./assignmentUtils');
 const { cleanupInvalidUpcomingRotations } = require('./rotationCleanupService');
 
-const DEFAULT_CAPACITY = 5;
 const DEFAULT_DURATION = 20;
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
 const LEAVING_SOON_DAYS = 5;
-const MOVEMENT_WINDOW_DAYS = 7;
-const RECENT_INCOMING_DAYS = 7;
+// How much a completely empty unit's need score is boosted over any
+// non-empty unit's, regardless of how close the fractional target-based
+// scores might otherwise be. Large enough that no realistic combination of
+// occupancy/target/leaving-soon numbers could out-rank a genuinely empty
+// unit - see "EMPTY UNITS MUST BE PRIORITIZED".
+const EMPTY_UNIT_NEED_BONUS = 1000;
+// Two units within this much need-score of each other are treated as
+// "equally suitable" and chosen between randomly, rather than always
+// picking whichever sorts first.
+const NEED_TIE_EPSILON = 0.5;
 
 const startOfDay = (d = new Date()) => {
   const v = new Date(d);
@@ -137,8 +144,8 @@ async function getResolvedActiveRotations() {
  * Only counts resolved active assignments for each intern.
  * Returns Map<unitIdStr, number>
  */
-async function getUnitOccupancy() {
-  const today = startOfDay(new Date());
+async function getUnitOccupancy(todayRef = new Date()) {
+  const today = startOfDay(todayRef);
   const rotations = await getResolvedActiveRotations();
 
   const counts = new Map();
@@ -159,8 +166,8 @@ async function getUnitOccupancy() {
  * Count active interns whose current rotation ends within N days, considering extensions.
  * Returns Map<unitIdStr, number>
  */
-async function getUnitInternsLeavingSoon(windowDays = LEAVING_SOON_DAYS) {
-  const today = startOfDay(new Date());
+async function getUnitInternsLeavingSoon(windowDays = LEAVING_SOON_DAYS, todayRef = new Date()) {
+  const today = startOfDay(todayRef);
   const maxDate = startOfDay(addDays(today, windowDays));
   const rotations = await getResolvedActiveRotations();
 
@@ -179,89 +186,105 @@ async function getUnitInternsLeavingSoon(windowDays = LEAVING_SOON_DAYS) {
 }
 
 /**
- * Get the count of active interns in a unit.
+ * Count interns already lined up to occupy each unit next - a staged
+ * 'awaiting_confirmation' suggestion nobody has accepted yet, or a
+ * genuinely scheduled 'upcoming' rotation. These aren't occupying the unit
+ * YET, but assigning yet another intern there without accounting for them
+ * would overload it the moment they land. Returns Map<unitIdStr, number>.
  */
-async function getActiveInternsCount(unitId) {
-  const rotations = await getResolvedActiveRotations();
-  let count = 0;
-  for (const rot of rotations) {
-    const uid = rot.unit?.toString?.() || rot.unit?._id?.toString?.() || null;
-    if (!uid) continue;
-    if (String(uid) === String(unitId)) count += 1;
-  }
-  return count;
-}
-
-/**
- * Check if a unit is at full capacity.
- */
-async function isUnitFull(unit) {
-  const count = await getActiveInternsCount(unit._id);
-  const capacity = unit.capacity || DEFAULT_CAPACITY;
-  return count >= capacity;
-}
-
-/**
- * Select the best unit for assignment based on leaving soon priority.
- * Excludes full units and optionally completed units.
- */
-async function selectBestUnit(units, today = new Date(), completedIds = new Set()) {
-  const availableUnits = [];
-  for (const unit of units) {
-    const unitId = String(unit._id);
-    if (completedIds.has(unitId)) continue;
-    if (await isUnitFull(unit)) continue;
-    availableUnits.push(unit);
-  }
-
-  if (availableUnits.length === 0) {
-    return null;
-  }
-
-  const leavingSoonCounts = await getUnitInternsLeavingSoon(LEAVING_SOON_DAYS);
-
-  // Sort by leaving soon count descending
-  availableUnits.sort((a, b) => {
-    const aCount = leavingSoonCounts.get(String(a._id)) || 0;
-    const bCount = leavingSoonCounts.get(String(b._id)) || 0;
-    return bCount - aCount;
-  });
-
-  return availableUnits[0];
-}
-
-async function getRecentIncomingCounts(windowDays = RECENT_INCOMING_DAYS, todayRef = new Date()) {
-  const today = startOfDay(todayRef);
-  const minDate = startOfDay(addDays(today, -windowDays));
-  const rows = await Rotation.find({
-    startDate: { $gte: minDate, $lte: today },
-  })
+async function getUnitPendingDemand() {
+  const rows = await Rotation.find({ status: { $in: ['awaiting_confirmation', 'upcoming'] } })
     .select('unit')
     .exec();
 
   const counts = new Map();
   for (const row of rows) {
     const uid = row.unit?.toString?.() || null;
-    if (!uid) continue;
-    counts.set(uid, (counts.get(uid) || 0) + 1);
+    if (uid) counts.set(uid, (counts.get(uid) || 0) + 1);
   }
   return counts;
 }
 
-const getUnitLoad = (loadMap, unitId) => loadMap.get(String(unitId)) || 0;
+/**
+ * Single snapshot of every signal the dynamic scheduler needs, computed once
+ * per selection call so occupancy/leaving-soon/pending-demand all reflect
+ * the same instant.
+ *
+ * effectiveLoad = current occupancy, minus interns leaving soon (an
+ * anticipated vacancy - see "ACCOUNT FOR LEAVING SOON"), plus pending
+ * demand (interns already lined up to arrive there next). Floored at 0 -
+ * more leaving-soon interns than current occupancy can't make a unit
+ * "negatively" empty.
+ *
+ * target = eligible interns currently occupying a rotation, divided by the
+ * number of units - a BALANCING TARGET, never a hard cap (see "DEFINE
+ * DYNAMIC CAPACITY"). With 0 units this is 0 (no basis to target anything).
+ */
+async function computeUnitNeedSnapshot(allUnits, todayRef = new Date()) {
+  const [occupancy, leavingSoon, pendingDemand] = await Promise.all([
+    getUnitOccupancy(todayRef),
+    getUnitInternsLeavingSoon(LEAVING_SOON_DAYS, todayRef),
+    getUnitPendingDemand(),
+  ]);
 
-const buildTrueLoadMap = (allUnits, occupancy, leavingSoon, incomingBatch = new Map(), recentIncoming = new Map()) => {
-  const trueLoad = new Map();
+  const effectiveLoad = new Map();
+  let totalOccupancy = 0;
   for (const unit of allUnits) {
-    const unitId = String(unit._id);
-    const currentInterns = occupancy.get(unitId) || 0;
-    const internsLeavingSoon = leavingSoon.get(unitId) || 0;
-    const batchIncoming = incomingBatch.get(unitId) || 0;
-    const recent = recentIncoming.get(unitId) || 0;
-    trueLoad.set(unitId, currentInterns - internsLeavingSoon + batchIncoming + recent);
+    const id = String(unit._id);
+    const occ = occupancy.get(id) || 0;
+    totalOccupancy += occ;
+    const leaving = leavingSoon.get(id) || 0;
+    const pending = pendingDemand.get(id) || 0;
+    effectiveLoad.set(id, Math.max(0, occ - leaving) + pending);
   }
-  return trueLoad;
-};
+
+  const target = allUnits.length > 0 ? totalOccupancy / allUnits.length : 0;
+
+  return { occupancy, leavingSoon, pendingDemand, effectiveLoad, target };
+}
+
+/**
+ * Core dynamic unit-selection engine - answers "among the units this intern
+ * is eligible to enter, which unit currently needs an intern the most while
+ * keeping the overall distribution as even as possible?"
+ *
+ * Excludes only units this intern has already completed (and, via
+ * `completedIds` carrying the current unit id too where callers merge it
+ * in) - capacity is never a hard block, only a scoring preference, so a
+ * unit that's numerically "full" is still eligible if it's the intern's
+ * only remaining option (see "DEFINE DYNAMIC CAPACITY").
+ *
+ * Need score per unit = (target - effectiveLoad), so units sitting below
+ * the dynamic target rank higher than units at or above it. A completely
+ * empty unit always gets a large flat bonus on top, so it can never be
+ * out-ranked by fractional target-vs-load differences elsewhere (see
+ * "EMPTY UNITS MUST BE PRIORITIZED"). Units within NEED_TIE_EPSILON of the
+ * top score are treated as equally suitable and chosen between randomly
+ * (see "RANDOMIZATION").
+ */
+async function selectBestUnit(units, today = new Date(), completedIds = new Set()) {
+  const eligible = units.filter((unit) => !completedIds.has(String(unit._id)));
+  if (eligible.length === 0) return null;
+
+  const snapshot = await computeUnitNeedSnapshot(units, today);
+
+  const scored = eligible.map((unit) => {
+    const id = String(unit._id);
+    const occupancy = snapshot.occupancy.get(id) || 0;
+    const effectiveLoad = snapshot.effectiveLoad.get(id) || 0;
+    const isEmpty = occupancy === 0;
+    const need = (snapshot.target - effectiveLoad) + (isEmpty ? EMPTY_UNIT_NEED_BONUS : 0);
+    return { unit, need };
+  });
+
+  scored.sort((a, b) => b.need - a.need);
+
+  const topNeed = scored[0].need;
+  const topTier = scored.filter((entry) => topNeed - entry.need <= NEED_TIE_EPSILON);
+  const chosen = topTier[Math.floor(Math.random() * topTier.length)];
+
+  return chosen.unit;
+}
 
 /**
  * Get set of unit IDs already completed by an intern.
@@ -275,208 +298,7 @@ async function getCompletedUnitIds(internId) {
 }
 
 /**
- * Core dynamic unit selection engine.
- *
- * TASK 3 – Filter eligible units:
- *   occupancy < capacity  AND  NOT in completedIds  AND  != currentUnitId
- *
- * TASK 9 – Full rotation reset:
- *   If no eligible units, reset completedIds and repeat with all units.
- *
- * TASK 4 + 5 – Prioritise by need + tie-breaking:
- *   Sort pool by occupancy ASC, then pick randomly among the 3 lowest.
- *
- * @param {Array}        allUnits
- * @param {Map}          occupancy     Map<unitIdStr, count>
- * @param {Set}          completedIds  Set<unitIdStr>
- * @param {string|null}  currentUnitId excluded unit
- * @param {number}       capacity      max per unit (default 5)
- * @returns {{ unit: Object|null, wasReset: boolean }}
- */
-function selectNextUnit(allUnits, trueLoad, completedIds, currentUnitId = null, capacity = DEFAULT_CAPACITY) {
-  const buildPool = (ignoreCompleted) =>
-    allUnits.filter((u) => {
-      const id = String(u._id);
-      if (currentUnitId && id === String(currentUnitId)) return false;
-      if (!ignoreCompleted && completedIds.has(id)) return false;
-      return getUnitLoad(trueLoad, id) < capacity;
-    });
-
-  let pool = buildPool(false);
-  let wasReset = false;
-
-  if (pool.length === 0) {
-    pool = buildPool(true);
-    wasReset = true;
-  }
-
-  if (pool.length === 0) return { unit: null, wasReset };
-
-  // Sort ascending by predictive effective load
-  pool.sort((a, b) => getUnitLoad(trueLoad, a._id) - getUnitLoad(trueLoad, b._id));
-
-  // Soft randomisation: pick among top-3 lowest-occupancy candidates
-  const lowestCount = getUnitLoad(trueLoad, pool[0]._id);
-  const candidates = pool
-    .filter((u) => getUnitLoad(trueLoad, u._id) === lowestCount)
-    .slice(0, 3);
-  const unit = candidates[Math.floor(Math.random() * candidates.length)];
-
-  return { unit, wasReset };
-}
-
-const buildEligibleUnitPool = (
-  allUnits,
-  trueLoad,
-  completedIds,
-  currentUnitId = null,
-  capacity = DEFAULT_CAPACITY,
-  { ignoreCompleted = false, ignoreCapacity = false } = {}
-) => allUnits.filter((unit) => {
-  const unitId = String(unit._id);
-  if (currentUnitId && unitId === String(currentUnitId)) return false;
-  if (!ignoreCompleted && completedIds.has(unitId)) return false;
-  if (!ignoreCapacity && getUnitLoad(trueLoad, unitId) >= capacity) return false;
-  return true;
-});
-
-const sortUnitsByEffectiveLoad = (pool, trueLoad) => [...pool]
-  .sort((left, right) => getUnitLoad(trueLoad, left._id) - getUnitLoad(trueLoad, right._id));
-
-function pickNextUnitForAssignment(
-  allUnits,
-  trueLoad,
-  completedIds,
-  currentUnitId = null,
-  capacity = DEFAULT_CAPACITY
-) {
-  const primary = selectNextUnit(allUnits, trueLoad, completedIds, currentUnitId, capacity);
-  if (primary.unit) {
-    return { ...primary, usedOverflow: false };
-  }
-
-  let wasReset = false;
-  let overflowPool = buildEligibleUnitPool(allUnits, trueLoad, completedIds, currentUnitId, capacity, {
-    ignoreCompleted: false,
-    ignoreCapacity: true,
-  });
-
-  if (overflowPool.length === 0) {
-    overflowPool = buildEligibleUnitPool(allUnits, trueLoad, completedIds, currentUnitId, capacity, {
-      ignoreCompleted: true,
-      ignoreCapacity: true,
-    });
-    wasReset = true;
-  }
-
-  if (overflowPool.length === 0) {
-    return { unit: null, wasReset, usedOverflow: true };
-  }
-
-  const sorted = sortUnitsByEffectiveLoad(overflowPool, trueLoad);
-  const lowestCount = getUnitLoad(trueLoad, sorted[0]._id);
-  const candidates = sorted.filter((unit) => getUnitLoad(trueLoad, unit._id) === lowestCount);
-  const unit = candidates[Math.floor(Math.random() * candidates.length)];
-
-  return { unit, wasReset, usedOverflow: true };
-}
-
-async function buildGlobalBatchPlan(allUnits, options = {}) {
-  const today = startOfDay(options.now || new Date());
-  const movementMaxDate = startOfDay(addDays(today, MOVEMENT_WINDOW_DAYS));
-
-  const activeRotations = await getResolvedActiveRotations();
-
-  const occupancy = new Map();
-  const leavingSoon = new Map();
-  const moving = [];
-
-  for (const row of activeRotations) {
-    const norm = normalizeRotation(row);
-    if (!norm || norm.status !== 'active') continue;
-    const unitId = norm.unit?.toString?.() || norm.unit?._id?.toString?.() || null;
-    if (!unitId) continue;
-
-    occupancy.set(unitId, (occupancy.get(unitId) || 0) + 1);
-
-    const end = norm.endDate ? startOfDay(norm.endDate) : null;
-    if (!end) continue;
-
-    if (end >= today && end <= startOfDay(addDays(today, LEAVING_SOON_DAYS))) {
-      leavingSoon.set(unitId, (leavingSoon.get(unitId) || 0) + 1);
-    }
-
-    if (end >= today && end <= movementMaxDate) {
-      moving.push({
-        internId: norm.intern?.toString?.() || null,
-        currentUnitId: unitId,
-        moveDate: end,
-      });
-    }
-  }
-
-  const recentIncoming = await getRecentIncomingCounts(RECENT_INCOMING_DAYS, today);
-  const incomingBatch = new Map();
-  const trueLoad = buildTrueLoadMap(allUnits, occupancy, leavingSoon, incomingBatch, recentIncoming);
-
-  const movingInternIds = moving.map((item) => item.internId).filter(Boolean);
-  const completedRows = movingInternIds.length > 0
-    ? await Rotation.find({
-      intern: { $in: movingInternIds },
-      status: 'completed',
-    }).select('intern unit').exec()
-    : [];
-
-  const completedByIntern = new Map();
-  for (const row of completedRows) {
-    const internId = row.intern?.toString?.() || null;
-    const unitId = row.unit?.toString?.() || null;
-    if (!internId || !unitId) continue;
-    if (!completedByIntern.has(internId)) completedByIntern.set(internId, new Set());
-    completedByIntern.get(internId).add(unitId);
-  }
-
-  moving.sort((left, right) => left.moveDate.getTime() - right.moveDate.getTime());
-  const plan = new Map();
-
-  for (const item of moving) {
-    if (!item.internId) continue;
-    const completedIds = completedByIntern.get(item.internId) || new Set();
-    let pool = buildEligibleUnitPool(allUnits, trueLoad, completedIds, item.currentUnitId, DEFAULT_CAPACITY, {
-      ignoreCompleted: false,
-      ignoreCapacity: true,
-    });
-
-    if (pool.length === 0) {
-      pool = buildEligibleUnitPool(allUnits, trueLoad, completedIds, item.currentUnitId, DEFAULT_CAPACITY, {
-        ignoreCompleted: true,
-        ignoreCapacity: true,
-      });
-    }
-
-    if (pool.length === 0) {
-      pool = [...allUnits];
-    }
-
-    const sorted = sortUnitsByEffectiveLoad(pool, trueLoad);
-    if (!sorted.length) continue;
-
-    const lowestLoad = getUnitLoad(trueLoad, sorted[0]._id);
-    const candidates = sorted.filter((unit) => getUnitLoad(trueLoad, unit._id) === lowestLoad);
-    const selected = candidates[Math.floor(Math.random() * candidates.length)];
-    if (!selected) continue;
-
-    const selectedId = String(selected._id);
-    plan.set(item.internId, selectedId);
-    incomingBatch.set(selectedId, (incomingBatch.get(selectedId) || 0) + 1);
-    trueLoad.set(selectedId, (trueLoad.get(selectedId) || 0) + 1);
-  }
-
-  return { plan, occupancy, leavingSoon, recentIncoming, incomingBatch, trueLoad };
-}
-
-/**
- * TASK 6 – Assign first unit to a newly-created intern.
+ * Assign the first unit to a newly-created intern.
  * Creates exactly one 'active' Rotation starting on the intern's startDate.
  */
 async function assignFirstUnit(intern, allUnits) {
@@ -484,7 +306,7 @@ async function assignFirstUnit(intern, allUnits) {
   const unit = await selectBestUnit(allUnits);
 
   if (!unit) {
-    throw new Error('No eligible unit available for assignment — all units are at capacity');
+    throw new Error('No eligible unit available for assignment — no units are configured');
   }
 
   const duration = getUnitDuration(unit);
@@ -502,159 +324,6 @@ async function assignFirstUnit(intern, allUnits) {
   });
 
   return { rotation, unit };
-}
-
-async function assignNextUnit(internOrId, options = {}) {
-  canAssignmentTransition('assignNextUnit');
-  const { completeCurrent = true, now = new Date() } = options;
-  const intern = typeof internOrId === 'object' && internOrId?._id
-    ? internOrId
-    : await Intern.findById(internOrId).exec();
-
-  if (!intern) throw new Error('Intern not found');
-
-  const allUnits = await Unit.find({}).sort({ order: 1, position: 1, createdAt: 1 }).exec();
-  if (!allUnits.length) throw new Error('No units configured');
-
-  const batchPlan = await buildGlobalBatchPlan(allUnits, { now });
-  const occupancy = batchPlan.occupancy;
-  const completedIds = await getCompletedUnitIds(intern._id);
-  const internsLeavingSoon = batchPlan.leavingSoon;
-  const trueLoad = batchPlan.trueLoad;
-  const plannedUnitId = batchPlan.plan.get(String(intern._id)) || null;
-
-  const today = startOfDay(now);
-  let previousUnitId = intern.currentUnit?.toString?.() || null;
-  let previousEndDate = null;
-  const allRotationsForIntern = await Rotation.find({ intern: intern._id }).sort({ startDate: -1, createdAt: -1 }).exec();
-  const currentNorm = resolveCurrentAssignment({ rotations: allRotationsForIntern });
-  const currentRotation = currentNorm ? allRotationsForIntern.find((r) => String(r._id) === String(currentNorm._id)) : null;
-  const latestRotation = currentRotation || (allRotationsForIntern[0] || null);
-
-  let completedRotation = null;
-  const getUnitName = (unitRef) => {
-    if (!unitRef) return 'Unknown unit';
-    if (typeof unitRef === 'string') return unitRef;
-    return unitRef.name || String(unitRef) || 'Unknown unit';
-  };
-
-  if (currentRotation && completeCurrent) {
-    completedRotation = currentRotation;
-    currentRotation.status = 'completed';
-    await currentRotation.save();
-
-    previousUnitId = currentRotation.unit?.toString?.() || previousUnitId;
-    previousEndDate = currentRotation.endDate ? startOfDay(currentRotation.endDate) : null;
-    if (previousUnitId) {
-      completedIds.add(previousUnitId);
-      if (occupancy.has(previousUnitId)) {
-        occupancy.set(previousUnitId, Math.max(0, occupancy.get(previousUnitId) - 1));
-      }
-      if (trueLoad.has(previousUnitId)) {
-        trueLoad.set(previousUnitId, (trueLoad.get(previousUnitId) || 0) - 1);
-      }
-    }
-  } else if (latestRotation) {
-    previousUnitId = latestRotation.unit?.toString?.() || previousUnitId;
-    previousEndDate = latestRotation.endDate ? startOfDay(latestRotation.endDate) : null;
-  }
-
-  await cleanupInvalidUpcomingRotations(intern._id, 'assignNextUnit');
-
-  let rotation = null;
-  let unit = null;
-  let wasReset = false;
-  let usedOverflow = false;
-
-  // Build enough historical completed rotations to catch up to "today" for very old start dates.
-  const startAnchor = startOfDay(intern.startDate || today);
-  const elapsedDays = Math.max(0, Math.floor((today.getTime() - startAnchor.getTime()) / (1000 * 60 * 60 * 24)) + 1);
-  const estimatedRotationsNeeded = Math.ceil(elapsedDays / Math.max(1, DEFAULT_DURATION));
-  let safetyCounter = Math.max(20, estimatedRotationsNeeded + (allUnits.length * 4));
-  let firstSelection = true;
-
-  while (safetyCounter > 0) {
-    safetyCounter -= 1;
-
-    // Use new priority-based selection
-    unit = await selectBestUnit(allUnits, today, completedIds);
-    if (firstSelection && plannedUnitId) {
-      const plannedUnit = allUnits.find((entry) => String(entry._id) === String(plannedUnitId));
-      if (
-        plannedUnit &&
-        !(await isUnitFull(plannedUnit)) &&
-        !completedIds.has(String(plannedUnit._id))
-      ) {
-        unit = plannedUnit;
-      }
-    }
-    firstSelection = false;
-
-    if (!unit) {
-      // Fallback to old logic if no unit available
-      const nextSelection = pickNextUnitForAssignment(
-        allUnits,
-        trueLoad,
-        completedIds,
-        previousUnitId
-      );
-      unit = nextSelection.unit;
-      wasReset = wasReset || nextSelection.wasReset;
-      usedOverflow = usedOverflow || nextSelection.usedOverflow;
-    }
-
-    if (!unit) {
-      intern.currentUnit = null;
-      intern.status = 'completed';
-      await intern.save();
-      return { rotation: null, unit: null, wasReset, usedOverflow };
-    }
-
-    const duration = getUnitDuration(unit);
-    const startDate = getNextRotationStartDate(previousEndDate, intern.startDate || today);
-    const { endDate } = getRotationWindow(startDate, duration);
-    const rotationStatus = endDate < today ? 'completed' : 'active';
-
-    rotation = await Rotation.create({
-      intern: intern._id,
-      unit: unit._id,
-      startDate,
-      endDate,
-      baseDuration: duration,
-      extensionDays: 0,
-      duration,
-      status: rotationStatus,
-    });
-
-    previousUnitId = unit._id.toString();
-    previousEndDate = endDate;
-
-    trueLoad.set(previousUnitId, (trueLoad.get(previousUnitId) || 0) + 1);
-
-    if (rotationStatus === 'completed') {
-      completedIds.add(previousUnitId);
-      continue;
-    }
-
-    break;
-  }
-
-  if (!rotation || rotation.status !== 'active') {
-    throw new Error('Failed to build a continuous rotation timeline');
-  }
-
-  const allRotations = await Rotation.find({ intern: intern._id })
-    .sort({ startDate: 1, createdAt: 1 })
-    .select('_id')
-    .exec();
-
-  intern.currentUnit = unit._id;
-  intern.extensionDays = 0;
-  intern.status = 'active';
-  intern.rotationHistory = allRotations.map((entry) => entry._id);
-  await intern.save();
-
-  return { rotation, unit, wasReset, usedOverflow };
 }
 
 /**
@@ -853,37 +522,42 @@ async function getEligibleUnits(internId, currentUnitId = null) {
     getCompletedUnitIds(internId),
   ]);
 
+  // FIX: capacity must never hard-block a MANUAL reassignment decision -
+  // only completed units and the intern's own current unit are genuinely
+  // ineligible. A unit at or above its dynamic target is still offered, just
+  // sorted after less-loaded ones, so an administrator can always make a
+  // necessary assignment even if it temporarily makes distribution uneven.
+  const snapshot = await computeUnitNeedSnapshot(allUnits);
+
   const eligible = [];
   for (const unit of allUnits) {
     const unitId = String(unit._id);
     if (currentUnitId && unitId === String(currentUnitId)) continue;
     if (completedIds.has(unitId)) continue;
-    if (await isUnitFull(unit)) continue;
     eligible.push({
       id: unitId,
       name: unit.name,
       durationDays: getUnitDuration(unit),
       duration_days: getUnitDuration(unit),
+      effectiveLoad: snapshot.effectiveLoad.get(unitId) || 0,
     });
   }
-  return eligible;
+
+  eligible.sort((a, b) => a.effectiveLoad - b.effectiveLoad);
+  return eligible.map(({ effectiveLoad, ...rest }) => rest);
 }
 
 module.exports = {
-  DEFAULT_CAPACITY,
   DEFAULT_DURATION,
   getUnitOccupancy,
   getUnitInternsLeavingSoon,
-  getActiveInternsCount,
-  isUnitFull,
+  getUnitPendingDemand,
+  computeUnitNeedSnapshot,
   selectBestUnit,
   getCompletedUnitIds,
   getNextRotationStartDate,
   getRotationWindow,
-  selectNextUnit,
-  pickNextUnitForAssignment,
   assignFirstUnit,
-  assignNextUnit,
   advanceToNextUnit,
   ensureContinuousAssignment,
   getEligibleUnits,

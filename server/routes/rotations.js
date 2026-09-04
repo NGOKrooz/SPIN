@@ -12,7 +12,6 @@ const {
   reassignNextUnit,
 } = require('../services/rotationService');
 const { reshuffleAllUpcoming } = require('../services/rotationPlanService');
-const { assignNextUnit } = require('../services/dynamicAssignmentService');
 const { logRecentUpdateSafe } = require('../services/recentUpdatesService');
 
 const router = express.Router();

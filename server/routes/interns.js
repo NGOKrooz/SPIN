@@ -20,8 +20,6 @@ const {
   ensureContinuousAssignment,
   getEligibleUnits,
   getCompletedUnitIds,
-  getUnitOccupancy,
-  DEFAULT_CAPACITY,
 } = require('../services/dynamicAssignmentService');
 const { updateBatchStats } = require('./dashboard');
 
@@ -1024,15 +1022,15 @@ router.post('/:id/reassign', async (req, res) => {
       return res.status(400).json({ error: 'Cannot reassign to the current unit' });
     }
 
-    // Validate: selected unit must be eligible (not completed, not current, not at capacity)
+    // Validate: selected unit must be eligible (not completed, not current).
+    // FIX: capacity is a dynamic balancing target, not a hard constraint - it
+    // must never block a deliberate manual reassignment (see dynamic
+    // scheduling overhaul in dynamicAssignmentService.js). An administrator
+    // choosing this unit is an intentional decision that's allowed to make
+    // distribution temporarily uneven.
     const completedIds = await getCompletedUnitIds(intern._id);
     if (completedIds.has(String(unitId))) {
       return res.status(400).json({ error: 'Cannot reassign to a unit already completed by this intern' });
-    }
-    const occupancy = await getUnitOccupancy();
-    const currentOccupancy = occupancy.get(String(unitId)) || 0;
-    if (currentOccupancy >= DEFAULT_CAPACITY) {
-      return res.status(400).json({ error: `Unit "${selectedUnit.name}" is at full capacity (${DEFAULT_CAPACITY} interns)` });
     }
 
     const preservedStartDate = toValidDate(current.startDate) || startOfDay(new Date());
