@@ -1,6 +1,7 @@
 const Intern = require('../models/Intern');
 const Rotation = require('../models/Rotation');
 const Unit = require('../models/Unit');
+const { calculateInternExtensionDays } = require('./extensionCalculationService');
 
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
 
@@ -118,6 +119,7 @@ const formatIntern = (intern, rotations = []) => {
   const upcomingRotations = formattedRotations.filter((r) => r.status === 'upcoming' || r.status === 'awaiting_confirmation');
   const completedRotations = formattedRotations.filter(r => r.status === 'completed');
   const awaitingConfirmationRotations = [...upcomingRotations];
+  const calculatedExtensionDays = calculateInternExtensionDays(formattedRotations);
 
   const startDate = intern.startDate || intern.start_date;
 
@@ -161,10 +163,18 @@ const formatIntern = (intern, rotations = []) => {
     gender: intern.gender || null,
     batch: intern.batch || null,
     status: intern.status || null,
-    extensionDays: intern.extensionDays || intern.extension_days || 0,
-    extension_days: intern.extensionDays || intern.extension_days || 0,
-    totalExtensionDays: intern.totalExtensionDays || intern.total_extension_days || 0,
-    total_extension_days: intern.totalExtensionDays || intern.total_extension_days || 0,
+    // FIX: intern.extensionDays/totalExtensionDays were an incrementally
+    // "banked" running total that goes stale the moment a rotation's dates
+    // are later reconciled (e.g. by a start-date edit) - see the matching
+    // fix in routes/interns.js's mapInternWithUnits for the full
+    // explanation. Extension is now computed fresh from the actual rotation
+    // records via the SAME shared function the general Interns list uses,
+    // so this (the individual dashboard's data source) can never disagree
+    // with it.
+    extensionDays: 0,
+    extension_days: 0,
+    totalExtensionDays: calculatedExtensionDays,
+    total_extension_days: calculatedExtensionDays,
     phone: intern.phone || intern.phone_number || '',
     phone_number: intern.phone || intern.phone_number || '',
     currentUnit,

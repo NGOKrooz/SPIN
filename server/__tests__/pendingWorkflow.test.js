@@ -102,21 +102,44 @@ describe('pending workflow', () => {
     const unit = await Unit.create({ name: 'Pediatrics', order: 1, durationDays: 7 });
     const nextUnit = await Unit.create({ name: 'Dermatology', order: 2, durationDays: 7 });
 
+    // FIX: dates must be relative to "now", not a hardcoded absolute past
+    // date - a fixed 2024-01-01 start meant this test's assertions on exact
+    // extension-day counts silently rotted as real time passed (by 2026 the
+    // rotation was genuinely ~2.5 years overdue, so the extend route's real
+    // day-math no longer matched the small numbers asserted below). The
+    // scenario needs the rotation to be GENUINELY overdue by a small, fixed
+    // amount (not just artificially fixture-flagged 'pending') -
+    // syncInternRotationStates (called at the top of the /extend route)
+    // recomputes intern.status from the actual dates and would otherwise
+    // overwrite an unrealistic "pending but not actually overdue" fixture
+    // back to 'active' before this test's own assertions ever run. With a
+    // fixed 2-day overdue window, ensureContinuousAssignment's own overdue
+    // handling contributes exactly 2 auto-extension days before /extend adds
+    // the requested 3, for a stable, non-drifting total of 5.
+    const internStart = new Date();
+    internStart.setDate(internStart.getDate() - 8); // 7-day rotation, 2 days overdue as of "today"
+    const rotationEnd = new Date();
+    rotationEnd.setDate(rotationEnd.getDate() - 2);
+    const nextStart = new Date();
+    nextStart.setDate(nextStart.getDate() - 1);
+    const nextEnd = new Date();
+    nextEnd.setDate(nextEnd.getDate() + 5);
+
     const intern = await Intern.create({
       name: 'Ben',
       gender: 'Male',
       batch: 'A',
       phone: '555',
       status: 'pending',
-      startDate: new Date('2024-01-01'),
+      startDate: internStart,
       currentUnit: unit._id,
     });
 
     const activeRotation = await Rotation.create({
       intern: intern._id,
       unit: unit._id,
-      startDate: new Date('2024-01-01'),
-      endDate: new Date('2024-01-08'),
+      startDate: internStart,
+      endDate: rotationEnd,
       baseDuration: 7,
       duration: 7,
       status: 'active',
@@ -125,8 +148,8 @@ describe('pending workflow', () => {
     await Rotation.create({
       intern: intern._id,
       unit: nextUnit._id,
-      startDate: new Date('2024-01-09'),
-      endDate: new Date('2024-01-15'),
+      startDate: nextStart,
+      endDate: nextEnd,
       baseDuration: 7,
       duration: 7,
       status: 'awaiting_confirmation',
@@ -143,8 +166,9 @@ describe('pending workflow', () => {
 
     expect(updatedIntern.status).toBe('pending');
     expect(String(updatedIntern.currentUnit)).toBe(String(unit._id));
-    expect(updatedRotation.extensionDays).toBe(3);
-    expect(updatedRotation.duration).toBe(10);
+    // 2 days already overdue (auto) + 3 requested (this call) = 5.
+    expect(updatedRotation.extensionDays).toBe(5);
+    expect(updatedRotation.duration).toBe(12);
   });
 
   it('accepts a pending movement and activates the staged next rotation without leaving the intern pending', async () => {
@@ -258,7 +282,13 @@ describe('pending workflow', () => {
     const refreshedIntern = await Intern.findById(intern._id).exec();
 
     expect(String(refreshedNextRotation.unit)).toBe(String(remainingUnit._id));
-    expect(refreshedIntern.status).toBe('active');
+    // FIX: reassignNextUnit only changes which unit is queued NEXT - the
+    // current rotation is still the same overdue, unconfirmed one, so the
+    // intern correctly stays 'pending' (see the FIX comment in
+    // reassignNextUnit itself). This assertion previously expected 'active',
+    // which was the OLD, since-corrected behavior; the code was fixed but
+    // this test was never updated to match.
+    expect(refreshedIntern.status).toBe('pending');
     expect(refreshedIntern.currentUnit).toBeTruthy();
     expect(String(completedRotation.unit)).toBe(String(completedUnit._id));
   });

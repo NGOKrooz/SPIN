@@ -9,6 +9,7 @@ const { ensureInternStatusIsCorrect } = require('../services/internService');
 const { ACTIVITY_TYPES, logActivityEventSafe } = require('../services/recentUpdatesService');
 const { createExtensionReason } = require('../services/extensionService');
 const { buildInternView, buildInternViews } = require('../services/internViewService');
+const { calculateInternExtensionDays } = require('../services/extensionCalculationService');
 const {
   getUnitDuration,
   recalculateEndDate,
@@ -553,11 +554,29 @@ const mapInternWithUnits = (internDoc, units) => {
     }
     : null;
 
+  // FIX: intern.extensionDays/totalExtensionDays were an incrementally
+  // "banked" running total, added to at every accept-movement using
+  // whatever the overdue-day count happened to be AT THAT MOMENT. If the
+  // intern's start date (or a rotation's dates) was later backdated/edited,
+  // those banked snapshots became stale and no longer matched the rotation's
+  // actual recorded dates vs its unit's configured duration - the displayed
+  // "+N days" could drift arbitrarily far from reality. Extension is now
+  // always computed fresh from the current rotation records, so it's
+  // automatically correct after any date reconciliation, with no persisted
+  // value that can go stale. This is the SAME function the individual
+  // dashboard uses (formatIntern in internViewService.js), so both views
+  // can never disagree.
+  const extensionDays = calculateInternExtensionDays(rotations);
+
   return {
     ...intern,
     batch: intern.batch || null,
     status: derivedStatus,
     currentUnit: currentUnitWithProgress,
+    extensionDays: 0,
+    extension_days: 0,
+    totalExtensionDays: extensionDays,
+    total_extension_days: extensionDays,
     upcomingUnit: upcomingUnitDoc ? {
       _id: upcomingUnitDoc._id,
       name: upcomingUnitDoc.name,
@@ -699,7 +718,12 @@ router.get('/:id/schedule', async (req, res) => {
       upcomingRotations: upcoming,
       remaining: upcoming,
       remainingCount: upcoming.length,
-      totalExtensionDays: Number(internDoc.totalExtensionDays || 0),
+      // FIX: reuse buildInternView's freshly-computed extension total (same
+      // shared calculateInternExtensionDays function as the list and
+      // individual dashboard) instead of the stale persisted
+      // intern.totalExtensionDays field - see mapInternWithUnits above for
+      // the full explanation of why that field goes stale.
+      totalExtensionDays: Number(internView.totalExtensionDays || 0),
       eligibleUnits,
     });
   } catch (err) {
