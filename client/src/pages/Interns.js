@@ -130,7 +130,9 @@ export default function Interns() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex h-full flex-col">
+      {/* Static header: title, actions, filters, stats - never scrolls */}
+      <div className="flex-shrink-0 space-y-6 pb-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -225,8 +227,10 @@ export default function Interns() {
           </CardContent>
         </Card>
       </div>
+      </div>
 
-      {/* Interns List */}
+      {/* Interns List - the ONLY region that scrolls */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
       <Card>
         <CardHeader>
           <CardTitle>Interns ({filteredInterns.length})</CardTitle>
@@ -315,6 +319,7 @@ export default function Interns() {
           )}
         </CardContent>
       </Card>
+      </div>
 
       {/* Intern Form Modal */}
       {showForm && (

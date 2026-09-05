@@ -91,12 +91,15 @@ export default function Settings() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
+    <div className="flex h-full flex-col">
+      {/* Static header: title - never scrolls */}
+      <div className="flex-shrink-0 pb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Settings</h1>
         <p className="text-sm sm:text-base text-gray-600">Manage core system configuration</p>
       </div>
 
+      {/* Settings sections - the ONLY region that scrolls */}
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-6">
       <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
         <CardHeader>
           <CardTitle className="flex items-center space-x-2">
@@ -207,6 +210,7 @@ export default function Settings() {
           </div>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

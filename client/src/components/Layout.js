@@ -25,13 +25,6 @@ export default function Layout() {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const role = useMemo(() => localStorage.getItem('role') || '', []);
-  const currentPageName = navigation.find((item) => item.href === location.pathname)?.name || 'Dashboard';
-  const todayLabel = useMemo(() => new Date().toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  }), []);
 
   useEffect(() => {
     const adminKey = localStorage.getItem('adminKey');
@@ -197,47 +190,35 @@ export default function Layout() {
         </div>
       </div>
 
-      {/* Right column: fixed header zone + independently scrollable content */}
+      {/* Right column: role bar (fixed) + full-height content area. Each
+          routed page owns its own static header/scrollable-content split
+          internally (see Dashboard/Interns/Units/Rotations/Settings) - this
+          wrapper just needs to give them a height-constrained box to do it
+          in, rather than imposing one shared header/scroll region itself. */}
       <div className="flex-1 min-h-0 md:pl-64 flex flex-col overflow-hidden">
-        {/* Fixed header zone - role switch bar + app header. Never scrolls. */}
-        <div className="flex-shrink-0">
-          <div className="hidden h-10 items-center justify-end bg-white/80 px-4 backdrop-blur md:flex">
-            <div className="text-xs text-gray-600">
-              Role: <span className="font-medium">{role}</span>
-              <button
-                className="ml-3 rounded border border-gray-300 px-2 py-0.5 text-gray-700 hover:bg-gray-50"
-                onClick={() => {
-                  if (role === 'admin') {
-                    localStorage.removeItem('adminKey');
-                  }
-                  localStorage.removeItem('role');
-                  window.location.reload();
-                }}
-              >
-                Switch
-              </button>
-            </div>
-          </div>
-
-          <div className="glass-header border-b border-gray-200 px-4 py-3 sm:px-6 sm:py-4 lg:px-8">
-            <div className="mx-auto max-w-7xl">
-              <h1 className="text-lg font-bold tracking-tight text-gray-900 sm:text-xl">Internship Scheduler</h1>
-              <div className="mt-0.5 flex flex-col sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
-                <h2 className="text-base font-semibold text-gray-700 sm:text-lg">{currentPageName}</h2>
-                <p className="text-xs text-gray-500 sm:text-sm">{todayLabel}</p>
-              </div>
-            </div>
+        <div className="hidden h-10 flex-shrink-0 items-center justify-end bg-white/80 px-4 backdrop-blur md:flex">
+          <div className="text-xs text-gray-600">
+            Role: <span className="font-medium">{role}</span>
+            <button
+              className="ml-3 rounded border border-gray-300 px-2 py-0.5 text-gray-700 hover:bg-gray-50"
+              onClick={() => {
+                if (role === 'admin') {
+                  localStorage.removeItem('adminKey');
+                }
+                localStorage.removeItem('role');
+                window.location.reload();
+              }}
+            >
+              Switch
+            </button>
           </div>
         </div>
 
-        {/* Scrollable content - the ONLY region that scrolls */}
-        <div className="flex-1 min-h-0 overflow-y-auto">
-          <main className="py-4 md:py-8">
-            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-              <Outlet />
-            </div>
-          </main>
-        </div>
+        <main className="flex-1 min-h-0 overflow-hidden py-4 md:py-8">
+          <div className="mx-auto h-full max-w-7xl px-4 sm:px-6 lg:px-8">
+            <Outlet />
+          </div>
+        </main>
       </div>
     </div>
   );

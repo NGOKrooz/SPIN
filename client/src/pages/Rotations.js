@@ -79,7 +79,9 @@ export default function Rotations() {
   const warningUnits = Object.values(unitCoverage).filter(unit => unit.coverage_status === 'warning');
 
   return (
-    <div className="space-y-6">
+    <div className="flex h-full flex-col">
+      {/* Static header: title, actions, coverage alerts, stats, filters - never scrolls */}
+      <div className="flex-shrink-0 space-y-6 pb-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -270,8 +272,10 @@ export default function Rotations() {
           </div>
         </CardContent>
       </Card>
+      </div>
 
-      {/* Current Rotations */}
+      {/* Current Rotations + All Rotations - the ONLY region that scrolls */}
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-6">
       <Card className="border-0 shadow-sm bg-white/70 backdrop-blur">
         <CardHeader>
           <CardTitle>Current Rotations</CardTitle>
@@ -396,6 +400,7 @@ export default function Rotations() {
           )}
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

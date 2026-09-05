@@ -177,7 +177,9 @@ export default function Units() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="flex h-full flex-col">
+      {/* Static header: title, actions, filters, stats - never scrolls */}
+      <div className="flex-shrink-0 space-y-6 pb-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -285,8 +287,10 @@ export default function Units() {
           </CardContent>
         </Card>
       </div>
+      </div>
 
-      {/* Units Grid */}
+      {/* Units Grid - the ONLY region that scrolls */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
       <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-2 xl:grid-cols-3">
         {filteredUnits.map((unit) => {
           const assignedInterns = getUnitInterns(unit);
@@ -390,6 +394,7 @@ export default function Units() {
           </CardContent>
         </Card>
       )}
+      </div>
 
       {/* View Unit Modal */}
       {selectedUnit && (
