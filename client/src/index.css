@@ -67,6 +67,33 @@
   background: linear-gradient(135deg, #10b981 0%, #3b82f6 100%);
 }
 
+/* FIX: the fixed-shell layout (static sidebar/header, one scrollable content
+   region filling the rest of the viewport) only works when the page's own
+   header content is short enough to leave real room for that region. On a
+   small phone, a page's header/filters/stats can easily be taller than the
+   ENTIRE viewport by itself - forcing that content to stay "static" while
+   flex-1 fills "whatever's left" then computes to zero (or a sliver), and
+   the rest of the header - and the whole list below it - ends up pushed
+   below the real fold with no way to reach it. That's not fixable by
+   shrinking margins; the fixed-shell model itself doesn't fit small
+   screens. So it's md+ (desktop/tablet) only: below that, the shell falls
+   back to plain document flow (auto height, natural overflow), so the
+   browser just scrolls the whole page like an ordinary responsive site -
+   header, filters, stats and list all flow together, exactly as far down
+   as they need to, with nothing clipped or trapped.
+   h-screen-safe-md also fixes a second, independent bug for the desktop
+   case that keeps it: h-screen (100vh) measures the LARGEST possible
+   mobile viewport (as if browser chrome were hidden), not what's actually
+   visible - 100dvh tracks the real visible viewport. The 100vh line stays
+   first as a fallback for browsers that don't understand 100dvh (they
+   simply ignore the second, invalid declaration and keep the first). */
+@media (min-width: 768px) {
+  .h-screen-safe-md {
+    height: 100vh;
+    height: 100dvh;
+  }
+}
+
 /* App background: soft gradient with subtle texture */
 .app-bg {
   background: radial-gradient(1200px 800px at -10% -10%, rgba(59, 130, 246, 0.08), transparent 60%),

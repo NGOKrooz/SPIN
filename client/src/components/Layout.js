@@ -90,7 +90,7 @@ export default function Layout() {
   }
 
   return (
-    <div className="h-screen w-full overflow-hidden app-bg flex flex-col">
+    <div className="h-screen-safe-md w-full overflow-visible md:overflow-hidden app-bg flex flex-col">
       {/* Mobile top bar - fixed, never scrolls */}
       <div className="md:hidden flex-shrink-0 z-50 flex h-14 items-center justify-between bg-white/90 px-4 shadow-sm backdrop-blur-md">
         <button
@@ -195,7 +195,7 @@ export default function Layout() {
           internally (see Dashboard/Interns/Units/Rotations/Settings) - this
           wrapper just needs to give them a height-constrained box to do it
           in, rather than imposing one shared header/scroll region itself. */}
-      <div className="flex-1 min-h-0 md:pl-64 flex flex-col overflow-hidden">
+      <div className="flex-1 min-h-0 md:pl-64 flex flex-col overflow-visible md:overflow-hidden">
         <div className="hidden h-10 flex-shrink-0 items-center justify-end bg-white/80 px-4 backdrop-blur md:flex">
           <div className="text-xs text-gray-600">
             Role: <span className="font-medium">{role}</span>
@@ -214,8 +214,8 @@ export default function Layout() {
           </div>
         </div>
 
-        <main className="flex-1 min-h-0 overflow-hidden py-4 md:py-8">
-          <div className="mx-auto h-full max-w-7xl px-4 sm:px-6 lg:px-8">
+        <main className="flex-1 min-h-0 overflow-visible md:overflow-hidden py-4 md:py-8">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 md:h-full">
             <Outlet />
           </div>
         </main>

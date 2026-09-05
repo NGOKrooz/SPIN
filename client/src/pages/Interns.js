@@ -130,16 +130,19 @@ export default function Interns() {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Static header: title, actions, filters, stats - never scrolls */}
-      <div className="flex-shrink-0 space-y-6 pb-6">
+    <div className="md:flex md:h-full md:flex-col">
+      {/* Static header: title, actions, filters, stats.
+          Desktop (md+): pinned above the scrollable list, unchanged.
+          Mobile: no fixed-height shell to pin it against, so it just flows
+          normally at the top of the page - see index.css/Layout.js for why. */}
+      <div className="md:flex-shrink-0 space-y-6 pb-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Interns</h1>
-          <p className="text-gray-600">Manage physiotherapy interns and their profiles</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Interns</h1>
+          <p className="text-sm text-gray-600 sm:text-base">Manage physiotherapy interns and their profiles</p>
         </div>
-        <Button onClick={() => setShowForm(true)} className="hospital-gradient">
+        <Button onClick={() => setShowForm(true)} className="hospital-gradient w-full sm:w-auto">
           <Plus className="h-4 w-4 mr-2" />
           Add Intern
         </Button>
@@ -203,7 +206,7 @@ export default function Interns() {
       </Card>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center space-x-2">
@@ -229,8 +232,9 @@ export default function Interns() {
       </div>
       </div>
 
-      {/* Interns List - the ONLY region that scrolls */}
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      {/* Interns List - the ONLY region that scrolls on desktop; on mobile
+          it just flows in the page's own natural scroll (see above). */}
+      <div className="md:flex-1 md:min-h-0 md:overflow-y-auto">
       <Card>
         <CardHeader>
           <CardTitle>Interns ({filteredInterns.length})</CardTitle>
