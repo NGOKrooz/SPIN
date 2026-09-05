@@ -21,15 +21,6 @@ export default function Dashboard() {
     queryFn: () => api.getUnits(),
   });
 
-  const todayLabel = new Date().toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-
-  // removed unused systemInfo
-
   if (internsLoading || unitsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -65,22 +56,6 @@ export default function Dashboard() {
 
   return (
     <div className="mx-auto w-full max-w-[1200px] space-y-6 px-4 sm:px-6 lg:px-8">
-      {/* Header */}
-      <div className="space-y-4">
-        <div className="rounded-2xl border border-gray-200 bg-white/70 p-5 shadow-sm backdrop-blur sm:p-6">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">Internship Scheduler</h1>
-            <h2 className="text-base font-semibold text-gray-700 sm:text-lg">UNTH Ituku Ozalla</h2>
-            <p className="text-sm text-gray-500 sm:text-base">Physiotherapy Department</p>
-          </div>
-        </div>
-
-        <div>
-          <h3 className="text-2xl font-bold text-gray-900 sm:text-3xl">Dashboard</h3>
-          <p className="text-sm text-gray-600 sm:text-base">{todayLabel}</p>
-        </div>
-      </div>
-
       {/* Stats Grid */}
       <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2 xl:grid-cols-4">
         {stats.map((stat) => (

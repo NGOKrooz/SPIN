@@ -1,13 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import api from '../services/api';
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  Users, 
-  Building2, 
+import {
+  LayoutDashboard,
+  Users,
+  Building2,
   Settings,
   Stethoscope,
-  MessageCircle,
   X,
   RotateCcw,
 } from 'lucide-react';
@@ -26,6 +25,13 @@ export default function Layout() {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const role = useMemo(() => localStorage.getItem('role') || '', []);
+  const currentPageName = navigation.find((item) => item.href === location.pathname)?.name || 'Dashboard';
+  const todayLabel = useMemo(() => new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }), []);
 
   useEffect(() => {
     const adminKey = localStorage.getItem('adminKey');
@@ -91,9 +97,9 @@ export default function Layout() {
   }
 
   return (
-    <div className="min-h-screen app-bg overflow-x-hidden">
-      {/* Mobile top bar */}
-      <div className="md:hidden sticky top-0 z-50 flex h-14 items-center justify-between bg-white/90 px-4 shadow-sm backdrop-blur-md">
+    <div className="h-screen w-full overflow-hidden app-bg flex flex-col">
+      {/* Mobile top bar - fixed, never scrolls */}
+      <div className="md:hidden flex-shrink-0 z-50 flex h-14 items-center justify-between bg-white/90 px-4 shadow-sm backdrop-blur-md">
         <button
           aria-label="Open sidebar"
           className="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
@@ -183,47 +189,55 @@ export default function Layout() {
 
           {/* Footer */}
           <div className="border-t border-gray-200 p-4">
-            <a
-              href="https://wa.me/2349068361100"
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center justify-center space-x-2 rounded-md px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-green-700 transition-colors"
-            >
-              <MessageCircle className="h-4 w-4" />
-              <span>Contact Team</span>
-            </a>
+            <div className="px-3 py-2 text-center">
+              <p className="text-sm font-semibold text-gray-700">UNTH Ituku Ozalla</p>
+              <p className="text-xs text-gray-500">Physiotherapy Department</p>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Role switch bar */}
-      <div className="md:pl-64">
-        <div className="sticky top-0 z-40 hidden h-10 items-center justify-end bg-white/80 px-4 backdrop-blur md:flex">
-          <div className="text-xs text-gray-600">
-            Role: <span className="font-medium">{role}</span>
-            <button
-              className="ml-3 rounded border border-gray-300 px-2 py-0.5 text-gray-700 hover:bg-gray-50"
-              onClick={() => {
-                if (role === 'admin') {
-                  localStorage.removeItem('adminKey');
-                }
-                localStorage.removeItem('role');
-                window.location.reload();
-              }}
-            >
-              Switch
-            </button>
+      {/* Right column: fixed header zone + independently scrollable content */}
+      <div className="flex-1 min-h-0 md:pl-64 flex flex-col overflow-hidden">
+        {/* Fixed header zone - role switch bar + app header. Never scrolls. */}
+        <div className="flex-shrink-0">
+          <div className="hidden h-10 items-center justify-end bg-white/80 px-4 backdrop-blur md:flex">
+            <div className="text-xs text-gray-600">
+              Role: <span className="font-medium">{role}</span>
+              <button
+                className="ml-3 rounded border border-gray-300 px-2 py-0.5 text-gray-700 hover:bg-gray-50"
+                onClick={() => {
+                  if (role === 'admin') {
+                    localStorage.removeItem('adminKey');
+                  }
+                  localStorage.removeItem('role');
+                  window.location.reload();
+                }}
+              >
+                Switch
+              </button>
+            </div>
+          </div>
+
+          <div className="glass-header border-b border-gray-200 px-4 py-3 sm:px-6 sm:py-4 lg:px-8">
+            <div className="mx-auto max-w-7xl">
+              <h1 className="text-lg font-bold tracking-tight text-gray-900 sm:text-xl">Internship Scheduler</h1>
+              <div className="mt-0.5 flex flex-col sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
+                <h2 className="text-base font-semibold text-gray-700 sm:text-lg">{currentPageName}</h2>
+                <p className="text-xs text-gray-500 sm:text-sm">{todayLabel}</p>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Main content */}
-      <div className="md:pl-64">
-        <main className="py-4 md:py-8">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <Outlet />
-          </div>
-        </main>
+        {/* Scrollable content - the ONLY region that scrolls */}
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <main className="py-4 md:py-8">
+            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+              <Outlet />
+            </div>
+          </main>
+        </div>
       </div>
     </div>
   );
